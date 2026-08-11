@@ -1,7 +1,7 @@
-from motor.motor_asyncio import AsyncIOMotorClient
-from bson.objectid import ObjectId
-from pymongo import ReturnDocument
-from pymongo.errors import PyMongoError
+from motor.motor_asyncio import AsyncIOMotorClient  # ty: ignore[unresolved-import]
+from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
+from pymongo import ReturnDocument  # ty: ignore[unresolved-import]
+from pymongo.errors import PyMongoError  # ty: ignore[unresolved-import]
 
 from enums import DatabaseCollection
 from exceptions import ProjectNotFoundError, StorageError
@@ -60,8 +60,21 @@ class ProjectModel(BaseModel):
         # `_id` is immutable in MongoDB so it must stay out of $set, and
         # created_at must not be rewritten on every update — both belong in
         # $setOnInsert, which only applies when this upsert actually inserts.
-        changes = project.model_dump(by_alias=True, exclude={"id", "created_at"})
-        on_insert = {"_id": project.id, "created_at": project.created_at}
+        #
+        # chunks_ids/assets_ids are excluded for the same reason: they are owned
+        # by the $addToSet helpers below, and a caller building a fresh Project
+        # to upsert carries empty lists that would otherwise wipe both arrays on
+        # every single call.
+        changes = project.model_dump(
+            by_alias=True,
+            exclude={"id", "created_at", "chunks_ids", "assets_ids"},
+        )
+        on_insert = {
+            "_id": project.id,
+            "created_at": project.created_at,
+            "chunks_ids": project.chunks_ids,
+            "assets_ids": project.assets_ids,
+        }
 
         try:
             document = await self.collection.find_one_and_update(
@@ -136,6 +149,38 @@ class ProjectModel(BaseModel):
 
         self.logger.debug(
             "Added %d chunk id(s) to project %r", len(chunk_object_ids), project_id
+        )
+
+    async def remove_chunk_ids(
+        self, project_id: str, chunk_object_ids: list[ObjectId]
+    ) -> None:
+        """Pull specific ids out of chunks_ids, leaving the rest in place.
+
+        What a single asset's re-ingest needs: clear_chunk_ids() empties the
+        whole list, which is only correct when the entire project is being
+        rebuilt.
+        """
+        if not chunk_object_ids:
+            return
+
+        try:
+            result = await self.collection.update_one(
+                {"project_id": project_id},
+                {
+                    "$pullAll": {"chunks_ids": chunk_object_ids},
+                    "$set": {"updated_at": utcnow()},
+                },
+            )
+        except PyMongoError as exc:
+            raise StorageError(
+                f"Could not remove chunk_ids from project {project_id!r}"
+            ) from exc
+
+        if result.matched_count == 0:
+            raise ProjectNotFoundError(f"Project {project_id!r} not found")
+
+        self.logger.debug(
+            "Removed %d chunk id(s) from project %r", len(chunk_object_ids), project_id
         )
 
     async def clear_chunk_ids(self, project_id: str) -> None:
@@ -230,3 +275,13 @@ class ProjectModel(BaseModel):
     ) -> str:
         index = self.get_index(keys, unique, name)
         return await self.collection.create_index(index["key"], name=index["name"], unique=index["unique"])
+
+    async def get_assets_for_project(self, project_id: str) -> list[ObjectId]:
+        result = await self.collection.find_one({"project_id": project_id})
+        if not result:
+            raise ProjectNotFoundError(f"Project {project_id!r} not found")
+        return result["assets_ids"]
+    
+
+    
+    

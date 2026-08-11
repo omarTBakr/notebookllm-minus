@@ -1,9 +1,9 @@
 from typing import AsyncIterator, Iterable, Sequence
 
-from motor.motor_asyncio import AsyncIOMotorClient
-from bson.objectid import ObjectId
-from pymongo import ASCENDING
-from pymongo.errors import PyMongoError
+from motor.motor_asyncio import AsyncIOMotorClient  # ty: ignore[unresolved-import]
+from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
+from pymongo import ASCENDING  # ty: ignore[unresolved-import]
+from pymongo.errors import PyMongoError  # ty: ignore[unresolved-import]
 
 from enums import DatabaseCollection
 from exceptions import StorageError
@@ -128,6 +128,56 @@ class ChunkModel(BaseModel):
             raise StorageError(
                 f"Could not count chunks for project {project_id}"
             ) from exc
+
+    async def has_asset_chunks(self, project_id: ObjectId, asset_id: str) -> bool:
+        """True if this asset has already been chunked into this project.
+
+        The existence check the process route uses to stay idempotent: an asset
+        that already has chunks is skipped rather than inserted a second time.
+        """
+        try:
+            found = await self.collection.find_one(
+                {"project_id": project_id, "asset_id": asset_id},
+                projection={"_id": 1},
+            )
+        except PyMongoError as exc:
+            raise StorageError(
+                f"Could not check existing chunks for asset {asset_id!r}"
+            ) from exc
+
+        return found is not None
+
+    async def delete_asset_chunks(
+        self, project_id: ObjectId, asset_id: str
+    ) -> list[ObjectId]:
+        """Delete one asset's chunks; returns the _ids that were removed.
+
+        The ids come back so the caller can pull exactly those out of the
+        project's ``chunks_ids``. ``delete_project_chunks`` + ``clear_chunk_ids``
+        is the whole-project equivalent, and using it to re-ingest a single
+        document would take every other asset's chunks down with it.
+        """
+        try:
+            cursor = self.collection.find(
+                {"project_id": project_id, "asset_id": asset_id},
+                projection={"_id": 1},
+            )
+            removed_ids = [document["_id"] async for document in cursor]
+
+            if removed_ids:
+                await self.collection.delete_many({"_id": {"$in": removed_ids}})
+        except PyMongoError as exc:
+            raise StorageError(
+                f"Could not delete chunks for asset {asset_id!r}"
+            ) from exc
+
+        self.logger.info(
+            "Deleted %d chunk(s) for asset %r in project %s",
+            len(removed_ids),
+            asset_id,
+            project_id,
+        )
+        return removed_ids
 
     async def delete_project_chunks(self, project_id: ObjectId) -> int:
         """Remove every chunk of a project; returns how many were deleted.

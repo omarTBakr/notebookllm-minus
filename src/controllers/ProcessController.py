@@ -1,22 +1,21 @@
 import tempfile
 from pathlib import Path
 
-from langchain_core.documents import Document
-from langchain_community.document_loaders import TextLoader, PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document  # ty: ignore[unresolved-import]
+from langchain_community.document_loaders import TextLoader, PyPDFLoader # ty: ignore[unresolved-import]
+from langchain_text_splitters import RecursiveCharacterTextSplitter # ty: ignore[unresolved-import]
 
 from enums import ProcessStatus
 from exceptions import ChunkingError, ExtractionError, UnsupportedFileTypeError
-
 from .BaseController import BaseController
-from routes.schemas import FileExtension
-
+from routes.schemas import FileExtension 
 
 class ProcessController(BaseController):
     def __init__(self, chunk_size=1000, chunk_overlap=200):
         super().__init__()
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+ 
 
     def get_loader(self, file_path: Path):
         extension = file_path.suffix.lower()
@@ -62,9 +61,18 @@ class ProcessController(BaseController):
             tmp_path = Path(tmp.name)
 
         try:
-            return self.process_file(tmp_path)
+            docs = self.process_file(tmp_path)
         finally:
             tmp_path.unlink(missing_ok=True)
+
+        # The loaders stamp metadata["source"] with the temp file's path, which
+        # is meaningless the moment that file is deleted — and it leaks a server
+        # path into the stored chunk and the API response. Point it at the real
+        # document name, which is what a citation will need anyway.
+        for doc in docs:
+            doc.metadata["source"] = filename
+
+        return docs
 
     def split_file(self, docs: list[Document]) -> list[Document]:
         try:
@@ -83,3 +91,4 @@ class ProcessController(BaseController):
             self.chunk_overlap,
         )
         return chunks
+    

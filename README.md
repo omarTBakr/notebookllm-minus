@@ -35,10 +35,13 @@ enums for them exist as placeholders only.
   validation. The file is read in `MAX_FILE_CHUNK_SIZE` slices and stored as bytes on an
   **asset document in MongoDB** — nothing is written to disk. The project document is
   upserted on the way through, so uploading to a new `project_id` creates it.
-- **Document processing** (`/process/{project_id}`): fetches an asset by `asset_id`,
-  writes its bytes to a temporary file so LangChain's loaders can read it, splits the text
-  into overlapping chunks with `RecursiveCharacterTextSplitter`, and persists the chunks to
-  the `data_chunks` collection. `reset: true` clears the project's existing chunks first.
+- **Document processing** (`/process/{project_id}`): fetches one asset by `asset_id`, or
+  every asset in the project when `asset_id` is omitted, writes each one's bytes to a
+  temporary file so LangChain's loaders can read it, splits the text into overlapping chunks
+  with `RecursiveCharacterTextSplitter`, and persists them to the `data_chunks` collection.
+- **Idempotent ingestion**: an asset that already has chunks is skipped, so `/process` can be
+  re-run over a project to pick up only what is new. `reset: true` re-ingests instead —
+  scoped to the assets named in the request, never the whole project.
 - **Indexes created at startup**, idempotently, for all three collections.
 
 ### Not yet implemented
@@ -47,8 +50,8 @@ enums for them exist as placeholders only.
   `VECTOR_DB_ERROR` are placeholders).
 - Retrieval and the `/answer`-style endpoint that makes this a notebook rather than a
   chunker.
-- Citations pointing back at the source passage — the reason `chunk_order` and
-  `chunk_metadata` are stored.
+- Citations pointing back at the source passage — the reason `asset_id`, `chunk_order` and
+  `chunk_metadata` are stored on every chunk.
 - Anything past `.pdf` and `.txt`, though `AssetType` and `FileExtension` already enumerate
   the formats to come.
 
@@ -71,10 +74,23 @@ Three collections, and one identifier distinction worth internalising early:
 | ------------- | ----------- | ----------------------------------------------------------------- |
 | `projects`    | `Project`   | `project_id` (string, from the URL), `assets_ids`, `chunks_ids`    |
 | `assets`      | `Asset`     | `asset_id` (uuid4 string), `asset_type`, `project_id`, `file_bytes` |
-| `data_chunks` | `DataChunk` | `project_id` (**ObjectId** — the project's `_id`), `chunk_order`, `chunk_content` |
+| `data_chunks` | `DataChunk` | `project_id` (**ObjectId** — the project's `_id`), `asset_id`, `chunk_order`, `chunk_content` |
 
 `Project.project_id` is the human string that appears in URLs. `DataChunk.project_id` is
 the project's Mongo `_id`. Resolve the string to a project first, then pass `project.id`.
+
+`DataChunk.asset_id` is the string `Asset.asset_id`, not an ObjectId. It exists because
+`chunk_order` numbers from 0 within each document: without it, two sources in one project
+both claim orders `0..N` and a project-wide sort interleaves them.
+
+Indexes are created at startup in `main.py`'s lifespan — idempotent, so restarting is safe:
+
+| Collection    | Index                         | Serves                                     |
+| ------------- | ----------------------------- | ------------------------------------------ |
+| `projects`    | `project_id` (unique)          | every lookup; enforces one doc per project |
+| `assets`      | `project_id, created_at desc`  | listing a project's assets                 |
+| `data_chunks` | `project_id, created_at desc`  | project-wide chunk reads                   |
+| `data_chunks` | `project_id, asset_id`         | the per-asset skip check and reset delete  |
 
 ## Project structure
 
@@ -98,7 +114,7 @@ src/
 │   ├── BaseModel.py            # binds a collection, provides self.logger
 │   ├── ProjectModel.py         # projects: upsert, id bookkeeping, paged reads
 │   ├── AssetModel.py           # assets: upsert, fetch by id/project/type
-│   ├── ChunkModel.py           # data_chunks: batched insert, paged read, delete
+│   ├── ChunkModel.py           # data_chunks: batched insert, paged read, per-asset delete
 │   └── db_schema/              # Project, Asset, DataChunk pydantic documents
 ├── enums/                      # FileStatus, ProcessStatus, AssetType, DatabaseCollection
 ├── utils/
@@ -207,26 +223,85 @@ Response:
 Keep the `asset_id` — it's what `/process` takes.
 
 ### `POST /process/{project_id}`
-Loads and chunks a stored asset. The asset must belong to the project in the URL.
+Loads and chunks the project's stored assets. **`asset_id` is optional**: pass it to process
+one document, omit it to process every asset in the project, oldest first.
 
 ```bash
+# one document
 curl -X POST "http://127.0.0.1:8000/process/1" \
   -H "Content-Type: application/json" \
   -d '{"asset_id": "9f8e7d6c-5b4a-4c3d-9e8f-7a6b5c4d3e2f", "chunk_size": 500, "overlap_size": 50}'
+
+# every document in the project
+curl -X POST "http://127.0.0.1:8000/process/1" \
+  -H "Content-Type: application/json" \
+  -d '{"chunk_size": 500, "overlap_size": 50}'
 ```
 
-| Field          | Type   | Default | Notes                                          |
-| -------------- | ------ | ------- | ---------------------------------------------- |
-| `asset_id`     | string | —       | required, the uuid returned by upload          |
-| `chunk_size`   | int    | 100     | characters per chunk, must be > 0              |
-| `overlap_size` | int    | 20      | character overlap, must be < `chunk_size`      |
-| `reset`        | bool   | false   | delete the project's existing chunks first     |
+| Field          | Type   | Default | Notes                                                     |
+| -------------- | ------ | ------- | --------------------------------------------------------- |
+| `asset_id`     | string | `null`  | optional; omit to process the whole project               |
+| `chunk_size`   | int    | 100     | characters per chunk, must be > 0                         |
+| `overlap_size` | int    | 20      | character overlap, must be < `chunk_size`                 |
+| `reset`        | bool   | false   | re-ingest assets that are already chunked                 |
 
-Constraint violations (including an explicit `null`) are rejected by the request schema
-with a `422` naming the offending field.
+**Processing is idempotent.** Every asset is chunked at most once: an asset that already has
+chunks is skipped and reported as such, so re-running `/process` over a project only picks up
+what is new. `reset: true` deletes that asset's existing chunks and re-chunks it.
 
-The response reports `chunks_created` / `chunks_saved` and currently echoes every chunk's
-full text — see [Known limitations](#known-limitations).
+Both behaviours are scoped to the assets **named in the request** — resetting a single
+`asset_id` leaves every other asset's chunks untouched.
+
+Constraint violations (including an explicit `null` on a non-optional field) are rejected by
+the request schema with a `422` naming the offending field.
+
+Every asset is validated before anything is written — a request naming an asset that belongs
+to another project, or one with no stored bytes, fails with a `400` having inserted no
+chunks. A project with no assets at all is a `404`, not an empty success.
+
+The response carries a `results` entry per asset:
+
+```json
+{
+  "project_id": "1",
+  "chunk_size": 500,
+  "overlap_size": 50,
+  "status": "processing completed successfully",
+  "reset": false,
+  "assets_found": 2,
+  "assets_processed": 1,
+  "assets_skipped": 1,
+  "results": [
+    {
+      "asset_id": "9f8e7d6c-…",
+      "asset_name": "document.pdf",
+      "project_object_id": "68a1f0c3e4b0a1d2c3e4b0a1",
+      "status": "processed",
+      "chunks_created": 34,
+      "chunks_saved": 34,
+      "chunks": [{ "content": "…", "metadata": { "source": "document.pdf", "page": 0 } }]
+    },
+    {
+      "asset_id": "1a2b3c4d-…",
+      "asset_name": "notes.txt",
+      "project_object_id": "68a1f0c3e4b0a1d2c3e4b0a1",
+      "status": "skipped",
+      "reason": "already chunked; pass reset=true to re-ingest",
+      "chunks_created": 0,
+      "chunks_saved": 0,
+      "chunks": []
+    }
+  ]
+}
+```
+
+`chunk_order` counts from 0 **within each document**, so `asset_id` on the chunk is what
+distinguishes two sources in the same project. `metadata.source` is the document's name —
+the loaders stamp it with a temporary file path, which `ProcessController.process_bytes`
+overwrites on the way out.
+
+The response still echoes every chunk's full text, for every asset — see
+[Known limitations](#known-limitations).
 
 ## Error handling
 
@@ -247,7 +322,7 @@ against.
 | `InvalidFileError`          | 400    | upload has a disallowed content type or is too large |
 | `UnsupportedFileTypeError`  | 400    | no loader for the file's extension               |
 | `InvalidInputError`         | 400    | the asset belongs to another project, or has no stored bytes |
-| `ProjectNotFoundError`      | 404    | no project matches the `project_id`              |
+| `ProjectNotFoundError`      | 404    | no project matches the `project_id`, or it has no assets to process |
 | `AssetNotFoundError`        | 404    | no asset matches the `asset_id`                  |
 | `UploadedFileNotFoundError` | 404    | *(dormant — belongs to the disk-storage path)*   |
 | `StorageError`              | 503    | MongoDB unreachable or rejected the operation    |
@@ -309,12 +384,20 @@ when a request hangs, since a hung request has no completion line at INFO.
   caps a source at well under the 16 MB BSON limit. GridFS or object storage is the way out.
 - Chunks are persisted to MongoDB, but `/process` still returns every chunk's full text in
   the response as well. For a real document that payload is large and redundant.
+- The skip check matches on `asset_id`, so chunks written **before that field existed** are
+  invisible to it — a project ingested by an older build will be chunked a second time.
+  One `reset: true` pass over such a project clears the legacy rows and rebuilds them.
 - `reset` deletes then re-inserts without a transaction (standalone MongoDB has none), so a
-  failure mid-insert leaves the project with fewer chunks than it started with.
-- `ChunkModel.ensure_indexes()` builds the `(project_id, chunk_order)` index that paged
-  reads actually sort on, but startup creates `(project_id, created_at)` instead and never
-  calls it.
+  failure mid-insert leaves that asset with fewer chunks than it started with.
+- Nothing dedupes uploads: the same file uploaded twice becomes two assets with different
+  `asset_id`s, and both get chunked. Skipping is per-asset, not per-document-content.
+- `ChunkModel.get_project_chunks()` still sorts by `chunk_order` alone, so a project holding
+  two documents comes back interleaved. Now that chunks carry `asset_id`, that read wants to
+  sort on `(asset_id, chunk_order)` — or filter by asset — before retrieval is built on it.
+- `ChunkModel.ensure_indexes()` builds a `(project_id, chunk_order)` index and nothing calls
+  it; startup creates its own set instead (see [Data model](#data-model)).
 - Both routes overwrite the project's `name` and `description` with placeholders derived
-  from the current file on every upload and process call.
+  from the current file on every upload and process call. In whole-project mode the name
+  comes from whichever asset happens to be first.
 - Embedding generation, vector storage, and retrieval/answering are not yet implemented —
   which is, for now, the "minus".

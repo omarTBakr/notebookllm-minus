@@ -41,6 +41,9 @@ async def lifespan(app: FastAPI):
 
     chunk_model = ChunkModel(app.db)
     await chunk_model.create_index([("project_id", 1), ("created_at", -1)])
+    # Backs the per-asset skip check and the per-asset reset delete, both of
+    # which run once per asset on every /process call.
+    await chunk_model.create_index([("project_id", 1), ("asset_id", 1)])
     logger.info("Database indexes ensured")
 
     asset_model = AssetModel(app.db)

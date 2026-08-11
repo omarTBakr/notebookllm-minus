@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ProcessRequest(BaseModel):
-    asset_id: str = Field(..., min_length=1, description="UUID of the asset to process")
+    asset_id: str | None = Field(None, description="UUID of the asset to process")
     chunk_size: int = Field(100, gt=0)
     overlap_size: int = Field(20, ge=0)
     reset: bool = False

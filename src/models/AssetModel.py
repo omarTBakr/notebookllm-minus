@@ -1,9 +1,9 @@
 from typing import AsyncIterator
 
-from bson.objectid import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import ReturnDocument
-from pymongo.errors import PyMongoError
+from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
+from motor.motor_asyncio import AsyncIOMotorClient  # ty: ignore[unresolved-import]
+from pymongo import ReturnDocument  # ty: ignore[unresolved-import]
+from pymongo.errors import PyMongoError  # ty: ignore[unresolved-import]
 
 from enums import DatabaseCollection
 from exceptions import NotFoundError, StorageError
@@ -133,6 +133,27 @@ class AssetModel(BaseModel):
         )
         async for doc in cursor:
             yield Asset(**doc)
+
+    async def iter_project_assets(self, project_id: str) -> AsyncIterator[Asset]:
+        """Yield *every* asset in a project, oldest first, without pagination.
+
+        get_assets_by_project() caps at ``page_size`` (10 by default), which
+        silently drops everything past the tenth asset — acceptable for a
+        listing endpoint, wrong for a caller that must process the whole
+        project.
+        """
+        # find() builds a cursor synchronously — do NOT await it.
+        cursor = self.collection.find({"project_id": project_id}).sort("created_at", 1)
+
+        try:
+            async for doc in cursor:
+                yield Asset(**doc)
+        except PyMongoError as exc:
+            raise StorageError(
+                f"Could not read assets for project {project_id!r}"
+            ) from exc
+
+        self.logger.debug("Fetched every asset for project %r", project_id)
 
     async def get_assets_by_type(
         self,
