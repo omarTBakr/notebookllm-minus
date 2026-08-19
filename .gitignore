@@ -14,3 +14,6 @@ wheels/
 logs/
 *.log
 *.log.[0-9]*
+
+# Embedded vector store (VECTOR_DB_PATH)
+qdrant_db/
