@@ -176,37 +176,3 @@ class AssetModel(BaseModel):
             "Fetched assets by type=%r for project %r", asset_type, project_id
         )
 
-    # ------------------------------------------------------------------
-    # Index helpers (inherited pattern)
-    # ------------------------------------------------------------------
-
-    def get_index(
-        self,
-        keys: list[tuple[str, int]],  # e.g. [("asset_id", 1), ("created_at", -1)]
-        unique: bool = False,
-        name: str | None = None,
-    ) -> dict:
-        """Build an index spec dict for create_index.
-
-        keys: list of (field, direction) tuples — 1=ASC, -1=DESC
-        """
-        auto_name = "_".join(
-            f"{field}_{'asc' if direction == 1 else 'desc'}" for field, direction in keys
-        ) + "_idx"
-
-        return {
-            "key": keys,
-            "name": name or auto_name,
-            "unique": unique,
-        }
-
-    async def create_index(
-        self,
-        keys: list[tuple[str, int]],
-        unique: bool = False,
-        name: str | None = None,
-    ) -> str:
-        index = self.get_index(keys, unique, name)
-        return await self.collection.create_index(
-            index["key"], name=index["name"], unique=index["unique"]
-        )

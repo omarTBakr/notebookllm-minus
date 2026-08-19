@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 from ollama import AsyncClient  # ty: ignore[unresolved-import]
 
 from exceptions import LLMProviderError
@@ -14,11 +16,17 @@ class OllamaChatProvider(LLMChattingInterface):
     rather than an outage.
     """
 
-    def __init__(self, model_id: str, base_url: str, **kwargs) -> None:
+    def __init__(
+        self, model_id: str, base_url: str, thinking: bool | str = False, **kwargs
+    ) -> None:
 
         super().__init__(model_id=model_id, **kwargs)
 
         self.base_url = base_url
+
+        # True, or one of "low"/"medium"/"high" for models that take a level.
+        # Only a request: _open_stream falls back when the model refuses.
+        self.thinking = thinking
 
         self.client = AsyncClient(host=base_url)
 
@@ -56,6 +64,69 @@ class OllamaChatProvider(LLMChattingInterface):
             )
 
         return text
+
+    async def _open_stream(self, messages: list[dict], options: dict, think):
+        """Start the stream, dropping `think` if the model rejects it.
+
+        Whether a model reasons is a property of the model, not of the config,
+        and Ollama errors rather than ignoring the flag. Retrying once without
+        it means switching to a non-reasoning model needs no .env change.
+        """
+        request = {
+            "model": self.model_id,
+            "messages": messages,
+            "stream": True,
+            "options": options,
+        }
+
+        if not think:
+            return await self.client.chat(**request)
+
+        try:
+            return await self.client.chat(think=think, **request)
+
+        except Exception as exc:
+            self.logger.info(
+                "Model %r rejected think=%r (%s); streaming without it",
+                self.model_id,
+                think,
+                str(exc)[:120],
+            )
+            self._thinking_supported = False
+            return await self.client.chat(**request)
+
+    async def _stream_text(
+        self, messages: list[dict], max_tokens: int, temperature: float
+    ) -> AsyncIterator[dict]:
+
+        options = {"num_predict": max_tokens, "temperature": temperature}
+
+        think = self.thinking if getattr(self, "_thinking_supported", True) else False
+
+        try:
+            stream = await self._open_stream(messages, options, think)
+
+            async for part in stream:
+                # Reasoning models fill `thinking` before they fill `content`.
+                # Both are forwarded so the UI can show the scratchpad while
+                # the answer is still being worked out.
+                reasoning = getattr(part.message, "thinking", None)
+                if reasoning:
+                    yield {"kind": "thinking", "text": reasoning}
+
+                # The final part carries the timing totals and an empty
+                # content; skipping empties keeps them out of the answer.
+                if part.message.content:
+                    yield {"kind": "content", "text": part.message.content}
+
+        except Exception as exc:
+            # Raised mid-iteration once the caller has already begun consuming.
+            # Still LLMProviderError, so the route's error frame reports the
+            # same type it would for a non-streaming failure.
+            raise LLMProviderError(
+                f"Ollama streaming failed at {self.base_url}: {exc} "
+                "(is `ollama serve` running, and has the model been pulled?)"
+            ) from exc
 
     async def aclose(self) -> None:
 

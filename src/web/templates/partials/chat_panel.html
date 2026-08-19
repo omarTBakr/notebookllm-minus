@@ -1,0 +1,28 @@
+{# The transcript. Messages are appended by chat.js. #}
+<header class="chat-head">
+  <div class="chat-head__main">
+    <h2 id="chat-title" data-i18n="noChat"></h2>
+    <p class="muted small" id="chat-meta"></p>
+  </div>
+  <span class="badge badge--hidden" id="grounded-badge" data-i18n="grounded"></span>
+</header>
+
+{# Model pickers. Populated from GET /chat/models, so nothing is hardcoded. #}
+<div class="modelbar" id="modelbar" hidden>
+  <label class="modelbar__field">
+    <span class="muted small" data-i18n="chatModel"></span>
+    <select id="model-chat" disabled></select>
+  </label>
+  <label class="modelbar__field">
+    <span class="muted small" data-i18n="embedModel"></span>
+    <select id="model-embed" disabled></select>
+  </label>
+  <span class="muted small" id="model-status"></span>
+</div>
+
+<section class="transcript" id="transcript">
+  <div class="empty" id="empty-state">
+    <p class="empty__title" data-i18n="emptyTitle"></p>
+    <p class="empty__body muted" data-i18n="emptyBody"></p>
+  </div>
+</section>

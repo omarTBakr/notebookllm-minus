@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="app">
+  {% include "partials/sidebar.html" %}
+  <main class="main">
+    {% include "partials/chat_panel.html" %}
+    {% include "partials/composer.html" %}
+  </main>
+</div>
+{% endblock %}

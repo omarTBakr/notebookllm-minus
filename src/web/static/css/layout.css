@@ -1,0 +1,147 @@
+/* Page frame: sidebar + main column. */
+
+.app {
+  display: grid;
+  grid-template-columns: 290px 1fr;
+  height: 100%;
+  /* min-height:0 on a grid child is what actually lets an inner element
+     scroll — without it the child stretches to its content and the scrollbar
+     lands on the page instead. */
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* --- sidebar --- */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  padding: 16px;
+  background: var(--surface);
+  /* Logical border: becomes the left edge under dir="rtl". */
+  border-inline-end: 1px solid var(--border);
+  /* Fixed frame: the header, identity block and footer never move. Only the
+     session list inside it scrolls. */
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.brand { font-size: 1.1rem; letter-spacing: -0.01em; }
+.brand__sub { margin: 2px 0 0; font-size: 0.8rem; color: var(--text-muted); }
+
+.identity {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.identity__who { margin: 0 0 8px; font-size: 0.85rem; }
+.identity__who code { color: var(--accent); }
+.identity__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.identity__actions .btn { font-size: 0.8rem; padding: 4px 10px; }
+
+/* The one scrollable region in the sidebar. */
+.sessions {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sessions__head { flex: none; }
+.sessions__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.sessions__head h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the scrollbar so it never sits on top of the chat titles. */
+  padding-inline-end: 4px;
+}
+
+.session { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.session__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 7px 10px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600;
+}
+.session__head .btn { font-size: 0.75rem; padding: 2px 8px; }
+.session__chats { display: flex; flex-direction: column; }
+
+.chat-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 10px; font-size: 0.86rem; cursor: pointer; background: none;
+  border: 0; border-top: 1px solid var(--border); color: inherit;
+  /* text-align: start, not left — mirrors under RTL. */
+  text-align: start; width: 100%; font-family: inherit;
+}
+.chat-item:hover { background: var(--surface-2); }
+.chat-item.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.chat-item__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar__foot { display: flex; flex-direction: column; gap: 8px; }
+.langswitch { display: flex; gap: 6px; }
+.langswitch .btn { flex: 1; font-size: 0.8rem; padding: 5px; }
+
+/* --- main --- */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gap);
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
+  /* Pinned above the scrolling transcript. */
+  flex: none;
+}
+.chat-head h2 { font-size: 1rem; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+}
+
+/* --- model pickers --------------------------------------------------------
+   Sits between the fixed header and the scrolling transcript, so it stays
+   visible while an answer streams. */
+
+.modelbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 20px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.modelbar__field { display: flex; align-items: center; gap: 6px; }
+
+.modelbar select {
+  font: inherit;
+  font-size: 0.82rem;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 8px;
+  max-width: 220px;
+}
+
+.modelbar select:disabled { opacity: 0.5; }
+
+#model-status { margin-inline-start: auto; }
+
+.chat-head__main { min-width: 0; }

@@ -57,6 +57,23 @@ class AssetNotFoundError(NotFoundError):
     """No asset matches the given asset_id."""
 
 
+class UserNotFoundError(NotFoundError):
+    """No user matches the given user_id.
+
+    Expected rather than exceptional: the browser keeps a user_id in
+    localStorage, and a wiped database leaves it pointing at nothing. The UI
+    treats this as "start as a new user", not as an error to show.
+    """
+
+
+class SessionNotFoundError(NotFoundError):
+    """No session matches the given session_id."""
+
+
+class ChatNotFoundError(NotFoundError):
+    """No chat matches the given chat_id."""
+
+
 class InvalidFileError(InvalidInputError):
     """An upload failed validation (wrong content type, too large)."""
 

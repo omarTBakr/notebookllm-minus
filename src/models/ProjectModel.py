@@ -247,41 +247,8 @@ class ProjectModel(BaseModel):
         async for doc in result:
             yield Project(**doc)
 
-    def get_index(
-        self,
-        keys: list[tuple[str, int]],   # e.g. [("project_id", 1), ("created_at", -1)]
-        unique: bool = False,
-        name: str | None = None,
-    ) -> dict:
-        """Build an index spec dict for create_index.
-        
-        keys: list of (field, direction) tuples — 1=ASC, -1=DESC
-        """
-        auto_name = "_".join(
-            f"{field}_{'asc' if dir == 1 else 'desc'}" for field, dir in keys
-        ) + "_idx"
-
-        return {
-            "key": keys,
-            "name": name or auto_name,
-            "unique": unique,
-        }
-
-    async def create_index(
-        self,
-        keys: list[tuple[str, int]],
-        unique: bool = False,
-        name: str | None = None,
-    ) -> str:
-        index = self.get_index(keys, unique, name)
-        return await self.collection.create_index(index["key"], name=index["name"], unique=index["unique"])
-
     async def get_assets_for_project(self, project_id: str) -> list[ObjectId]:
         result = await self.collection.find_one({"project_id": project_id})
         if not result:
             raise ProjectNotFoundError(f"Project {project_id!r} not found")
         return result["assets_ids"]
-    
-
-    
-    

@@ -1,0 +1,18 @@
+<!doctype html>
+{# lang/dir are rendered server-side so the first paint is already correct;
+   the toggle then switches them live without a reload. #}
+<html lang="{{ lang }}" dir="{{ 'rtl' if lang == 'ar' else 'ltr' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/layout.css">
+  <link rel="stylesheet" href="/static/css/chat.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📓</text></svg>">
+</head>
+<body data-default-lang="{{ lang }}">
+  {% block content %}{% endblock %}
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

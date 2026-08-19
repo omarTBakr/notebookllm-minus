@@ -228,36 +228,6 @@ class ChunkModel(BaseModel):
         )
         return result.deleted_count
 
-    def get_index(
-        self,
-        keys: list[tuple[str, int]],   # e.g. [("project_id", 1), ("created_at", -1)]
-        unique: bool = False,
-        name: str | None = None,
-    ) -> dict:
-        """Build an index spec dict for create_index.
-        
-        keys: list of (field, direction) tuples — 1=ASC, -1=DESC
-        """
-        auto_name = "_".join(
-            f"{field}_{'asc' if dir == 1 else 'desc'}" for field, dir in keys
-        ) + "_idx"
-
-        return {
-            "key": keys,
-            "name": name or auto_name,
-            "unique": unique,
-        }
-
-    async def create_index(
-        self,
-        keys: list[tuple[str, int]],
-        unique: bool = False,
-        name: str | None = None,
-    ) -> str:
-        index = self.get_index(keys, unique, name)
-        return await self.collection.create_index(index["key"], name=index["name"], unique=index["unique"])
-
-
 
 def _batched(items: Sequence[DataChunk], size: int) -> Iterable[Sequence[DataChunk]]:
     for start in range(0, len(items), size):

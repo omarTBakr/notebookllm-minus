@@ -53,11 +53,24 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
 
     GENERATION_MODEL_ID: str
-    GENERATION_DEFAULT_MAX_TOKENS: int = 1024
+    # Generous on purpose: a reasoning model spends this budget on its
+    # scratchpad *before* the answer, so a small cap can be consumed entirely
+    # by thinking and leave the reply truncated or empty.
+    GENERATION_DEFAULT_MAX_TOKENS: int = 4096
     GENERATION_DEFAULT_TEMPERATURE: float = 0.1
+
+    # Ask the model to expose its reasoning. Ollama-only; ignored elsewhere,
+    # and dropped automatically if the model doesn't support it.
+    # true/false, or "low" / "medium" / "high".
+    GENERATION_THINKING: str = "true"
 
     EMBEDDING_MODEL_ID: str
     EMBEDDING_MODEL_SIZE: int  # must match the embedding model, see .env.example
+
+    # chat configurations
+    DEFAULT_LANG: str = "en"          # prompt locale when a chat names none
+    CHAT_HISTORY_LIMIT: int = 10      # prior turns sent as context
+    RETRIEVAL_TOP_K: int = 5          # chunks retrieved per grounded answer
 
     # vector database configurations
     VECTOR_DB_BACKEND: str = "qdrant"
@@ -92,6 +105,20 @@ class Settings(BaseSettings):
         # Deliberately a different set from GENERATION_BACKEND: Anthropic ships
         # no embeddings API, so "anthropic" is rejected here.
         return _normalize_choice(value, LLMEmbeddingProvider, "EMBEDDING_BACKEND")
+
+    @field_validator("DEFAULT_LANG")
+    @classmethod
+    def _normalize_default_lang(cls, value: str) -> str:
+        # Imported here rather than at module scope: templates imports utils
+        # for its logger, so a top-level import would close the cycle.
+        from templates.locales import SUPPORTED_LANGS
+
+        normalized = value.strip().lower()
+        if normalized not in SUPPORTED_LANGS:
+            raise ValueError(
+                f"DEFAULT_LANG must be one of {list(SUPPORTED_LANGS)}, got {value!r}"
+            )
+        return normalized
 
     @field_validator("VECTOR_DB_BACKEND")
     @classmethod

@@ -1,0 +1,102 @@
+/* Tokens, resets and shared atoms. Everything positional uses CSS logical
+   properties (inline-start/end rather than left/right) so switching to
+   dir="rtl" mirrors the whole layout without a second stylesheet. */
+
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f0f0f3;
+  --border: #e2e2e7;
+  --text: #1c1c1f;
+  --text-muted: #6b6b76;
+  --accent: #3b5bdb;
+  --accent-fg: #ffffff;
+  --ok: #2f9e44;
+  --warn: #e8590c;
+  --radius: 10px;
+  --gap: 12px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --surface: #1f1f23;
+    --surface-2: #27272c;
+    --border: #33333a;
+    --text: #ececf1;
+    --text-muted: #9a9aa6;
+    --accent: #7089f5;
+    --accent-fg: #10101a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  /* The page itself never scrolls. Only the transcript does, so the sidebar
+     and the composer stay put while a long answer streams in. */
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; }
+
+code { font-family: var(--mono); font-size: 0.85em; }
+
+.muted { color: var(--text-muted); }
+.small { font-size: 0.82rem; }
+
+/* --- buttons --- */
+
+.btn {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn--primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.btn--ghost { background: transparent; }
+
+.btn--icon {
+  padding: 6px 10px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn--lang.is-active { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+
+/* --- badge --- */
+
+.badge {
+  align-self: center;
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+  white-space: nowrap;
+}
+
+.badge--hidden { display: none; }

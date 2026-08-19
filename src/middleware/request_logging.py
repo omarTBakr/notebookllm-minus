@@ -24,6 +24,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
 
     def __init__(self, app, exclude_paths: tuple[str, ...] = ()):
+        """*exclude_paths* are matched as prefixes, e.g. ("/static",)."""
         super().__init__(app)
         self.exclude_paths = exclude_paths
 
@@ -32,7 +33,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         request_id = request.headers.get(REQUEST_ID_HEADER) or new_request_id()
         token = request_id_ctx.set(request_id)
-        quiet = request.url.path in self.exclude_paths
+        # Prefix, not equality: a static mount serves many paths under one
+        # root, and listing them all would be a losing game.
+        quiet = request.url.path.startswith(self.exclude_paths) if self.exclude_paths else False
 
         if not quiet:
             # DEBUG, not INFO: the completion line below already reports the

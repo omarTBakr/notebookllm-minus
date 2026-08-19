@@ -1,14 +1,31 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from exceptions import NotebookLLMError
-from factories import LLMChattingFactory, LLMEmbeddingFactory, VectorDBFactory
+from factories import ProviderCache, VectorDBFactory
 from middleware import RequestLoggingMiddleware
-from models import AssetModel, ChunkModel, ProjectModel
-from routes import base_router, data_router, nlp_router, process_router
+from models import (
+    AssetModel,
+    ChatModel,
+    ChunkModel,
+    MessageModel,
+    ProjectModel,
+    SessionModel,
+    UserModel,
+)
+from routes import (
+    STATIC_DIR,
+    base_router,
+    chat_router,
+    data_router,
+    nlp_router,
+    process_router,
+    ui_router,
+)
 from utils import get_logger, get_settings, setup_logging
 
 SETTINGS = get_settings()
@@ -55,6 +72,21 @@ async def lifespan(app: FastAPI):
 
     asset_model = AssetModel(app.db)
     await asset_model.create_index([("project_id", 1), ("created_at", -1)])
+
+    # Conversations. The unique ones enforce the id contract; the compound ones
+    # back the sidebar listings and the history read on every message.
+    await UserModel(app.db).create_index([("user_id", 1)], unique=True)
+
+    session_model = SessionModel(app.db)
+    await session_model.create_index([("session_id", 1)], unique=True)
+    await session_model.create_index([("user_id", 1), ("created_at", -1)])
+
+    chat_model = ChatModel(app.db)
+    await chat_model.create_index([("chat_id", 1)], unique=True)
+    await chat_model.create_index([("session_id", 1), ("created_at", -1)])
+
+    await MessageModel(app.db).create_index([("chat_id", 1), ("created_at", 1)])
+
     logger.info("Database indexes ensured")
 
     # startup: build the configured providers. Constructed once here rather
@@ -62,8 +94,11 @@ async def lifespan(app: FastAPI):
     # open. A missing API key or an unknown backend name raises here, so the
     # app refuses to start rather than failing on the first question a user
     # asks.
-    app.generation_client = LLMChattingFactory(SETTINGS).create()
-    app.embedding_client = LLMEmbeddingFactory(SETTINGS).create()
+    # One cache for every model a chat might name, rather than a single client
+    # pinned to .env. The defaults below are just its first two entries.
+    app.providers = ProviderCache(SETTINGS)
+    app.generation_client = app.providers.chatting()
+    app.embedding_client = app.providers.embedding()
     app.vectordb_client = VectorDBFactory(SETTINGS).create()
     await app.vectordb_client.connect()
     logger.info(
@@ -83,8 +118,7 @@ async def lifespan(app: FastAPI):
 
     for name, close in (
         ("vector database", app.vectordb_client.disconnect),
-        ("embedding client", app.embedding_client.aclose),
-        ("generation client", app.generation_client.aclose),
+        ("provider clients", app.providers.aclose_all),
     ):
         try:
             await close()
@@ -98,7 +132,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NotebookLLM-minus", lifespan=lifespan)
 
-app.add_middleware(RequestLoggingMiddleware)
+# /static is excluded by prefix: a page load fetches many assets and each one
+# would otherwise get its own INFO line, burying the requests that matter.
+app.add_middleware(RequestLoggingMiddleware, exclude_paths=("/static",))
 
 
 @app.exception_handler(NotebookLLMError)
@@ -134,3 +170,9 @@ app.include_router(base_router)
 app.include_router(data_router)
 app.include_router(process_router)
 app.include_router(nlp_router)
+app.include_router(chat_router)
+
+# The UI last: its "/" route must not shadow an API prefix, and StaticFiles
+# serves the css/js the Jinja page links to.
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.include_router(ui_router)

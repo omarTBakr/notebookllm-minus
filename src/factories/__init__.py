@@ -6,11 +6,13 @@ Nothing above this package names a vendor, so changing provider is an ``.env``
 edit rather than a code change.
 """
 
+from .provider_cache import ProviderCache
 from .llmchatting import LLMChattingFactory, LLMChattingInterface
 from .llmembedding import LLMEmbeddingFactory, LLMEmbeddingInterface
 from .vectordb import VectorDBFactory, VectorDBInterface
 
 __all__ = [
+    "ProviderCache",
     "LLMChattingFactory",
     "LLMChattingInterface",
     "LLMEmbeddingFactory",

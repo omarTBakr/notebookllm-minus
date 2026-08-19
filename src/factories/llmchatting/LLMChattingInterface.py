@@ -7,6 +7,7 @@ Anthropic for Cohere should be an ``.env`` edit, not a rewrite.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from time import perf_counter
 
 from enums import ChatRole
@@ -115,6 +116,100 @@ class LLMChattingInterface(ABC):
         role/content format including the new user turn; translating it and the
         response is the provider's whole job.
         """
+
+    async def stream_text(
+        self,
+        prompt: str,
+        chat_history: list[dict] | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> AsyncIterator[dict]:
+        """Answer *prompt*, yielding the text in pieces as it arrives.
+
+        Same contract as generate_text — the concatenation of everything
+        yielded is the answer — but the caller can show it as it lands instead
+        of waiting for the whole thing.
+
+        Yields ``{"kind": "thinking" | "content", "text": str}``. Reasoning
+        models emit their scratchpad first; concatenating only the ``content``
+        pieces gives the same string ``generate_text`` would have returned.
+
+        **Not every backend truly streams.** Providers that do override
+        :meth:`_stream_text`; the rest fall back to generating the full answer
+        and yielding it as one piece, so this endpoint works for all of them
+        and only the latency differs. Today Ollama streams and the four hosted
+        providers do not.
+        """
+        messages = self._build_messages(prompt, chat_history)
+
+        resolved_max_tokens = max_tokens or self.default_max_tokens
+
+        resolved_temperature = (
+            temperature if temperature is not None else self.default_temperature
+        )
+
+        self.logger.debug(
+            "Streaming text (model=%s, messages=%d, max_tokens=%d, temperature=%s)",
+            self.model_id,
+            len(messages),
+            resolved_max_tokens,
+            resolved_temperature,
+            extra={"provider": type(self).__name__, "model_id": self.model_id},
+        )
+
+        started = perf_counter()
+
+        chars = 0
+        chunks = 0
+        thinking_chars = 0
+
+        async for piece in self._stream_text(
+            messages, resolved_max_tokens, resolved_temperature
+        ):
+            if piece["kind"] == "thinking":
+                thinking_chars += len(piece["text"])
+            else:
+                chars += len(piece["text"])
+                chunks += 1
+
+            yield piece
+
+        elapsed_ms = (perf_counter() - started) * 1000
+
+        # chunk count is the tell for whether this actually streamed: a
+        # fallback provider reports exactly 1.
+        self.logger.info(
+            "Streamed %d chars (+%d thinking) in %d chunk(s) over %.0f ms (provider=%s, model=%s)",
+            chars,
+            thinking_chars,
+            chunks,
+            elapsed_ms,
+            type(self).__name__,
+            self.model_id,
+            extra={
+                "provider": type(self).__name__,
+                "model_id": self.model_id,
+                "duration_ms": round(elapsed_ms, 1),
+                "response_chars": chars,
+                "thinking_chars": thinking_chars,
+                "stream_chunks": chunks,
+            },
+        )
+
+    async def _stream_text(
+        self, messages: list[dict], max_tokens: int, temperature: float
+    ) -> AsyncIterator[dict]:
+        """Vendor-specific streaming, defaulting to "no streaming at all".
+
+        Concrete rather than abstract so a provider only implements this when
+        its SDK supports it. The default generates the whole answer and yields
+        it once, which is correct — just not incremental, and never with
+        thinking.
+        """
+        yield {
+            "kind": "content",
+            "text": await self._generate_text(messages, max_tokens, temperature),
+        }
 
     @abstractmethod
     async def aclose(self) -> None:

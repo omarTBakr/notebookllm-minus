@@ -10,6 +10,23 @@ from .OllamaChatProvider import OllamaChatProvider
 from .OpenAIChatProvider import OpenAIChatProvider
 
 
+def _thinking_flag(value: str) -> bool | str:
+    """Turn the GENERATION_THINKING setting into what the SDK expects.
+
+    "true"/"false" become booleans; "low"/"medium"/"high" pass through as the
+    level string those models accept.
+    """
+    normalized = str(value).strip().lower()
+
+    if normalized in ("true", "1", "yes", "on"):
+        return True
+
+    if normalized in ("false", "0", "no", "off", ""):
+        return False
+
+    return normalized
+
+
 class LLMChattingFactory:
     """Builds the configured text-generation provider from ``Settings``.
 
@@ -64,6 +81,7 @@ class LLMChattingFactory:
         if chosen is LLMChattingProvider.OLLAMA:
             # Local: a host to reach, no key to check.
             kwargs["base_url"] = self.settings.OLLAMA_BASE_URL
+            kwargs["thinking"] = _thinking_flag(self.settings.GENERATION_THINKING)
         else:
             api_key = getattr(self.settings, self._API_KEY_FIELDS[chosen])
             if not api_key:

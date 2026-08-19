@@ -6,3 +6,8 @@ class DatabaseCollection(str, Enum):
     DATA_CHUNKS = "data_chunks"
     ASSETS = "assets"
 
+    # --- conversations ---
+    USERS = "users"
+    SESSIONS = "sessions"
+    CHATS = "chats"
+    MESSAGES = "messages"

@@ -1,6 +1,15 @@
+from .ChatController import ChatController
 from .DataController import DataController
 from .FileController import FileController
+from .ModelController import ModelController
 from .NLPController import NLPController
 from .ProcessController import ProcessController
 
-__all__ = ["DataController", "FileController", "NLPController", "ProcessController"]
+__all__ = [
+    "ChatController",
+    "DataController",
+    "FileController",
+    "ModelController",
+    "NLPController",
+    "ProcessController",
+]
