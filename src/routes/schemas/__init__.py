@@ -1,3 +1,4 @@
-from .process_request import ProcessRequest 
-from .file_extensions import FileExtension
-__all__ = ['ProcessRequest', 'FileExtension']
+from .process_request import ProcessRequest
+from .nlp_request import PushRequest, SearchRequest
+
+__all__ = ["ProcessRequest", "PushRequest", "SearchRequest"]

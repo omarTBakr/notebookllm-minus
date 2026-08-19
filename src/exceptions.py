@@ -79,3 +79,37 @@ class ChunkingError(ProcessingError):
     """The text splitter rejected the document or its parameters."""
 
 
+# --- LLM & vector store -----------------------------------------------------
+
+
+class LLMProviderError(NotebookLLMError):
+    """An upstream LLM vendor failed, timed out, or returned nothing usable.
+
+    502 rather than 500: the fault is with a service we depend on, not with
+    this application, and the distinction matters when reading logs.
+    """
+
+    status_code = 502
+
+
+class VectorDBError(NotebookLLMError):
+    """The vector store is unreachable or rejected the operation.
+
+    The vector-store counterpart of StorageError, and 503 for the same reason.
+    """
+
+    status_code = 503
+
+
+class UnsupportedProviderError(InvalidInputError):
+    """A factory was asked for a backend it has no implementation for.
+
+    Also raised when the named backend exists but its API key is missing —
+    from the factory's point of view it cannot be built either way.
+    """
+
+
+class EmbeddingError(ProcessingError):
+    """Turning chunks into vectors failed, or returned the wrong number."""
+
+

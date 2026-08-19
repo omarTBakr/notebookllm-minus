@@ -5,9 +5,10 @@ from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from exceptions import NotebookLLMError
+from factories import LLMChattingFactory, LLMEmbeddingFactory, VectorDBFactory
 from middleware import RequestLoggingMiddleware
 from models import AssetModel, ChunkModel, ProjectModel
-from routes import base_router, data_router, process_router
+from routes import base_router, data_router, nlp_router, process_router
 from utils import get_logger, get_settings, setup_logging
 
 SETTINGS = get_settings()
@@ -44,15 +45,54 @@ async def lifespan(app: FastAPI):
     # Backs the per-asset skip check and the per-asset reset delete, both of
     # which run once per asset on every /process call.
     await chunk_model.create_index([("project_id", 1), ("asset_id", 1)])
-    logger.info("Database indexes ensured")
+    # Backs iter_project_chunks' (asset_id, chunk_order) sort. Without it Mongo
+    # sorts the matched documents in memory — chunk_content included — and a
+    # project over ~32 MB of text fails the blocking-sort limit outright, i.e.
+    # exactly the large projects /nlp/index/push exists to handle.
+    await chunk_model.create_index(
+        [("project_id", 1), ("asset_id", 1), ("chunk_order", 1)]
+    )
 
     asset_model = AssetModel(app.db)
     await asset_model.create_index([("project_id", 1), ("created_at", -1)])
     logger.info("Database indexes ensured")
+
+    # startup: build the configured providers. Constructed once here rather
+    # than per request — each one owns an HTTP connection pool worth keeping
+    # open. A missing API key or an unknown backend name raises here, so the
+    # app refuses to start rather than failing on the first question a user
+    # asks.
+    app.generation_client = LLMChattingFactory(SETTINGS).create()
+    app.embedding_client = LLMEmbeddingFactory(SETTINGS).create()
+    app.vectordb_client = VectorDBFactory(SETTINGS).create()
+    await app.vectordb_client.connect()
+    logger.info(
+        "Providers ready (generation=%s, embedding=%s, vectordb=%s)",
+        SETTINGS.GENERATION_BACKEND,
+        SETTINGS.EMBEDDING_BACKEND,
+        SETTINGS.VECTOR_DB_BACKEND,
+    )
+
     yield
 
-    # shutdown: close MongoDB connection
+    # shutdown: release the provider pools, then the MongoDB connection.
+    # Each close is isolated: disconnect() raises VectorDBError on any failure,
+    # and letting that propagate would skip every close after it — turning one
+    # unclosable pool into four leaked ones and a clean SIGTERM into an error.
     logger.info("Shutting down %s", SETTINGS.APPLICATION_NAME)
+
+    for name, close in (
+        ("vector database", app.vectordb_client.disconnect),
+        ("embedding client", app.embedding_client.aclose),
+        ("generation client", app.generation_client.aclose),
+    ):
+        try:
+            await close()
+        except Exception as exc:
+            # Shutdown is the one place a failure has nowhere left to propagate
+            # to, so it is logged here rather than raised.
+            logger.warning("Could not close the %s cleanly: %s", name, exc)
+
     app.client.close()
 
 
@@ -93,3 +133,4 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 app.include_router(base_router)
 app.include_router(data_router)
 app.include_router(process_router)
+app.include_router(nlp_router)

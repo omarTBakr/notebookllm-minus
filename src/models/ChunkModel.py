@@ -30,21 +30,6 @@ class ChunkModel(BaseModel):
     def __init__(self, db: AsyncIOMotorClient):
         super().__init__(db, DatabaseCollection.DATA_CHUNKS)
 
-    async def ensure_indexes(self) -> None:
-        """Create the indexes the read and delete paths rely on.
-
-        Not called automatically — run it once at startup, not per request.
-        """
-        try:
-            await self.collection.create_index(
-                [("project_id", ASCENDING), ("chunk_order", ASCENDING)],
-                name="project_id_chunk_order",
-            )
-        except PyMongoError as exc:
-            raise StorageError("Could not create chunk indexes") from exc
-
-        self.logger.info("Ensured indexes on %s", DatabaseCollection.DATA_CHUNKS.value)
-
     async def create_chunk(self, chunk: DataChunk) -> ObjectId:
         """Insert a single chunk and return its _id."""
         try:
@@ -75,7 +60,7 @@ class ChunkModel(BaseModel):
         Batches are unordered so one rejected document doesn't abandon the rest
         of its batch. A failure part-way through still leaves earlier batches
         written — callers that need all-or-nothing should follow a StorageError
-        with ``delete_chunks_by_project`` before retrying.
+        with ``delete_project_chunks`` before retrying.
         """
         if not chunks:
             self.logger.debug("create_chunks called with nothing to insert")
@@ -121,9 +106,55 @@ class ChunkModel(BaseModel):
         except PyMongoError as exc:
             raise StorageError(f"Could not read chunks for project {project_id}") from exc
 
-    async def count_project_chunks(self, project_id: ObjectId) -> int:
+    async def iter_project_chunks(
+        self, project_id: ObjectId, asset_id: str | None = None
+    ) -> AsyncIterator[DataChunk]:
+        """Yield *every* chunk of a project, or of one asset within it.
+
+        Unpaginated on purpose, and the counterpart to
+        ``AssetModel.iter_project_assets``: ``get_project_chunks`` returns a
+        single page, so indexing a project through it would silently stop at
+        ``page_size``. A single cursor also avoids ``.skip()``, which grows
+        slower per page and can drop or repeat rows if writes land mid-run.
+
+        Sorted by ``(asset_id, chunk_order)`` — ``chunk_order`` restarts at 0
+        for each document, so ordering on it alone interleaves two sources.
+        """
+        query: dict = {"project_id": project_id}
+        if asset_id is not None:
+            query["asset_id"] = asset_id
+
+        # find() builds a cursor synchronously — do NOT await it.
+        cursor = self.collection.find(query).sort(
+            [("asset_id", ASCENDING), ("chunk_order", ASCENDING)]
+        )
+
         try:
-            return await self.collection.count_documents({"project_id": project_id})
+            async for document in cursor:
+                yield DataChunk(**document)
+        except PyMongoError as exc:
+            raise StorageError(
+                f"Could not read chunks for project {project_id}"
+            ) from exc
+
+        self.logger.debug(
+            "Fetched every chunk for project %s (asset_id=%r)", project_id, asset_id
+        )
+
+    async def count_project_chunks(
+        self, project_id: ObjectId, asset_id: str | None = None
+    ) -> int:
+        """Chunks in a project, or in one asset of it.
+
+        The optional narrowing exists so callers that act on a single asset can
+        count the same scope they are about to act on.
+        """
+        query: dict = {"project_id": project_id}
+        if asset_id is not None:
+            query["asset_id"] = asset_id
+
+        try:
+            return await self.collection.count_documents(query)
         except PyMongoError as exc:
             raise StorageError(
                 f"Could not count chunks for project {project_id}"

@@ -5,10 +5,9 @@ from langchain_core.documents import Document  # ty: ignore[unresolved-import]
 from langchain_community.document_loaders import TextLoader, PyPDFLoader # ty: ignore[unresolved-import]
 from langchain_text_splitters import RecursiveCharacterTextSplitter # ty: ignore[unresolved-import]
 
-from enums import ProcessStatus
+from enums import FileExtension, ProcessStatus
 from exceptions import ChunkingError, ExtractionError, UnsupportedFileTypeError
 from .BaseController import BaseController
-from routes.schemas import FileExtension 
 
 class ProcessController(BaseController):
     def __init__(self, chunk_size=1000, chunk_overlap=200):

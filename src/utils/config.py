@@ -1,8 +1,29 @@
+from functools import lru_cache
 from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from enums import (
+    DistanceMethod,
+    LLMChattingProvider,
+    LLMEmbeddingProvider,
+    VectorDBProvider,
+)
+
 SRC_DIR = Path(__file__).parent.parent
+
+
+def _normalize_choice(value: str, choices: type, field_name: str) -> str:
+    """Lowercase *value* and check it names a member of the *choices* enum.
+
+    Same shape as _normalize_log_level below, factored out because four
+    provider fields need it and each one names a different enum.
+    """
+    normalized = value.strip().lower()
+    allowed = [member.value for member in choices]
+    if normalized not in allowed:
+        raise ValueError(f"{field_name} must be one of {allowed}, got {value!r}")
+    return normalized
 
 
 class Settings(BaseSettings):
@@ -19,6 +40,32 @@ class Settings(BaseSettings):
     MONGO_URI: str
     MONGO_DB_NAME: str
 
+    # llm provider configurations
+    GENERATION_BACKEND: str  # one of LLMChattingProvider
+    EMBEDDING_BACKEND: str   # one of LLMEmbeddingProvider
+
+    ANTHROPIC_API_KEY: str | None = None
+    OPENAI_API_KEY: str | None = None
+    OPENAI_API_BASE_URL: str | None = None  # for OpenAI-compatible endpoints
+    GOOGLE_API_KEY: str | None = None
+    COHERE_API_KEY: str | None = None
+    # Ollama is local and takes no key — a reachable host is the whole config.
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+
+    GENERATION_MODEL_ID: str
+    GENERATION_DEFAULT_MAX_TOKENS: int = 1024
+    GENERATION_DEFAULT_TEMPERATURE: float = 0.1
+
+    EMBEDDING_MODEL_ID: str
+    EMBEDDING_MODEL_SIZE: int  # must match the embedding model, see .env.example
+
+    # vector database configurations
+    VECTOR_DB_BACKEND: str = "qdrant"
+    VECTOR_DB_PATH: str = "assets/qdrant_db"  # embedded mode; relative resolves against src/
+    VECTOR_DB_URL: str | None = None   # set to use a server instead of VECTOR_DB_PATH
+    VECTOR_DB_API_KEY: str | None = None
+    VECTOR_DB_DISTANCE_METHOD: str = "cosine"
+
     # logging configurations
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "text"  # "text" for humans, "json" for log aggregators
@@ -28,6 +75,33 @@ class Settings(BaseSettings):
     LOG_FILE_NAME: str = "notebookllm-minus.log"
     LOG_MAX_BYTES: int = 10485760  # 10 MB per file before rotating
     LOG_BACKUP_COUNT: int = 5
+
+
+
+
+
+
+    @field_validator("GENERATION_BACKEND")
+    @classmethod
+    def _normalize_generation_backend(cls, value: str) -> str:
+        return _normalize_choice(value, LLMChattingProvider, "GENERATION_BACKEND")
+
+    @field_validator("EMBEDDING_BACKEND")
+    @classmethod
+    def _normalize_embedding_backend(cls, value: str) -> str:
+        # Deliberately a different set from GENERATION_BACKEND: Anthropic ships
+        # no embeddings API, so "anthropic" is rejected here.
+        return _normalize_choice(value, LLMEmbeddingProvider, "EMBEDDING_BACKEND")
+
+    @field_validator("VECTOR_DB_BACKEND")
+    @classmethod
+    def _normalize_vector_db_backend(cls, value: str) -> str:
+        return _normalize_choice(value, VectorDBProvider, "VECTOR_DB_BACKEND")
+
+    @field_validator("VECTOR_DB_DISTANCE_METHOD")
+    @classmethod
+    def _normalize_distance_method(cls, value: str) -> str:
+        return _normalize_choice(value, DistanceMethod, "VECTOR_DB_DISTANCE_METHOD")
 
     @field_validator("LOG_LEVEL")
     @classmethod
@@ -54,11 +128,31 @@ class Settings(BaseSettings):
             log_dir = SRC_DIR / log_dir
         return log_dir / self.LOG_FILE_NAME
 
+    @property
+    def vector_db_path(self) -> Path:
+        """Absolute path of the embedded vector store, anchored to src/.
+
+        Same treatment as log_file_path, and for the same reason: the app is
+        launched from src/ but need not be, and the store must not follow CWD.
+        """
+        db_path = Path(self.VECTOR_DB_PATH)
+        if not db_path.is_absolute():
+            db_path = SRC_DIR / db_path
+        return db_path
+
     model_config = SettingsConfigDict(
         env_file=SRC_DIR / ".env",  # resolves to src/.env regardless of CWD
         case_sensitive=False,
         extra="ignore"
     )
 
+@lru_cache
 def get_settings() -> Settings:
+    """The one Settings instance for this process.
+
+    Cached because it is a FastAPI ``Depends`` — without this, every request
+    touching it re-reads .env and re-runs every validator. The consequence is
+    that .env edits need a restart, which was already true in practice since
+    main.py captures SETTINGS at import time.
+    """
     return Settings()
