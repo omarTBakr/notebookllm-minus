@@ -1,0 +1,310 @@
+"""An in-memory DbProvider.
+
+`models/__init__.py` is a thin adapter — `AssetModel(db)` is literally
+`db.assets()` — and every route reaches storage through `request.app.db`.
+So one fake provider with eight accessors covers the whole route layer, with
+no patching and no mongomock.
+
+Repositories here store pydantic models in dicts and raise the same typed
+errors the real ones do, because the status code a route returns is derived
+from the exception class.
+"""
+
+from exceptions import (
+    AssetNotFoundError,
+    ChatNotFoundError,
+    ProjectNotFoundError,
+    SessionNotFoundError,
+    UserNotFoundError,
+)
+
+
+class _Store:
+    """Shared plumbing: a dict keyed by the model's business id."""
+
+    key: str = ""
+    missing: type[Exception] = KeyError
+
+    def __init__(self):
+        self.items: dict[str, object] = {}
+
+    def _get(self, ident: str):
+        try:
+            return self.items[ident]
+        except KeyError:
+            raise self.missing(f"{ident!r} not found") from None
+
+    def _patch(self, ident: str, **changes):
+        item = self._get(ident)
+        for field, value in changes.items():
+            if value is not None:
+                setattr(item, field, value)
+        return item
+
+
+class FakeUserRepository(_Store):
+    missing = UserNotFoundError
+
+    async def create_user(self, user):
+        self.items[user.user_id] = user
+        return str(user.id)
+
+    async def get_user(self, user_id):
+        return self._get(user_id)
+
+    async def rename(self, user_id, label):
+        self._patch(user_id, label=label)
+
+    async def count_users(self):
+        return len(self.items)
+
+    async def iter_users(self):
+        for user in list(self.items.values()):
+            yield user
+
+
+class FakeSessionRepository(_Store):
+    missing = SessionNotFoundError
+
+    async def create_session(self, session):
+        self.items[session.session_id] = session
+        return str(session.id)
+
+    async def get_session(self, session_id):
+        return self._get(session_id)
+
+    async def iter_user_sessions(self, user_id):
+        for s in list(self.items.values()):
+            if s.user_id == user_id:
+                yield s
+
+
+class FakeChatRepository(_Store):
+    missing = ChatNotFoundError
+
+    async def create_chat(self, chat):
+        self.items[chat.chat_id] = chat
+        return str(chat.id)
+
+    async def get_chat(self, chat_id):
+        return self._get(chat_id)
+
+    async def rename(self, chat_id, title):
+        self._patch(chat_id, title=title)
+
+    async def set_has_documents(self, chat_id, value):
+        self._patch(chat_id, has_documents=value)
+
+    async def set_models(self, chat_id, generation_model=None, embedding_model=None,
+                         embedding_dimensions=None):
+        self._patch(chat_id, generation_model=generation_model,
+                    embedding_model=embedding_model,
+                    embedding_dimensions=embedding_dimensions)
+
+    async def set_settings(self, chat_id, changes):
+        self._patch(chat_id, **changes)
+
+    async def iter_user_chats(self, user_id):
+        for c in list(self.items.values()):
+            if c.user_id == user_id:
+                yield c
+
+    async def iter_session_chats(self, session_id):
+        for c in list(self.items.values()):
+            if c.session_id == session_id:
+                yield c
+
+
+class FakeMessageRepository:
+    def __init__(self):
+        self.items: list = []
+
+    async def create_message(self, message):
+        self.items.append(message)
+        return str(message.id)
+
+    async def iter_chat_messages(self, chat_id):
+        for m in [m for m in self.items if m.chat_id == chat_id]:
+            yield m
+
+    async def get_recent_history(self, chat_id, limit):
+        turns = [m for m in self.items if m.chat_id == chat_id]
+        return [{"role": m.role.value, "content": m.content} for m in turns[-limit:]]
+
+
+class FakeProjectRepository(_Store):
+    missing = ProjectNotFoundError
+
+    async def create_project(self, project):
+        self.items[project.project_id] = project
+        return str(project.id)
+
+    async def update_project(self, project):
+        """Upsert, returning the row's ObjectId — what DataChunk.project_id is."""
+        self.items.setdefault(project.project_id, project)
+        return self.items[project.project_id].id
+
+    async def get_project(self, project_id):
+        return self._get(project_id)
+
+    async def rename(self, project_id, name):
+        self._patch(project_id, name=name)
+
+    async def add_asset_id(self, project_id, asset_object_id):
+        self._get(project_id).assets_ids.append(asset_object_id)
+
+    async def add_chunk_ids(self, project_id, chunk_object_ids):
+        self._get(project_id).chunks_ids.extend(chunk_object_ids)
+
+
+class FakeAssetRepository(_Store):
+    missing = AssetNotFoundError
+
+    async def create_asset(self, asset):
+        self.items[asset.asset_id] = asset
+        return str(asset.id)
+
+    async def update_asset(self, asset):
+        self.items[asset.asset_id] = asset
+        return str(asset.id)
+
+    async def get_asset(self, asset_id):
+        return self._get(asset_id)
+
+    async def rename(self, asset_id, name):
+        self._patch(asset_id, name=name)
+
+    async def iter_assets_for_projects(self, project_ids):
+        wanted = set(project_ids)
+        for a in list(self.items.values()):
+            if a.project_id in wanted:
+                yield a
+
+    async def delete_assets_for_project(self, project_id):
+        gone = [k for k, a in self.items.items() if a.project_id == project_id]
+        for k in gone:
+            del self.items[k]
+        return len(gone)
+
+
+class FakeChunkRepository:
+    def __init__(self):
+        self.items: list = []
+
+    async def create_chunks(self, chunks):
+        self.items.extend(chunks)
+        return [str(c.id) for c in chunks]
+
+    async def iter_chunks(self, asset_id):
+        for c in [c for c in self.items if c.asset_id == asset_id]:
+            yield c
+
+    async def iter_project_chunks(self, project_id, asset_id=None):
+        for c in self.items:
+            if str(c.project_id) != str(project_id):
+                continue
+            if asset_id is not None and c.asset_id != asset_id:
+                continue
+            yield c
+
+    async def count_project_chunks(self, project_id):
+        return sum(1 for c in self.items if str(c.project_id) == str(project_id))
+
+    async def has_asset_chunks(self, asset_id):
+        return any(c.asset_id == asset_id for c in self.items)
+
+    async def delete_chunks_for_project(self, project_id):
+        before = len(self.items)
+        self.items = [c for c in self.items if str(c.project_id) != str(project_id)]
+        return before - len(self.items)
+
+    async def delete_chunks_for_asset(self, asset_id):
+        before = len(self.items)
+        self.items = [c for c in self.items if c.asset_id != asset_id]
+        return before - len(self.items)
+
+
+class FakeVectorRepository:
+    """Records what was indexed; search returns whatever was staged."""
+
+    def __init__(self, hits=None):
+        self.collections: dict[str, dict] = {}
+        self.points: dict[str, list[dict]] = {}
+        self.hits = hits if hits is not None else []
+        self.searched: list[dict] = []
+
+    async def collection_exists(self, collection_name):
+        return collection_name in self.collections
+
+    async def list_collections(self):
+        return list(self.collections)
+
+    async def get_collection_info(self, collection_name):
+        return {"name": collection_name, "points_count": len(self.points.get(collection_name, []))}
+
+    async def create_collection(self, collection_name, embedding_size, reset=False):
+        existed = collection_name in self.collections
+        if reset or not existed:
+            self.collections[collection_name] = {"embedding_size": embedding_size}
+            self.points[collection_name] = []
+        return not existed or reset
+
+    async def delete_collection(self, collection_name):
+        return self.collections.pop(collection_name, None) is not None
+
+    async def insert_many(self, collection_name, texts, vectors, metadata=None,
+                          record_ids=None, batch_size=64):
+        rows = self.points.setdefault(collection_name, [])
+        for i, text in enumerate(texts):
+            rows.append({
+                "id": record_ids[i] if record_ids else str(i),
+                "text": text,
+                "vector": vectors[i],
+                "metadata": (metadata or [{}] * len(texts))[i],
+            })
+        return True
+
+    async def delete_by_metadata(self, collection_name, key, value):
+        rows = self.points.get(collection_name, [])
+        keep = [r for r in rows if (r["metadata"] or {}).get(key) != value]
+        removed = len(rows) - len(keep)
+        self.points[collection_name] = keep
+        return removed
+
+    async def search_by_vector(self, collection_name, vector, limit=5, asset_ids=None):
+        self.searched.append({"collection": collection_name, "limit": limit,
+                              "asset_ids": asset_ids})
+        return self.hits[:limit]
+
+
+class FakeDb:
+    """A DbProvider built from the repositories above."""
+
+    def __init__(self, hits=None):
+        self._users = FakeUserRepository()
+        self._sessions = FakeSessionRepository()
+        self._chats = FakeChatRepository()
+        self._messages = FakeMessageRepository()
+        self._projects = FakeProjectRepository()
+        self._assets = FakeAssetRepository()
+        self._chunks = FakeChunkRepository()
+        self._vectors = FakeVectorRepository(hits=hits)
+        self.connected = False
+
+    async def connect(self):
+        self.connected = True
+
+    async def disconnect(self):
+        self.connected = False
+
+    async def setup_indexes(self):
+        return None
+
+    def users(self):    return self._users
+    def sessions(self): return self._sessions
+    def chats(self):    return self._chats
+    def messages(self): return self._messages
+    def projects(self): return self._projects
+    def assets(self):   return self._assets
+    def chunks(self):   return self._chunks
+    def vectors(self):  return self._vectors

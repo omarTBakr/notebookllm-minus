@@ -27,9 +27,25 @@ services:
     networks:
       - backend
 
+  pgvector:
+    image: pgvector/pgvector:0.8.6-pg18-trixie
+    container_name: pgvector-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASS}
+      POSTGRES_DB: ${POSTGRES_MAIN_DB}
+    ports:
+      - "5400:5432"
+    volumes:
+      - pgvector:/var/lib/postgresql
+    networks:
+      - backend
+
 # Declares the persistent storage bucket
 volumes:
   mongodb:
+  pgvector:
 
 networks:
   backend:

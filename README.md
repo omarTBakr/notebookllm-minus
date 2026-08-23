@@ -75,14 +75,22 @@ are picked from whatever Ollama has installed rather than pinned in code.
   that collapses the moment the answer starts. The reasoning is displayed, not stored.
 - **Prompts in English and Arabic** under `templates/locales/<lang>/`, one file per feature.
 - **Web UI** at `/` — Jinja templates plus ES modules, no build step. Markdown renders live as
-  it streams, and the language toggle flips the whole layout to RTL.
+  it streams. The language toggle switches the words and the text direction; the layout stays
+  put, with the sidebar on the right in both languages.
 - **Models chosen at runtime** from whatever Ollama has pulled, per chat. Switching a chat's
   embedding model re-indexes its documents automatically.
+- **Per-chat tuning** in the sidebar — temperature, output length, and an advanced panel for
+  chunk size and overlap.
+- **Artifacts drawer** listing every document a user has uploaded, across chats.
+- **Named profiles** in a top-left picker — no login, just "who am I".
 
 ### Not yet implemented
 
 - Highlighting the exact sentence a citation came from — chunks carry `asset_id` and
   `chunk_order`, so the anchor exists; nothing renders it yet.
+- **Grounding with web search.** The toggle exists, is stored per chat and is shown in the
+  UI marked *soon*, but no search backend is wired behind it; answers today are grounded only
+  in uploaded documents.
 - Anything past `.pdf` and `.txt`, though `AssetType` and `FileExtension` already enumerate
   the formats to come.
 
@@ -387,8 +395,9 @@ src/
 │   ├── template_parser.py
 │   └── locales/{en,ar}/        # rag.py + chat.py — one file per feature
 ├── web/                        # user-facing UI
-│   ├── templates/              # base.html, index.html, partials/
-│   └── static/{css,js}/        # 3 stylesheets, 7 ES modules, no build step
+│   ├── templates/              # base.html + partials/ (identity, sessions,
+│   │                           #   settings, chat_panel, composer, artifacts)
+│   └── static/{css,js}/        # 4 stylesheets, 8 ES modules, no build step
 ├── enums/                      # FileStatus, ProcessStatus, AssetType, DatabaseCollection,
 │                               # LLMChattingProvider, LLMEmbeddingProvider, VectorDBProvider
 ├── utils/
@@ -765,12 +774,16 @@ than an empty result set that looks like a bad query.
 
 ### Chat: users, sessions and answers
 
-No sign-in. `POST /chat/users` mints an opaque id the browser keeps in `localStorage`;
-"current user" reuses it. It scopes conversations, it does not prove anything.
+No sign-in. `POST /chat/users` mints an opaque id the browser keeps in `localStorage`, and
+the top-left menu lists every profile so you can switch between them. Profiles carry a
+**name** — an id prefix tells you nothing about which one is yours — auto-generated as
+`User N` when you don't supply one. It scopes conversations; it does not prove anything.
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
-| `POST` | `/chat/users` | Mint a user |
+| `POST` | `/chat/users` | Mint a profile (auto-named `User N` if unnamed) |
+| `GET` | `/chat/users` | List every profile on this install |
+| `PATCH` | `/chat/users/{user_id}` | Rename a profile |
 | `GET` | `/chat/users/{user_id}` | Confirm a returning user (404 → start fresh) |
 | `POST` | `/chat/users/{user_id}/sessions` | New session |
 | `GET` | `/chat/users/{user_id}/sessions` | List sessions |
@@ -780,6 +793,8 @@ No sign-in. `POST /chat/users` mints an opaque id the browser keeps in `localSto
 | `GET` | `/chat/chats/{chat_id}/messages` | Full history |
 | `POST` | `/chat/chats/{chat_id}/documents` | Upload → chunk → index, one call |
 | `PATCH` | `/chat/chats/{chat_id}/models` | Switch this chat's models |
+| `PATCH` | `/chat/chats/{chat_id}/settings` | Temperature, output length, splitter, web grounding |
+| `GET` | `/chat/users/{user_id}/assets` | Every document this user uploaded |
 | `POST` | `/chat/chats/{chat_id}/message` | **SSE** — the answer |
 | `GET` | `/chat/models` | Installed models, split by capability |
 
@@ -826,6 +841,44 @@ curl -X PATCH localhost:8000/chat/chats/$CHAT/models \
 Changing the **embedding** model rebuilds that chat's collection at the new width and
 re-embeds its chunks from MongoDB — reported back as `reindexed_chunks`. A model that cannot
 embed is refused with a 400 rather than accepted and failed later.
+
+#### Per-chat settings
+
+Every knob is per chat, and `null` means "follow `.env`" — so an untuned chat tracks the
+global default instead of freezing a copy of whatever it was at creation.
+
+```bash
+curl -X PATCH localhost:8000/chat/chats/$CHAT/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"temperature": 0.9, "max_tokens": 2048, "chunk_size": 300, "overlap_size": 40}'
+```
+
+| Field | Range | Applies to |
+| ----- | ----- | ---------- |
+| `temperature` | 0 – 2 | The next answer |
+| `max_tokens` | 64 – 32768 | The next answer (**reasoning spends this too**) |
+| `chunk_size` | 100 – 8000 | Documents attached **after** the change |
+| `overlap_size` | 0 – 2000 | Same — existing chunks are not re-split |
+| `web_search` | bool | Stored and surfaced; **no retrieval backend yet** |
+
+Only the fields sent are written, so each slider saves independently. `overlap_size >=
+chunk_size` is a 422 naming both fields, rather than a splitter error later.
+
+Changing the splitter settings deliberately does **not** re-chunk existing documents: that
+would renumber every `chunk_order` and orphan the vectors keyed on them. Re-attach the
+document if you want it split differently.
+
+#### Artifacts
+
+`GET /chat/users/{user_id}/assets` lists everything a user has uploaded across all their
+chats. Because `chat_id` *is* `project_id`, a user's chat ids are exactly the project ids
+their assets are filed under — one lookup, then one query with `file_bytes` projected out.
+
+```json
+{ "count": 2, "assets": [
+  {"asset_id": "…", "name": "cv.txt", "asset_type": "text",
+   "chat_id": "…", "chat_title": "CV chat", "created_at": "…"} ] }
+```
 
 ## Error handling
 
