@@ -52,7 +52,7 @@ async def upload_data(project_id: str, file: UploadFile, request: Request):
         name=str(file.filename),
         description=f"Project {file.filename}",
     )
-    # update_project raises StorageError if the write fails, so reaching the
+    # update_project raises DbError if the write fails, so reaching the
     # next line means it succeeded — there is no falsy "failed" return to check.
     project_object_id = await project_model.update_project(project)
 

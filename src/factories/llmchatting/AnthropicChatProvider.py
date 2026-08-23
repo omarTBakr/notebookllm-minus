@@ -58,7 +58,3 @@ class AnthropicChatProvider(LLMChattingInterface):
             )
 
         return text
-
-    async def aclose(self) -> None:
-
-        await self.client.close()

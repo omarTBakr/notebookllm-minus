@@ -5,7 +5,7 @@ from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
 from enums import EmbeddingInputType
 from exceptions import NotFoundError
 from factories.llmembedding import LLMEmbeddingInterface
-from factories.vectordb import VectorDBInterface
+from factories.db.interfaces import VectorRepository
 from models import ChunkModel
 
 from .BaseController import BaseController
@@ -26,7 +26,7 @@ class NLPController(BaseController):
     def __init__(
         self,
         embedding_client: LLMEmbeddingInterface,
-        vectordb_client: VectorDBInterface,
+        vectordb_client: VectorRepository,
     ) -> None:
 
         super().__init__()
@@ -188,8 +188,17 @@ class NLPController(BaseController):
 
     # --- reading --------------------------------------------------------------
 
-    async def search(self, project_id: str, text: str, limit: int = 5) -> list[dict]:
-        """Nearest chunks to *text*, best first."""
+    async def search(
+        self,
+        project_id: str,
+        text: str,
+        limit: int = 5,
+        asset_ids: list[str] | None = None,
+    ) -> list[dict]:
+        """Nearest chunks to *text*, best first.
+
+        *asset_ids* restricts the search to those sources; None searches all.
+        """
 
         collection = self.collection_name(project_id)
 
@@ -207,7 +216,10 @@ class NLPController(BaseController):
         vectors = await self.embedding_client.embed([text], EmbeddingInputType.QUERY)
 
         return await self.vectordb_client.search_by_vector(
-            collection_name=collection, vector=vectors[0], limit=limit
+            collection_name=collection,
+            vector=vectors[0],
+            limit=limit,
+            asset_ids=asset_ids,
         )
 
     async def get_index_info(self, project_id: str) -> dict:

@@ -54,10 +54,6 @@ class TemplateParser:
 
         return normalized
 
-    def set_language(self, lang: str | None) -> None:
-        """Switch language in place, e.g. per chat."""
-        self.lang = self._resolve(lang)
-
     def _module(self, group: str, lang: str):
         """Import (and cache) one locale group module."""
         cached = self._groups.get((lang, group))

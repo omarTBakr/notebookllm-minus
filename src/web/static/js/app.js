@@ -1,61 +1,105 @@
-// Bootstrap: wire the DOM to the view modules and hold the composer logic.
+// Bootstrap: load the logo, wire the panels together, open a notebook.
 
-import { api } from "./api.js";
-import { applyLang, currentLang, t } from "./i18n.js";
-import { ask, renderHistory, showEmptyState } from "./chat.js";
+import { ask, loadHistory } from "./chat.js";
+import { applyLang, t } from "./i18n.js";
 import {
-  bindChatSelection,
-  createChat,
-  createSession,
-  createUser,
-  initUser,
-  loadSessions,
-  renderSessions,
-} from "./sidebar.js";
-import { bindModelPickers, loadCatalogue, showFor } from "./models.js";
-import { state, storedLang } from "./state.js";
+  bindNotebookOpen,
+  bindNotebooks,
+  create as createNotebook,
+  initialNotebookId,
+  loadList,
+  paintMeta,
+  paintTitle,
+  renderList,
+} from "./notebooks.js";
+import { api } from "./api.js";
+import { adoptProfile, bindProfile, bindProfileSwitch, initProfile } from "./profile.js";
+import {
+  bindLangChange,
+  bindSettings,
+  loadCatalogue,
+  showBackend,
+  showFor,
+} from "./settings.js";
+import { bindSources, bindSourcesChanged, load as loadSources } from "./sources.js";
+import { bindStudio, repaint as repaintStudio } from "./studio.js";
+import { bindTheme } from "./theme.js";
+import { bindAutoCopy } from "./clipboard.js";
+import { bindComingSoon, toast } from "./soon.js";
+import { rememberNotebook, rememberUser, state, storedLang } from "./state.js";
+import { $ } from "./dom.js";
 
-const $ = (id) => document.getElementById(id);
+// --- opening a notebook -------------------------------------------------------
 
-function toast(message) {
-  const box = document.createElement("div");
-  box.className = "toast";
-  box.textContent = message;
-  document.body.append(box);
-  setTimeout(() => box.remove(), 5000);
-}
+async function openNotebook(chatId) {
+  if (!chatId) {
+    state.notebook = null;
+    state.sources = [];
+    paintTitle();
+    paintMeta();
+    showFor(null);
+    $("question").disabled = true;
+    $("btn-send").disabled = true;
+    return;
+  }
 
-// --- chat selection ----------------------------------------------------------
+  state.notebook = await api.getNotebook(chatId);
+  rememberNotebook(chatId);
 
-async function selectChat(chatId) {
-  const chat = await api.getChat(chatId);
-  state.activeChat = chat;
+  // Following a link to someone else's notebook switches to that profile —
+  // there is no auth, and showing a notebook while claiming to be a profile
+  // that does not own it would be a lie about whose list you are looking at.
+  if (state.notebook.user_id && state.notebook.user_id !== state.userId) {
+    const user = await api.getUser(state.notebook.user_id);
+    state.userId = user.user_id;
+    state.userLabel = user.label;
+    rememberUser(user.user_id);
+    adoptProfile();
+    await loadList();
+  }
 
-  $("chat-title").textContent = chat.title;
-  $("chat-meta").textContent = `${chat.lang.toUpperCase()} · ${chat.chat_id.slice(0, 8)}`;
-  $("grounded-badge").classList.toggle("badge--hidden", !chat.grounded);
+  paintTitle();
+  renderList();
+
+  await Promise.all([loadSources(chatId), loadHistory(chatId)]);
+
+  // Derived, not latched. This used to be add()-only, so the first question
+  // hid the hero for the rest of the session — every notebook opened after
+  // that showed an empty column where its title should be.
+  paintHero();
+
+  paintMeta();
+  showFor(state.notebook);
 
   $("question").disabled = false;
   $("btn-send").disabled = false;
-
-  showFor(chat);
-  renderSessions();
-  await renderHistory(chatId);
 }
 
-/** Re-read the chat so `grounded` reflects the index, not our assumption. */
-async function refreshActiveChat() {
-  if (!state.activeChat) return;
-  const chat = await api.getChat(state.activeChat.chat_id);
-  state.activeChat = chat;
-  $("grounded-badge").classList.toggle("badge--hidden", !chat.grounded);
+/** Load everything belonging to the current profile. */
+async function enterProfile() {
+  await loadList();
+
+  // A profile with no notebooks has nothing to type into, so give it one
+  // rather than an empty workspace.
+  if (!state.notebooks.length) {
+    await createNotebook();
+    return;
+  }
+
+  await openNotebook(initialNotebookId());
 }
 
-// --- composer ----------------------------------------------------------------
+// --- composer -----------------------------------------------------------------
 
-function autoGrow(textarea) {
-  textarea.style.height = "auto";
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+/** The hero belongs above an empty transcript and nowhere else. */
+function paintHero() {
+  const empty = $("messages").childElementCount === 0;
+  $("hero").classList.toggle("is-hidden", !empty);
+}
+
+function autoGrow(box) {
+  box.style.height = "auto";
+  box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
 }
 
 async function send() {
@@ -64,8 +108,8 @@ async function send() {
 
   if (!text || state.streaming) return;
 
-  if (!state.activeChat) {
-    toast(t("pickChatFirst"));
+  if (!state.notebook) {
+    toast(t("noNotebookYet"));
     return;
   }
 
@@ -73,130 +117,81 @@ async function send() {
   autoGrow(box);
   $("btn-send").disabled = true;
 
-  await ask(state.activeChat.chat_id, text, {
+  // The hero only makes sense above an empty transcript.
+  paintHero();
+
+  await ask(state.notebook.chat_id, text, {
     onDone: async () => {
       $("btn-send").disabled = false;
-      // The first question renames the chat server-side, so refresh the list.
-      await loadSessions();
-      renderSessions();
+      // The first question renames the notebook server-side.
+      state.notebook = await api.getNotebook(state.notebook.chat_id);
+      paintTitle();
+      await loadList();
     },
   });
 }
 
-async function attach(file) {
-  if (!state.activeChat) {
-    toast(t("pickChatFirst"));
-    return;
-  }
-
-  const chip = document.createElement("span");
-  chip.className = "file-chip is-pending";
-  chip.textContent = `${file.name} — ${t("indexing")}`;
-  $("attachments").append(chip);
-
-  try {
-    const result = await api.attachDocument(state.activeChat.chat_id, file);
-    chip.classList.remove("is-pending");
-    chip.textContent = `📎 ${result.filename} · ${result.chunks_indexed}`;
-    await refreshActiveChat();
-    await loadSessions();
-    renderSessions();
-  } catch (error) {
-    chip.remove();
-    toast(error.message);
-  }
-}
-
-// --- wiring ------------------------------------------------------------------
-
-function bindEvents() {
-  $("composer-form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    send();
-  });
+function bindComposer() {
+  $("btn-send").addEventListener("click", send);
 
   const box = $("question");
   box.addEventListener("input", () => autoGrow(box));
   box.addEventListener("keydown", (event) => {
-    // Enter sends; Shift+Enter is a newline — the convention every chat app uses.
+    // Enter sends; Shift+Enter is a newline — the convention every chat uses.
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       send();
     }
   });
+}
 
-  $("file-input").addEventListener("change", (event) => {
-    const [file] = event.target.files;
-    if (file) attach(file);
-    event.target.value = "";
-  });
-
-  $("btn-new-session").addEventListener("click", () => createSession().catch((e) => toast(e.message)));
-
-  $("btn-new-user").addEventListener("click", async () => {
-    await createUser();
-    await loadSessions();
-    state.activeChat = null;
-    $("chat-title").textContent = t("noChat");
-    $("chat-meta").textContent = "";
-    $("question").disabled = true;
-    $("btn-send").disabled = true;
-    showEmptyState();
-  });
-
-  $("btn-forget-user").addEventListener("click", async () => {
-    localStorage.removeItem("notebookllm.user_id");
-    location.reload();
-  });
-
-  document.querySelectorAll(".btn--lang").forEach((btn) => {
+function bindCollapse() {
+  document.querySelectorAll("[data-collapse]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      applyLang(btn.dataset.lang);
-      // Labels changed; anything rendered from them has to be redrawn.
-      renderSessions();
-      if (!state.activeChat) {
-        $("chat-title").textContent = t("noChat");
-        showEmptyState();
-      }
+      document.getElementById(btn.dataset.collapse)?.classList.toggle("is-collapsed");
     });
   });
 }
 
-async function showBackend() {
-  try {
-    const health = await api.health();
-    const embed = health.checks?.embedding ?? {};
-    $("backend-info").textContent = `${health.generation_model} · ${embed.model ?? "?"}`;
-    if (health.status !== "ok") {
-      const failed = Object.entries(health.checks)
-        .filter(([, c]) => c.status !== "ok")
-        .map(([name]) => name);
-      toast(`Backend degraded: ${failed.join(", ")}`);
-    }
-  } catch {
-    $("backend-info").textContent = "backend unreachable";
-  }
-}
+// --- boot ---------------------------------------------------------------------
 
 async function main() {
   applyLang(storedLang() ?? document.body.dataset.defaultLang ?? "en");
-  bindEvents();
-  bindModelPickers();
-  bindChatSelection((chatId) => selectChat(chatId).catch((e) => toast(e.message)));
 
-  await loadCatalogue();
+  bindTheme();
+  bindComingSoon();
+  bindComposer();
+  bindCollapse();
+  bindNotebooks();
+  bindProfile();
+  bindSettings();
+  bindSources();
+  bindStudio();
+  bindAutoCopy();
+
+  bindNotebookOpen((chatId) => openNotebook(chatId).catch((e) => toast(e.message)));
+  bindProfileSwitch(() => enterProfile().catch((e) => toast(e.message)));
+  bindSourcesChanged(() => paintMeta());
+  bindLangChange(() => {
+    // Labels changed, so anything rendered from them has to be redrawn.
+    // applyLang only repaints [data-i18n] elements, and the model pickers are
+    // built in JS — their badges would keep the old language otherwise.
+    renderList();
+    paintTitle();
+    paintMeta();
+    repaintStudio();
+    showFor(state.notebook);
+  });
+
+  // Not awaited: building this list makes the server ask every model whether
+  // it can embed, which loads them. Nothing on the first screen needs it —
+  // only the settings dialog does — so let it arrive when it arrives rather
+  // than holding the whole app behind it.
+  loadCatalogue();
 
   try {
-    await initUser();
-    await loadSessions();
-
-    // A brand-new user has nothing to click, so give them somewhere to type.
-    if (!state.sessions.length) {
-      const sessionId = await createSession();
-      await createChat(sessionId);
-    } else {
-      showEmptyState();
-    }
+    await initProfile();
+    await enterProfile();
   } catch (error) {
     toast(error.message);
   }

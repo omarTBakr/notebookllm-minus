@@ -1,0 +1,46 @@
+{# Notebook-level actions. Everything marked data-soon says so when clicked
+   rather than looking live and doing nothing. #}
+<header class="topbar">
+  <div class="topbar__brand">
+    <svg class="logo" width="34" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-logo"/></svg>
+    {# The title is the notebook's name; clicking it renames. #}
+    <button class="notebook-title" id="notebook-title" title="rename">
+      <span data-i18n="untitled"></span>
+    </button>
+  </div>
+
+  <div class="topbar__actions">
+    <button class="btn btn--dark" id="btn-create-notebook">
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-plus"/></svg> <span data-i18n="createNotebook"></span>
+    </button>
+
+    <button class="btn btn--icon-text" id="btn-notebooks">
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-book"/></svg> <span data-i18n="notebooks"></span>
+      <span class="count" id="notebook-count">0</span>
+    </button>
+
+    <button class="btn btn--icon-text" data-soon="Copy">
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-copy"/></svg> <span data-i18n="copy"></span>
+    </button>
+
+    <button class="btn btn--icon-text" data-soon="Share">
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-share"/></svg> <span data-i18n="share"></span>
+    </button>
+
+    <button class="btn btn--icon-text" id="btn-settings">
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-settings"/></svg> <span data-i18n="settings"></span>
+    </button>
+
+    <button class="btn btn--icon" data-soon="Apps" aria-label="apps"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-apps"/></svg></button>
+
+    <button class="avatar" id="btn-profile" aria-haspopup="true" aria-expanded="false">
+      <span id="avatar-initial">?</span>
+    </button>
+  </div>
+
+  {# The notebook switcher, anchored under its button. #}
+  <div class="dropdown" id="notebook-menu" hidden>
+    <p class="dropdown__title" data-i18n="notebooks"></p>
+    <div class="dropdown__list" id="notebook-list"></div>
+  </div>
+</header>

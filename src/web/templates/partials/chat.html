@@ -1,0 +1,32 @@
+{# Middle panel: the notebook's conversation. The only region that scrolls. #}
+<section class="panel panel--chat">
+  <header class="panel__head">
+    <h2 data-i18n="chat"></h2>
+    <div class="panel__head-actions">
+      <button class="icon-btn" data-soon="Chat settings" aria-label="tune"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-tune"/></svg></button>
+      <button class="icon-btn" data-soon="Chat menu" aria-label="menu"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-more"/></svg></button>
+    </div>
+  </header>
+
+  <div class="transcript" id="transcript">
+    {# The notebook's identity, shown above the first message. #}
+    <div class="hero" id="hero">
+      <span class="hero__icon"><svg class="ico ico--hero" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-book"/></svg></span>
+      <button class="btn btn--outline btn--pill hero__customize" data-soon="Customize">
+        <svg class="ico ico--sm" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-spark"/></svg> <span data-i18n="customize"></span>
+      </button>
+      <h3 class="hero__title" id="hero-title"></h3>
+      <p class="hero__meta muted" id="hero-meta"></p>
+    </div>
+
+    <div class="messages" id="messages"></div>
+  </div>
+
+  <footer class="composer">
+    <div class="composer__box">
+      <textarea id="question" rows="1" data-i18n-placeholder="startTyping" disabled></textarea>
+      <span class="composer__count" id="composer-count">0</span>
+      <button class="composer__send" id="btn-send" type="button" disabled aria-label="send"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-send"/></svg></button>
+    </div>
+  </footer>
+</section>

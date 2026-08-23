@@ -104,9 +104,13 @@ class LLMEmbeddingInterface(ABC):
         Return the raw vectors; the caller validates count and width.
         """
 
-    @abstractmethod
     async def aclose(self) -> None:
-        """Release the underlying HTTP connection pool."""
+        """Release the client's connection pool.
+
+        The default suits every SDK whose client exposes ``close()`` — which
+        is most of them. Google and Cohere name it differently and override.
+        """
+        await self.client.close()
 
     # --- helper shared by every provider -------------------------------------
 

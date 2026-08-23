@@ -20,7 +20,7 @@ def _controller(request: Request) -> NLPController:
     """Build the controller from the clients the lifespan already opened."""
     return NLPController(
         embedding_client=request.app.embedding_client,
-        vectordb_client=request.app.vectordb_client,
+        vectordb_client=request.app.db.vectors(),
     )
 
 
@@ -177,17 +177,19 @@ async def nlp_health(http_request: Request):
     settings = get_settings()
     checks: dict[str, dict] = {}
 
-    # --- MongoDB ---
+    # --- DB ---
     started = perf_counter()
     try:
-        await http_request.app.client.admin.command("ping")
-        checks["mongodb"] = {
+        # ask the vector layer for a collection list — a cheap round-trip that
+        # exercises both the document store and the vector store connections.
+        await http_request.app.db.vectors().list_collections()
+        checks["db"] = {
             "status": "ok",
             "latency_ms": round((perf_counter() - started) * 1000, 1),
-            "database": settings.MONGO_DB_NAME,
+            "backend": settings.DOCUMENT_DB_BACKEND,
         }
     except Exception as exc:
-        checks["mongodb"] = {"status": "error", "error": str(exc)}
+        checks["db"] = {"status": "error", "backend": settings.DOCUMENT_DB_BACKEND, "error": str(exc)}
 
     # --- Embedding model ---
     # A real inference call, not a config echo: this is what catches "ollama
@@ -215,17 +217,17 @@ async def nlp_health(http_request: Request):
     # --- Vector store ---
     started = perf_counter()
     try:
-        collections = await http_request.app.vectordb_client.list_collections()
+        collections = await http_request.app.db.vectors().list_collections()
         checks["vectordb"] = {
             "status": "ok",
             "latency_ms": round((perf_counter() - started) * 1000, 1),
-            "backend": settings.VECTOR_DB_BACKEND,
+            "backend": settings.DOCUMENT_DB_BACKEND,
             "collections": len(collections),
         }
     except Exception as exc:
         checks["vectordb"] = {
             "status": "error",
-            "backend": settings.VECTOR_DB_BACKEND,
+            "backend": settings.DOCUMENT_DB_BACKEND,
             "error": str(exc),
         }
 

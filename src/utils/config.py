@@ -7,7 +7,7 @@ from enums import (
     DistanceMethod,
     LLMChattingProvider,
     LLMEmbeddingProvider,
-    VectorDBProvider,
+    DbBackend,
 )
 
 SRC_DIR = Path(__file__).parent.parent
@@ -32,13 +32,15 @@ class Settings(BaseSettings):
 
     ALLOWED_TYPES: list
     MAX_FILE_CHUNK_SIZE: int
-    MAX_ASSET_SIZE_BYTES: int    # hard ceiling on stored binary (bytes)
  
-    MAX_FILE_SIZE: int = 10485760  # resolved in model_post_init below
+    MAX_FILE_SIZE: int = 10485760  # hard ceiling on a single upload (bytes)
+
+    # document db — which provider backs the main data store
+    DOCUMENT_DB_BACKEND: str = "mongo"
 
     # mongo db configurations
-    MONGO_URI: str
-    MONGO_DB_NAME: str
+    MONGO_URI: str = "mongodb://localhost:27017"
+    MONGO_DB_NAME: str = "notebookllm"
 
     # llm provider configurations
     GENERATION_BACKEND: str  # one of LLMChattingProvider
@@ -51,6 +53,10 @@ class Settings(BaseSettings):
     COHERE_API_KEY: str | None = None
     # Ollama is local and takes no key — a reachable host is the whole config.
     OLLAMA_BASE_URL: str = "http://localhost:11434"
+    # A second Ollama, reached over the network rather than on this machine —
+    # the "web" models in the picker. Optional: unset means local-only, which
+    # is the ordinary setup and behaves exactly as before.
+    OLLAMA_CLOUD_BASE_URL: str | None = None
 
     GENERATION_MODEL_ID: str
     # Generous on purpose: a reasoning model spends this budget on its
@@ -72,9 +78,14 @@ class Settings(BaseSettings):
     CHAT_HISTORY_LIMIT: int = 10      # prior turns sent as context
     RETRIEVAL_TOP_K: int = 5          # chunks retrieved per grounded answer
 
-    # vector database configurations
-    VECTOR_DB_BACKEND: str = "qdrant"
-    VECTOR_DB_PATH: str = "assets/qdrant_db"  # embedded mode; relative resolves against src/
+    # vector database configurations (kept for postgres/qdrant connection properties)
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "[PASSWORD]"
+    POSTGRES_DB: str = "notebookllm-minus"
+
+    # VECTOR_DB_PATH: str = "assets/qdrant_db"  # embedded mode; relative resolves against src/
     VECTOR_DB_URL: str | None = None   # set to use a server instead of VECTOR_DB_PATH
     VECTOR_DB_API_KEY: str | None = None
     VECTOR_DB_DISTANCE_METHOD: str = "cosine"
@@ -99,12 +110,14 @@ class Settings(BaseSettings):
     def _normalize_generation_backend(cls, value: str) -> str:
         return _normalize_choice(value, LLMChattingProvider, "GENERATION_BACKEND")
 
+
     @field_validator("EMBEDDING_BACKEND")
     @classmethod
     def _normalize_embedding_backend(cls, value: str) -> str:
         # Deliberately a different set from GENERATION_BACKEND: Anthropic ships
         # no embeddings API, so "anthropic" is rejected here.
         return _normalize_choice(value, LLMEmbeddingProvider, "EMBEDDING_BACKEND")
+
 
     @field_validator("DEFAULT_LANG")
     @classmethod
@@ -120,15 +133,17 @@ class Settings(BaseSettings):
             )
         return normalized
 
-    @field_validator("VECTOR_DB_BACKEND")
+    @field_validator("DOCUMENT_DB_BACKEND")
     @classmethod
-    def _normalize_vector_db_backend(cls, value: str) -> str:
-        return _normalize_choice(value, VectorDBProvider, "VECTOR_DB_BACKEND")
+    def _normalize_document_db_backend(cls, value: str) -> str:
+        return _normalize_choice(value, DbBackend, "DOCUMENT_DB_BACKEND")
+
 
     @field_validator("VECTOR_DB_DISTANCE_METHOD")
     @classmethod
     def _normalize_distance_method(cls, value: str) -> str:
         return _normalize_choice(value, DistanceMethod, "VECTOR_DB_DISTANCE_METHOD")
+
 
     @field_validator("LOG_LEVEL")
     @classmethod
@@ -138,6 +153,7 @@ class Settings(BaseSettings):
         if level not in allowed:
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}, got {value!r}")
         return level
+
 
     @field_validator("LOG_FORMAT")
     @classmethod
@@ -155,24 +171,27 @@ class Settings(BaseSettings):
             log_dir = SRC_DIR / log_dir
         return log_dir / self.LOG_FILE_NAME
 
-    @property
-    def vector_db_path(self) -> Path:
-        """Absolute path of the embedded vector store, anchored to src/.
+    # @property
+    # def vector_db_path(self) -> Path:
+    #     """Absolute path of the embedded vector store, anchored to src/.
 
-        Same treatment as log_file_path, and for the same reason: the app is
-        launched from src/ but need not be, and the store must not follow CWD.
-        """
-        db_path = Path(self.VECTOR_DB_PATH)
-        if not db_path.is_absolute():
-            db_path = SRC_DIR / db_path
-        return db_path
+    #     Same treatment as log_file_path, and for the same reason: the app is
+    #     launched from src/ but need not be, and the store must not follow CWD.
+    #     """
+    #     db_path = Path(self.VECTOR_DB_PATH)
+    #     if not db_path.is_absolute():
+    #         db_path = SRC_DIR / db_path
+    #     return db_path
 
     model_config = SettingsConfigDict(
         env_file=SRC_DIR / ".env",  # resolves to src/.env regardless of CWD
         case_sensitive=False,
         extra="ignore"
     )
-
+    @property
+    def vector_db_url(self) -> str:
+        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+    
 @lru_cache
 def get_settings() -> Settings:
     """The one Settings instance for this process.

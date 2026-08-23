@@ -118,7 +118,7 @@ async def process_data(
         # would delete the other assets' chunks without re-creating them, which
         # is exactly what happens if you reset while processing a single one.
         if request.reset:
-            removed_ids = await chunk_model.delete_asset_chunks(
+            removed_ids = await chunk_model.delete_chunks_for_asset(
                 project_object_id, asset.asset_id
             )
             # Pull just these ids from the project doc; the other assets' stay.

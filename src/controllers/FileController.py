@@ -6,7 +6,7 @@ import aiofiles  # ty:ignore[unresolved-import]
 from fastapi import UploadFile
 
 from enums import FileStatus
-from exceptions import FileStorageError
+from exceptions import FileDbError
 
 from .BaseController import BaseController
 
@@ -22,7 +22,7 @@ class FileController(BaseController):
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
     async def save_file(self, project_id: str, file: UploadFile) -> Path:
-        """Stream the upload to disk, or raise FileStorageError."""
+        """Stream the upload to disk, or raise FileDbError."""
         file_path = self.generate_unique_path(project_id, file)
         bytes_written = 0
 
@@ -34,7 +34,7 @@ class FileController(BaseController):
                     await f.write(chunk)
                     bytes_written += len(chunk)
         except OSError as exc:
-            raise FileStorageError(
+            raise FileDbError(
                 f"{FileStatus.SAVE_ERROR.value}: {file.filename!r} for project "
                 f"{project_id!r} ({bytes_written} bytes written)"
             ) from exc

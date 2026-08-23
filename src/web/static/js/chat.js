@@ -1,32 +1,27 @@
-// The transcript: rendering turns, streaming an answer, showing citations.
+// Middle panel: the transcript, and streaming an answer into it.
 
 import { api } from "./api.js";
-import { renderInto } from "./markdown.js";
 import { t } from "./i18n.js";
+import { renderInto } from "./markdown.js";
 import { state } from "./state.js";
+import { $ } from "./dom.js";
 
-const transcript = () => document.getElementById("transcript");
+const messages = () => $("messages");
 
-export function clearTranscript() {
-  transcript().innerHTML = "";
+export function clear() {
+  messages().replaceChildren();
 }
 
-export function showEmptyState() {
-  clearTranscript();
-  const box = document.createElement("div");
-  box.className = "empty";
-  box.innerHTML = `<p class="empty__title"></p><p class="empty__body muted"></p>`;
-  box.querySelector(".empty__title").textContent = t("emptyTitle");
-  box.querySelector(".empty__body").textContent = t("emptyBody");
-  transcript().append(box);
+function scrollToEnd() {
+  const el = $("transcript");
+  el.scrollTop = el.scrollHeight;
 }
 
 /** Render Markdown into *el*, at most once per animation frame.
  *
  * A reasoning answer arrives as hundreds of small deltas, and each one
  * re-parses the whole text so far. Coalescing onto frames keeps that off the
- * critical path — the browser paints once per frame regardless, so rendering
- * more often than that is work nobody sees.
+ * critical path — the browser paints once per frame regardless.
  */
 function frameRenderer(el, { onRender } = {}) {
   let pending = "";
@@ -51,13 +46,8 @@ function frameRenderer(el, { onRender } = {}) {
   };
 }
 
-function scrollToEnd() {
-  const el = transcript();
-  el.scrollTop = el.scrollHeight;
-}
-
-// textContent everywhere, never innerHTML, so a document that contains markup
-// is shown as text rather than injected into the page.
+// textContent everywhere, never innerHTML, so a document containing markup is
+// shown as text rather than injected into the page.
 function bubble(role) {
   const wrap = document.createElement("article");
   wrap.className = `msg msg--${role}`;
@@ -70,7 +60,7 @@ function bubble(role) {
   body.className = "msg__body";
 
   wrap.append(label, body);
-  transcript().append(wrap);
+  messages().append(wrap);
   scrollToEnd();
 
   return { wrap, body };
@@ -78,20 +68,20 @@ function bubble(role) {
 
 function citationsBlock(citations) {
   const details = document.createElement("details");
-  details.className = "sources";
+  details.className = "sources-block";
 
   const summary = document.createElement("summary");
-  summary.textContent = `${t("sources")} (${citations.length})`;
+  summary.textContent = `${t("citations")} (${citations.length})`;
 
   const list = document.createElement("ul");
-  list.className = "sources__list";
+  list.className = "sources-block__list";
 
   for (const cite of citations) {
     const item = document.createElement("li");
-    item.className = "sources__item";
+    item.className = "sources-block__item";
 
     const num = document.createElement("span");
-    num.className = "sources__num";
+    num.className = "sources-block__num";
     num.textContent = `[${cite.num}]`;
 
     const source = document.createElement("span");
@@ -101,7 +91,7 @@ function citationsBlock(citations) {
         : `${cite.source} · #${cite.chunk_order}`;
 
     const score = document.createElement("span");
-    score.className = "sources__score";
+    score.className = "sources-block__score";
     score.textContent = cite.score ?? "";
 
     item.append(num, source, score);
@@ -112,34 +102,25 @@ function citationsBlock(citations) {
   return details;
 }
 
-export function renderMessage(message) {
-  const { body, wrap } = bubble(message.role === "user" ? "user" : "assistant");
+/** The row of actions under a finished answer. All of it is planned work. */
+function answerActions() {
+  const row = document.createElement("div");
+  row.className = "msg__actions";
 
-  if (message.role === "user") {
-    // The user's own words, shown exactly as typed.
-    body.textContent = message.content;
-  } else {
-    body.classList.add("md");
-    renderInto(body, message.content);
+  for (const [label, feature] of [
+    ["📌 " + "Save to note", "Save to note"],
+    ["⧉", "Copy answer"],
+    ["👍", "Feedback"],
+    ["👎", "Feedback"],
+  ]) {
+    const btn = document.createElement("button");
+    btn.className = "btn btn--outline btn--pill";
+    btn.textContent = label;
+    btn.dataset.soon = feature;
+    row.append(btn);
   }
 
-  if (message.citations?.length) {
-    wrap.append(citationsBlock(message.citations));
-  }
-}
-
-export async function renderHistory(chatId) {
-  clearTranscript();
-
-  const { messages } = await api.listMessages(chatId);
-
-  if (!messages.length) {
-    showEmptyState();
-    return;
-  }
-
-  messages.forEach(renderMessage);
-  scrollToEnd();
+  return row;
 }
 
 /** Live scratchpad. Open while the model reasons, collapsed once it answers. */
@@ -156,8 +137,7 @@ function thinkingPanel() {
 
   details.append(summary, body);
 
-  // The panel scrolls internally, so keep the newest reasoning in view rather
-  // than leaving the reader staring at the opening paragraph.
+  // The panel scrolls internally; keep the newest reasoning in view.
   const render = frameRenderer(body, {
     onRender: () => { body.scrollTop = body.scrollHeight; },
   });
@@ -165,17 +145,40 @@ function thinkingPanel() {
   return { details, summary, body, render };
 }
 
+export function renderMessage(message) {
+  const { body, wrap } = bubble(message.role === "user" ? "user" : "assistant");
+
+  if (message.role === "user") {
+    // The user's own words, shown exactly as typed.
+    body.textContent = message.content;
+  } else {
+    body.classList.add("md");
+    renderInto(body, message.content);
+    if (message.citations?.length) wrap.append(citationsBlock(message.citations));
+    wrap.append(answerActions());
+  }
+}
+
+export async function loadHistory(chatId) {
+  clear();
+
+  if (!chatId) return;
+
+  const { messages: turns } = await api.listMessages(chatId);
+  turns.forEach(renderMessage);
+  scrollToEnd();
+}
+
 function noteUngrounded(wrap) {
   const note = document.createElement("p");
-  note.className = "muted small";
+  note.className = "muted";
+  note.style.fontSize = "0.8rem";
   note.textContent = t("ungrounded");
   wrap.append(note);
 }
 
 /** Send a question and stream the answer into a new bubble. */
 export async function ask(chatId, text, { onDone } = {}) {
-  document.getElementById("empty-state")?.remove();
-
   const question = bubble("user");
   question.body.textContent = text;
 
@@ -213,17 +216,16 @@ export async function ask(chatId, text, { onDone } = {}) {
         scrollToEnd();
       } else if (event.type === "delta") {
         received += 1;
-        // The answer has begun, so fold the scratchpad away — it stays
-        // available, just no longer in the way of what was asked for.
+        // The answer has begun, so fold the scratchpad away.
         if (thinking && thinking.details.open) {
           thinking.render.flush();
           thinking.details.open = false;
-          thinking.summary.textContent = `${t("thoughtFor")} ${reasoning.length} ${t("chars")}`;
+          thinking.summary.textContent =
+            `${t("thoughtFor")} ${reasoning.length} ${t("chars")}`;
         }
         markdown += event.text;
-        // Re-render the whole answer each time rather than appending: a bold
-        // run or a list only becomes recognisable once its closing syntax
-        // arrives, so incremental append would show raw ** and - markers.
+        // Re-render the whole answer rather than appending: a bold run or a
+        // list only becomes recognisable once its closing syntax arrives.
         answerRender.update(markdown);
         scrollToEnd();
       } else if (event.type === "error") {
@@ -235,12 +237,11 @@ export async function ask(chatId, text, { onDone } = {}) {
     }
 
     if (!grounded && received) noteUngrounded(answer.wrap);
+    if (received) answer.wrap.append(answerActions());
   } catch (error) {
     answer.body.classList.add("msg__error");
     answer.body.textContent = error.message;
   } finally {
-    // Flush both before settling, so a delta that landed between frames is
-    // not lost when the stream ends.
     if (markdown) answerRender.flush();
     if (thinking) {
       thinking.render.flush();

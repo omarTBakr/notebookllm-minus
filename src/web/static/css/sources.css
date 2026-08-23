@@ -1,0 +1,169 @@
+/* Left panel: add sources, the web-search box, and the source list. */
+
+.websearch {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+
+.websearch__label { margin: 0 0 8px; font-size: 0.8rem; color: var(--text-muted); }
+.websearch__row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.chip--go { margin-inline-start: auto; padding: 3px 8px; }
+
+.sources__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.selectall { display: inline-flex; align-items: center; gap: 6px; }
+
+/* The one place the panel may need to give: many sources. It scrolls only
+   when it overflows, since there is no other way to reach the rest. */
+.sources__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-inline-end: 2px;
+}
+.sources__list:empty { flex: 0; }
+
+.source {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.83rem;
+  border: 1px solid transparent;
+}
+.source:hover { background: var(--surface-2); }
+
+.source__icon {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: #d0342c;
+  border-radius: 4px;
+  padding: 2px 4px;
+  flex: none;
+  cursor: pointer;
+}
+.source__icon--txt { background: var(--text-muted); }
+
+.source__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: text; }
+
+.source__check { flex: none; accent-color: var(--accent); cursor: pointer; margin: 0; }
+.source:has(.source__check:not(:checked)) { opacity: 0.5; }
+.selectall input { accent-color: var(--accent); cursor: pointer; margin: 0; }
+
+/* A file being uploaded and indexed, before it becomes a real source. */
+.source--pending { opacity: 0.65; }
+.source--pending .source__name::after {
+  content: "…";
+  color: var(--text-muted);
+}
+
+/* The name mid-rename. Sized and positioned like the span it replaces so the
+   row does not jump when the field appears. */
+.source__rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--accent);
+  outline: none;
+  padding: 0;
+}
+
+/* --- the two views of this panel --- */
+
+/* Was a set of direct children of .panel__body; wrapping them lets the whole
+   list be swapped for a preview without touching each one. The layout it
+   inherits is the same one .panel__body was giving them. */
+.sources__browse {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The chevron points back, which is the other way round in Arabic. */
+:root[dir="rtl"] .preview__back .ico { transform: scaleX(-1); }
+
+.preview__name {
+  font-size: 0.83rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* Text keeps its own line breaks; the panel is narrow, so wrap rather than
+   hand the reader a horizontal scrollbar. */
+.preview__text {
+  margin: 0;
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.preview__pdf { display: block; width: 100%; height: 100%; border: 0; }
+
+.preview__status {
+  margin: 0;
+  padding: 10px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+

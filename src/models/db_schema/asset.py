@@ -7,7 +7,6 @@ from enums import AssetType
 
 # These match the defaults in .env — they are schema-level ceilings, not
 # runtime limits. Update here if you change the .env values significantly.
-_MAX_CONTENT_LENGTH = 1_000_000_000  # 1 billion chars  (MAX_FILE_CONTENT_LENGTH)
 _MAX_ASSET_BYTES    = 10_485_760     # 10 MB            (MAX_ASSET_SIZE_BYTES)
 
 def utcnow() -> datetime:

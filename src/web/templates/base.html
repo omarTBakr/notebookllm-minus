@@ -6,13 +6,35 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/layout.css">
-  <link rel="stylesheet" href="/static/css/chat.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📓</text></svg>">
+
+  {# ?v= changes whenever any asset changes, so the browser can never serve a
+     cached stylesheet alongside markup that expects a newer one. #}
+  <link rel="stylesheet" href="/static/css/fonts.css?v={{ static_v }}">
+  <link rel="stylesheet" href="/static/css/base.css?v={{ static_v }}">
+  <link rel="stylesheet" href="/static/css/layout.css?v={{ static_v }}">
+  <link rel="stylesheet" href="/static/css/sources.css?v={{ static_v }}">
+  <link rel="stylesheet" href="/static/css/chat.css?v={{ static_v }}">
+  <link rel="stylesheet" href="/static/css/studio.css?v={{ static_v }}">
+  <link rel="stylesheet" href="/static/css/modal.css?v={{ static_v }}">
+
+  {# Applied before first paint: reading it in a module would let the page
+     render in the wrong palette and then flip. #}
+  <script>
+    (function () {
+      var t = localStorage.getItem("notebookllm.theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    })();
+  </script>
+
+  <link rel="icon" href="/static/img/logo.svg?v={{ static_v }}" type="image/svg+xml">
 </head>
 <body data-default-lang="{{ lang }}">
+  {# The icon sprite is inlined rather than fetched: same-document <use> is the
+     only form with no cross-browser caveats, and it removes one more request
+     that could itself be served stale. #}
+  {% include "partials/icons.svg" %}
+
   {% block content %}{% endblock %}
-  <script type="module" src="/static/js/app.js"></script>
+  <script type="module" src="/static/js/app.js?v={{ static_v }}"></script>
 </body>
 </html>

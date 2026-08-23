@@ -46,7 +46,3 @@ class OpenAIEmbeddingProvider(LLMEmbeddingInterface):
         ordered = sorted(response.data, key=lambda item: item.index)
 
         return [item.embedding for item in ordered]
-
-    async def aclose(self) -> None:
-
-        await self.client.close()

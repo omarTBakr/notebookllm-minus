@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 225" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- open book: two pages meeting at the spine -->
+  <path d="M200 58 C 150 40, 95 38, 48 46 L 48 164 C 95 156, 150 160, 200 178"/>
+  <path d="M200 58 C 250 40, 305 38, 352 46 L 352 164 C 305 156, 250 160, 200 178"/>
+  <!-- spine -->
+  <path d="M200 58 L200 178"/>
+  <!-- page thickness under the outer edges -->
+  <path d="M48 164 L52 173 C 100 165, 152 169, 200 186" opacity="0.55"/>
+  <path d="M352 164 L348 173 C 300 165, 248 169, 200 186" opacity="0.55"/>
+
+  <!-- LEFT PAGE: lines of text being read -->
+  <g stroke-width="2.2" opacity="0.9">
+    <path d="M72 78 L166 84"/>
+    <path d="M72 94 L166 100"/>
+    <path d="M72 110 L146 115"/>
+    <path d="M72 126 L166 132"/>
+    <path d="M72 142 L134 147"/>
+  </g>
+
+  <!-- text crosses the gutter and becomes a model -->
+  <path d="M178 112 Q205 94 232 108" stroke-dasharray="4 7" opacity="0.7"/>
+  <path d="M226 100 L233 109 L223 112" opacity="0.7"/>
+
+  <!-- RIGHT PAGE: neural network -->
+  <g stroke-width="1.5" opacity="0.5">
+    <path d="M248 82 L286 74 M248 82 L286 112 M248 82 L286 150"/>
+    <path d="M248 112 L286 74 M248 112 L286 112 M248 112 L286 150"/>
+    <path d="M248 142 L286 74 M248 142 L286 112 M248 142 L286 150"/>
+    <path d="M292 74 L328 94 M292 74 L328 130"/>
+    <path d="M292 112 L328 94 M292 112 L328 130"/>
+    <path d="M292 150 L328 94 M292 150 L328 130"/>
+  </g>
+  <g stroke-width="2.4">
+    <circle cx="244" cy="82" r="6"/>
+    <circle cx="244" cy="112" r="6"/>
+    <circle cx="244" cy="142" r="6"/>
+    <circle cx="289" cy="74" r="6"/>
+    <circle cx="289" cy="112" r="6"/>
+    <circle cx="289" cy="150" r="6"/>
+    <circle cx="332" cy="94" r="6"/>
+    <circle cx="332" cy="130" r="6"/>
+  </g>
+</svg>

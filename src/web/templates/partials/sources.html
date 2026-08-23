@@ -1,0 +1,52 @@
+{# Left panel: the documents this notebook can answer from. #}
+<section class="panel panel--sources" id="panel-sources">
+  <header class="panel__head">
+    <h2 data-i18n="sources"></h2>
+    <button class="panel__collapse" data-collapse="panel-sources" aria-label="collapse"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-collapse"/></svg></button>
+  </header>
+
+  <div class="panel__body">
+    {# Two views, one panel: the list of sources, or one of them opened. #}
+    <div class="sources__browse" id="sources-browse">
+    <label class="btn btn--outline btn--block">
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-plus"/></svg> <span data-i18n="addSources"></span>
+      <input type="file" id="file-input" accept=".pdf,.txt,text/plain,application/pdf" hidden>
+    </label>
+
+    {# Web search has no retrieval backend behind it yet — the whole box is
+       marked rather than just the button, so nothing here looks usable. #}
+    <div class="websearch" data-soon="Web search">
+      <p class="websearch__label" data-i18n="searchWeb"></p>
+      <div class="websearch__row">
+        <span class="chip"><svg class="ico ico--sm" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-globe"/></svg> <span data-i18n="web"></span></span>
+        <span class="chip"><svg class="ico ico--sm" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-spark"/></svg> <span data-i18n="fastResearch"></span></span>
+        <span class="chip chip--go"><svg class="ico ico--sm" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-search"/></svg></span>
+      </div>
+    </div>
+
+    <div class="sources__toolbar" id="sources-toolbar" hidden>
+      <button class="icon-btn" data-soon="Sort sources" aria-label="sort"><svg class="ico ico--sm" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-sort"/></svg></button>
+      <label class="selectall">
+        <span data-i18n="selectAll"></span>
+        <input type="checkbox" id="select-all" checked>
+      </label>
+    </div>
+
+    <div class="sources__list" id="sources-list"></div>
+
+    <div class="empty" id="sources-empty">
+      <span class="empty__icon"><svg class="ico ico--lg" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-file"/></svg></span>
+      <p class="empty__title" data-i18n="sourcesEmptyTitle"></p>
+      <p class="empty__body" data-i18n="sourcesEmptyBody"></p>
+    </div>
+    </div>
+
+    <div class="preview" id="sources-preview" hidden>
+      <div class="preview__head">
+        <button class="icon-btn preview__back" id="preview-back" type="button" aria-label="back"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-back"/></svg></button>
+        <span class="preview__name" id="preview-name"></span>
+      </div>
+      <div class="preview__body" id="preview-body"></div>
+    </div>
+  </div>
+</section>

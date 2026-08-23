@@ -127,7 +127,3 @@ class OllamaChatProvider(LLMChattingInterface):
                 f"Ollama streaming failed at {self.base_url}: {exc} "
                 "(is `ollama serve` running, and has the model been pulled?)"
             ) from exc
-
-    async def aclose(self) -> None:
-
-        await self.client.close()

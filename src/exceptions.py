@@ -8,7 +8,7 @@ response. Nothing in between catches broadly or re-wraps.
 Always chain when translating a library error, so the original traceback
 survives::
 
-    raise StorageError("...") from exc
+    raise DbError("...") from exc
 """
 
 
@@ -30,10 +30,16 @@ class NotFoundError(NotebookLLMError):
     status_code = 404
 
 
-class StorageError(NotebookLLMError):
+class DbError(NotebookLLMError):
     """The database is unreachable or rejected the operation."""
 
     status_code = 503
+
+
+class DbConnectionError(DbError):
+    """The database connection could not be established or was lost."""
+
+    pass
 
 
 class ProcessingError(NotebookLLMError):
@@ -82,7 +88,7 @@ class UnsupportedFileTypeError(InvalidInputError):
     """No loader is registered for this file extension."""
 
 
-class FileStorageError(NotebookLLMError):
+class FileDbError(NotebookLLMError):
     """Writing the upload to disk failed."""
 
     status_code = 500
@@ -109,13 +115,7 @@ class LLMProviderError(NotebookLLMError):
     status_code = 502
 
 
-class VectorDBError(NotebookLLMError):
-    """The vector store is unreachable or rejected the operation.
 
-    The vector-store counterpart of StorageError, and 503 for the same reason.
-    """
-
-    status_code = 503
 
 
 class UnsupportedProviderError(InvalidInputError):

@@ -1,102 +1,243 @@
-/* Tokens, resets and shared atoms. Everything positional uses CSS logical
-   properties (inline-start/end rather than left/right) so switching to
-   dir="rtl" mirrors the whole layout without a second stylesheet. */
+/* Tokens, reset and the atoms every panel reuses.
+ *
+ * Layout uses physical left/right on purpose (see layout.css): the language
+ * changes the words and the text direction, not where the panels sit. */
 
 :root {
-  --bg: #f7f7f8;
+  --page: #eef1f8;          /* tinted ground the panels float on */
   --surface: #ffffff;
-  --surface-2: #f0f0f3;
-  --border: #e2e2e7;
-  --text: #1c1c1f;
-  --text-muted: #6b6b76;
+  --surface-2: #f4f6fb;
+  --border: #e3e6ef;
+  --text: #1a1c22;
+  --text-muted: #676c7e;
   --accent: #3b5bdb;
   --accent-fg: #ffffff;
+  --dark: #1c1e26;
+  --warn: #c2410c;
   --ok: #2f9e44;
-  --warn: #e8590c;
-  --radius: 10px;
+
+  --radius: 14px;
+  --radius-sm: 9px;
   --gap: 12px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --topbar-h: 58px;
+
+  /* IBM Plex Sans and its Arabic sibling are drawn as one family, so the two
+     languages share proportions instead of looking like two documents. */
+  --font: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Three states, in this order:
+ *   1. bare :root            — the light palette, and the fallback
+ *   2. prefers-color-scheme  — guarded so an explicit light choice wins
+ *   3. [data-theme]          — the explicit choice, which beats both
+ *
+ * Written this way so "System" genuinely follows the OS while "Light" stays
+ * light on a machine set to dark. */
+
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17171a;
-    --surface: #1f1f23;
-    --surface-2: #27272c;
-    --border: #33333a;
-    --text: #ececf1;
-    --text-muted: #9a9aa6;
+  :root:not([data-theme="light"]) {
+    --page: #101116;
+    --surface: #1a1c23;
+    --surface-2: #22242d;
+    --border: #2e313c;
+    --text: #ecedf2;
+    --text-muted: #9298ab;
     --accent: #7089f5;
     --accent-fg: #10101a;
+    --dark: #2a2d38;
   }
 }
 
+/* The explicit choice wins over the media query in both directions. */
+:root[data-theme="dark"] {
+  --page: #101116;
+  --surface: #1a1c23;
+  --surface-2: #22242d;
+  --border: #2e313c;
+  --text: #ecedf2;
+  --text-muted: #9298ab;
+  --accent: #7089f5;
+  --accent-fg: #10101a;
+  --dark: #2a2d38;
+}
+
+/* Tells form controls and scrollbars which scheme they are painting into. */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
 * { box-sizing: border-box; }
+
+/* A display value beats the attribute, and almost every panel here sets one.
+   Stating it once saves repeating `[hidden] { display: none }` per component. */
+[hidden] { display: none !important; }
 
 html, body {
   height: 100%;
   margin: 0;
-  /* The page itself never scrolls. Only the transcript does, so the sidebar
-     and the composer stay put while a long answer streams in. */
+  /* The page never scrolls; the transcript does. */
   overflow: hidden;
 }
 
 body {
-  background: var(--bg);
+  background: var(--page);
   color: var(--text);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: 14.5px;
   line-height: 1.55;
+}
+
+:root[dir="rtl"] body {
+  font-family: "IBM Plex Sans Arabic", "IBM Plex Sans", system-ui, sans-serif;
 }
 
 h1, h2, h3 { margin: 0; font-weight: 600; }
 
-code { font-family: var(--mono); font-size: 0.85em; }
+/* --- icons ---------------------------------------------------------------
+   One sprite, one rule. Stroke-only and currentColor, so an icon takes the
+   colour of whatever it sits in and needs no dark-mode variant. */
+
+.ico {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ico--sm { width: 14px; height: 14px; }
+.ico--lg { width: 26px; height: 26px; stroke-width: 1.4; }
+.ico--hero { width: 30px; height: 30px; stroke-width: 1.4; color: var(--accent); }
 
 .muted { color: var(--text-muted); }
-.small { font-size: 0.82rem; }
 
 /* --- buttons --- */
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font: inherit;
+  font-size: 0.86rem;
   color: var(--text);
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 12px;
+  border-radius: 999px;
+  padding: 7px 14px;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 120ms ease, border-color 120ms ease;
 }
 
 .btn:hover:not(:disabled) { border-color: var(--accent); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn--primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
-.btn--ghost { background: transparent; }
-
-.btn--icon {
-  padding: 6px 10px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
+.btn--dark { background: var(--dark); color: #fff; border-color: transparent; }
+.btn--dark:hover:not(:disabled) { filter: brightness(1.15); }
+.btn--outline { background: transparent; }
+.btn--ghost { background: transparent; border-color: transparent; }
+.btn--ghost:hover { background: var(--surface-2); }
+.btn--block { width: 100%; }
+.btn--pill { padding: 5px 12px; font-size: 0.8rem; }
+.btn--icon { padding: 7px 10px; border-radius: 999px; }
+.btn--icon-text { background: transparent; }
+.btn--lang { flex: 1; }
 .btn--lang.is-active { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
 
-/* --- badge --- */
+.icon-btn {
+  font: inherit;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 7px;
+  cursor: pointer;
+  line-height: 1;
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
 
-.badge {
-  align-self: center;
-  font-size: 0.75rem;
-  padding: 3px 10px;
+.count {
+  font-size: 0.72rem;
+  background: var(--accent);
+  color: var(--accent-fg);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--ok) 16%, transparent);
-  color: var(--ok);
-  border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+  padding: 0 6px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* --- coming soon ---------------------------------------------------------
+   Applied to anything carrying data-soon.
+
+   Deliberately quiet: an earlier version stamped a floating "SOON" badge on
+   every one of the twenty planned controls, which collided with each other,
+   covered the Studio card icons and spilled outside the top bar. The click
+   handler in soon.js is what actually tells you — the styling only needs to
+   say "not yet", not shout it. */
+
+[data-soon] {
+  opacity: 0.72;
+  cursor: default;
+}
+
+[data-soon]:hover { border-color: var(--border); }
+
+/* Dark buttons go muddy rather than faint when dimmed, so they lose the fill
+   instead of the opacity. */
+.btn--dark[data-soon] {
+  opacity: 1;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+/* Only the Studio cards carry a visible tag — there the whole panel is
+   unbuilt, so saying it once per card is information rather than noise. It
+   sits inside the card's own layout and cannot overlap anything. */
+.pill {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 16%, transparent);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
-.badge--hidden { display: none; }
+.soon-tag { align-self: flex-start; }
+
+/* --- empty states --- */
+
+.empty { text-align: center; padding: 22px 14px; color: var(--text-muted); }
+.empty__icon { font-size: 1.6rem; display: block; margin-bottom: 8px; opacity: 0.8; }
+.empty__title { margin: 0 0 4px; font-weight: 600; font-size: 0.9rem; color: var(--text); }
+.empty__body { margin: 0; font-size: 0.82rem; line-height: 1.5; }
+
+/* --- toasts --- */
+
+.toasts {
+  position: fixed;
+  bottom: 18px;
+  left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 60;
+}
+
+.toast {
+  background: var(--dark);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 9px 14px;
+  font-size: 0.84rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  animation: rise 160ms ease-out;
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }

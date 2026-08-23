@@ -1,24 +1,14 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from motor.motor_asyncio import AsyncIOMotorClient
-
 from exceptions import NotebookLLMError
-from factories import ProviderCache, VectorDBFactory
+from factories import DbFactory, ProviderCache
 from middleware import RequestLoggingMiddleware
-from models import (
-    AssetModel,
-    ChatModel,
-    ChunkModel,
-    MessageModel,
-    ProjectModel,
-    SessionModel,
-    UserModel,
-)
 from routes import (
     STATIC_DIR,
+    RevalidatingStaticFiles,
     base_router,
     chat_router,
     data_router,
@@ -42,51 +32,15 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     # startup: connect to MongoDB
     logger.info("Starting %s v%s", SETTINGS.APPLICATION_NAME, SETTINGS.APP_VERSION)
-    app.client = AsyncIOMotorClient(SETTINGS.MONGO_URI)
-    app.db = app.client[SETTINGS.MONGO_DB_NAME]
 
-    # motor connects lazily, so ping to surface a bad URI/credentials at startup
-    # instead of on the first request that touches the database.
-    try:
-        await app.client.admin.command("ping")
-        logger.info("Connected to MongoDB (database=%s)", SETTINGS.MONGO_DB_NAME)
-    except Exception as exc:
-        logger.error("MongoDB connection failed: %s", exc, exc_info=True)
+    # Connect the document database provider (Mongo, Postgres, …) — the choice
+    # is made by DOCUMENT_DB_BACKEND in .env; everything else is agnostic.
+    app.db = DbFactory(SETTINGS).create()
+    await app.db.connect()
+    logger.info("DB connected (backend=%s)", SETTINGS.DOCUMENT_DB_BACKEND)
 
     # Create indexes once at startup — idempotent, safe to re-run.
-    project_model = ProjectModel(app.db)
-    await project_model.create_index([("project_id", 1)], unique=True)
-
-    chunk_model = ChunkModel(app.db)
-    await chunk_model.create_index([("project_id", 1), ("created_at", -1)])
-    # Backs the per-asset skip check and the per-asset reset delete, both of
-    # which run once per asset on every /process call.
-    await chunk_model.create_index([("project_id", 1), ("asset_id", 1)])
-    # Backs iter_project_chunks' (asset_id, chunk_order) sort. Without it Mongo
-    # sorts the matched documents in memory — chunk_content included — and a
-    # project over ~32 MB of text fails the blocking-sort limit outright, i.e.
-    # exactly the large projects /nlp/index/push exists to handle.
-    await chunk_model.create_index(
-        [("project_id", 1), ("asset_id", 1), ("chunk_order", 1)]
-    )
-
-    asset_model = AssetModel(app.db)
-    await asset_model.create_index([("project_id", 1), ("created_at", -1)])
-
-    # Conversations. The unique ones enforce the id contract; the compound ones
-    # back the sidebar listings and the history read on every message.
-    await UserModel(app.db).create_index([("user_id", 1)], unique=True)
-
-    session_model = SessionModel(app.db)
-    await session_model.create_index([("session_id", 1)], unique=True)
-    await session_model.create_index([("user_id", 1), ("created_at", -1)])
-
-    chat_model = ChatModel(app.db)
-    await chat_model.create_index([("chat_id", 1)], unique=True)
-    await chat_model.create_index([("session_id", 1), ("created_at", -1)])
-
-    await MessageModel(app.db).create_index([("chat_id", 1), ("created_at", 1)])
-
+    await app.db.setup_indexes()
     logger.info("Database indexes ensured")
 
     # startup: build the configured providers. Constructed once here rather
@@ -99,14 +53,30 @@ async def lifespan(app: FastAPI):
     app.providers = ProviderCache(SETTINGS)
     app.generation_client = app.providers.chatting()
     app.embedding_client = app.providers.embedding()
-    app.vectordb_client = VectorDBFactory(SETTINGS).create()
-    await app.vectordb_client.connect()
     logger.info(
-        "Providers ready (generation=%s, embedding=%s, vectordb=%s)",
+        "Providers ready (generation=%s, embedding=%s)",
         SETTINGS.GENERATION_BACKEND,
         SETTINGS.EMBEDDING_BACKEND,
-        SETTINGS.VECTOR_DB_BACKEND,
     )
+
+    # Warm the model probe cache in the background. Each probe is a real embed
+    # call, so doing it lazily on the first request left the settings dropdowns
+    # empty for the best part of twenty seconds.
+    async def warm_models() -> None:
+        try:
+            from controllers import ModelController
+
+            catalogue = await ModelController().catalogue()
+            logger.info(
+                "Model catalogue warm (%d chat, %d embedding)",
+                len(catalogue["chat"]),
+                len(catalogue["embedding"]),
+            )
+        except Exception as exc:
+            # Not fatal: the route will probe on demand if this failed.
+            logger.warning("Could not warm the model catalogue: %s", exc)
+
+    app.warm_task = asyncio.create_task(warm_models())
 
     yield
 
@@ -117,17 +87,13 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down %s", SETTINGS.APPLICATION_NAME)
 
     for name, close in (
-        ("vector database", app.vectordb_client.disconnect),
+        ("database", app.db.disconnect),
         ("provider clients", app.providers.aclose_all),
     ):
         try:
             await close()
         except Exception as exc:
-            # Shutdown is the one place a failure has nowhere left to propagate
-            # to, so it is logged here rather than raised.
             logger.warning("Could not close the %s cleanly: %s", name, exc)
-
-    app.client.close()
 
 
 app = FastAPI(title="NotebookLLM-minus", lifespan=lifespan)
@@ -174,5 +140,5 @@ app.include_router(chat_router)
 
 # The UI last: its "/" route must not shadow an API prefix, and StaticFiles
 # serves the css/js the Jinja page links to.
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/static", RevalidatingStaticFiles(directory=str(STATIC_DIR)), name="static")
 app.include_router(ui_router)

@@ -41,7 +41,3 @@ class OllamaEmbeddingProvider(LLMEmbeddingInterface):
             ) from exc
 
         return [list(vector) for vector in response.embeddings]
-
-    async def aclose(self) -> None:
-
-        await self.client.close()

@@ -1,0 +1,115 @@
+/* Right panel: the generated-output cards.
+ *
+ * Every card is a planned feature. They keep their colour — it is the panel's
+ * whole visual identity — and js/soon.js adds the badge and the refusal. */
+
+.studio__grid {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.studio-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 7px;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: start;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  min-height: 74px;
+  justify-content: space-between;
+}
+
+.studio-card__icon { display: block; opacity: 0.85; }
+
+/* Pastel tiles, tinted from the accent family so they hold together and stay
+   legible on both themes. */
+.studio-card--audio  { background: color-mix(in srgb, #4285f4 14%, var(--surface)); }
+.studio-card--slides { background: color-mix(in srgb, #f9ab00 16%, var(--surface)); }
+.studio-card--video  { background: color-mix(in srgb, #34a853 14%, var(--surface)); }
+.studio-card--mind   { background: color-mix(in srgb, #d946ef 12%, var(--surface)); }
+.studio-card--report { background: color-mix(in srgb, #a855f7 13%, var(--surface)); }
+.studio-card--cards  { background: color-mix(in srgb, #f43f5e 12%, var(--surface)); }
+.studio-card--quiz   { background: color-mix(in srgb, #06b6d4 13%, var(--surface)); }
+.studio-card--info   { background: color-mix(in srgb, #14b8a6 13%, var(--surface)); }
+.studio-card--table  { background: color-mix(in srgb, #3b82f6 13%, var(--surface)); }
+
+.studio__grid + .empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-top: 1px solid var(--border);
+  margin-block-start: 4px;
+}
+/* The display above outranks the attribute, so hiding it has to say so. */
+
+/* --- the note editor ---
+ *
+ * It replaces the empty state in the flow rather than pushing the panel
+ * taller, so opening a note never moves the button you are about to press. */
+
+.note {
+  flex: 1;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+/* [hidden] alone loses to display:flex. */
+.note:focus-within { border-color: var(--accent); }
+
+.note__title,
+.note__body {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.note__title {
+  flex: none;
+  font-size: 0.86rem;
+  font-weight: 600;
+  padding: 2px 0 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.note__body {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  overflow-y: auto;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  padding: 2px 0;
+}
+
+.note__title::placeholder,
+.note__body::placeholder { color: var(--text-muted); }
+
+.note__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.note__count { font-size: 0.72rem; color: var(--text-muted); }

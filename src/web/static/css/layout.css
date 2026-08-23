@@ -1,147 +1,205 @@
-/* Page frame: sidebar + main column. */
+/* Top bar + the three-panel workspace.
+ *
+ * The grid is pinned with direction:ltr so Sources | Chat | Studio keep their
+ * places in both languages; each panel gets the document direction back, so
+ * Arabic text still reads right-to-left inside a layout that does not move. */
 
-.app {
-  display: grid;
-  grid-template-columns: 290px 1fr;
-  height: 100%;
-  /* min-height:0 on a grid child is what actually lets an inner element
-     scroll — without it the child stretches to its content and the scrollbar
-     lands on the page instead. */
-  min-height: 0;
-  overflow: hidden;
+.topbar {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  padding: 0 16px;
+  position: relative;
+  direction: ltr;
 }
 
-/* --- sidebar --- */
+.topbar__brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 
-.sidebar {
+/* Drawn on a 32x24 grid for this size — the full 400x225 artwork in
+   img/logo.svg has 1.5-unit strokes and a fourteen-node network, which turns
+   to mush below about 120px. That file stays the favicon and the large mark. */
+.logo {
+  width: 34px;
+  height: 26px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--accent);
+}
+
+.notebook-title {
+  font: inherit;
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  max-width: 34vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notebook-title:hover { background: var(--surface-2); border-color: var(--border); }
+
+.topbar__actions { display: flex; align-items: center; gap: 6px; flex: none; }
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex: none;
+}
+
+/* --- dropdowns (notebook switcher, profile menu) --- */
+
+.dropdown {
+  position: absolute;
+  inset-block-start: calc(var(--topbar-h) - 6px);
+  inset-inline-end: 16px;
+  min-width: 250px;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+  padding: 8px;
+  z-index: 50;
+}
+
+.dropdown__title {
+  margin: 2px 6px 6px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dropdown__list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+
+.dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 0.85rem;
+  color: inherit;
+  text-align: start;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.dropdown__item:hover { background: var(--surface-2); }
+.dropdown__item.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.dropdown__item .dot { width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; flex: none; }
+.dropdown__item.is-active .dot { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.dropdown__item span:not(.dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dropdown__actions {
+  display: flex;
+  gap: 6px;
+  margin-block-start: 8px;
+  padding-block-start: 8px;
+  border-top: 1px solid var(--border);
+}
+.dropdown__actions .btn { flex: 1; font-size: 0.78rem; padding: 5px 8px; }
+
+/* --- workspace ------------------------------------------------------------ */
+
+.workspace {
+  display: grid;
+  /* Always three columns. An earlier version hid the side panels below
+     1180px and 860px, which turned the workspace into one column on a
+     normal laptop window. They shrink now instead of disappearing. */
+  grid-template-columns:
+    minmax(190px, 300px)
+    minmax(0, 1fr)
+    minmax(190px, 300px);
+  gap: var(--gap);
+  padding: 0 14px 6px;
+  /* Fills whatever the top bar and disclaimer leave. */
+  height: calc(100vh - var(--topbar-h) - 26px);
+  min-height: 0;
+  direction: ltr;
+}
+
+:root[dir="rtl"] .panel,
+:root[dir="rtl"] .dropdown,
+:root[dir="rtl"] .modal__panel,
+:root[dir="rtl"] .toast { direction: rtl; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
-  gap: var(--gap);
-  padding: 16px;
-  background: var(--surface);
-  /* Logical border: becomes the left edge under dir="rtl". */
-  border-inline-end: 1px solid var(--border);
-  /* Fixed frame: the header, identity block and footer never move. Only the
-     session list inside it scrolls. */
-  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
-.brand { font-size: 1.1rem; letter-spacing: -0.01em; }
-.brand__sub { margin: 2px 0 0; font-size: 0.8rem; color: var(--text-muted); }
-
-.identity {
-  background: var(--surface-2);
-  border-radius: var(--radius);
-  padding: 10px 12px;
+.panel__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
 }
+.panel__head h2 { font-size: 0.92rem; }
+.panel__head-actions { display: flex; gap: 2px; }
+.panel__collapse { font: inherit; background: none; border: 0; color: var(--text-muted); cursor: pointer; padding: 2px 4px; }
+.panel__collapse:hover { color: var(--text); }
 
-.identity__who { margin: 0 0 8px; font-size: 0.85rem; }
-.identity__who code { color: var(--accent); }
-.identity__actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.identity__actions .btn { font-size: 0.8rem; padding: 4px 10px; }
-
-/* The one scrollable region in the sidebar. */
-.sessions {
+/* Sized to content and not scrollable — the transcript is the scrolling one. */
+.panel__body {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.sessions__head { flex: none; }
-.sessions__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.sessions__head h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
-
-.session-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  /* Room for the scrollbar so it never sits on top of the chat titles. */
-  padding-inline-end: 4px;
-}
-
-.session { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.session__head {
-  display: flex; align-items: center; justify-content: space-between; gap: 6px;
-  padding: 7px 10px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600;
-}
-.session__head .btn { font-size: 0.75rem; padding: 2px 8px; }
-.session__chats { display: flex; flex-direction: column; }
-
-.chat-item {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 7px 10px; font-size: 0.86rem; cursor: pointer; background: none;
-  border: 0; border-top: 1px solid var(--border); color: inherit;
-  /* text-align: start, not left — mirrors under RTL. */
-  text-align: start; width: 100%; font-family: inherit;
-}
-.chat-item:hover { background: var(--surface-2); }
-.chat-item.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.chat-item__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.sidebar__foot { display: flex; flex-direction: column; gap: 8px; }
-.langswitch { display: flex; gap: 6px; }
-.langswitch .btn { flex: 1; font-size: 0.8rem; padding: 5px; }
-
-/* --- main --- */
-
-.main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
+  padding: 0 12px 12px;
   overflow: hidden;
 }
 
-.chat-head {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gap);
-  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
-  /* Pinned above the scrolling transcript. */
-  flex: none;
-}
-.chat-head h2 { font-size: 1rem; }
+/* Collapsed panels keep their header so they can be reopened. */
+.panel.is-collapsed .panel__body { display: none; }
 
-@media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+.disclaimer {
+  margin: 0;
+  padding: 3px 0 6px;
+  text-align: center;
+  font-size: 0.73rem;
+  color: var(--text-muted);
 }
 
-/* --- model pickers --------------------------------------------------------
-   Sits between the fixed header and the scrolling transcript, so it stays
-   visible while an answer streams. */
-
-.modelbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 20px;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
-  flex: none;
+/* Below this the three columns genuinely cannot coexist, so the panels
+   stack and the page scrolls — still all three, just not side by side. */
+@media (max-width: 780px) {
+  html, body { overflow: auto; }
+  .workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: calc(100vh - var(--topbar-h) - 26px);
+  }
+  .panel--sources, .panel--studio { min-height: 220px; }
+  .panel--chat { min-height: 60vh; }
 }
-
-.modelbar__field { display: flex; align-items: center; gap: 6px; }
-
-.modelbar select {
-  font: inherit;
-  font-size: 0.82rem;
-  color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 3px 8px;
-  max-width: 220px;
-}
-
-.modelbar select:disabled { opacity: 0.5; }
-
-#model-status { margin-inline-start: auto; }
-
-.chat-head__main { min-width: 0; }

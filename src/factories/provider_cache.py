@@ -6,11 +6,12 @@ models. This cache lets a chat name its own model and still share a connection
 pool with every other chat using it, instead of constructing a client per
 request and leaking pools.
 
-Keyed on the model id, so switching a chat back to a model already in use costs
-a dict lookup.
+Keyed on the qualified model id ("local/llama3.1:8b"), so switching a chat back
+to a model already in use costs a dict lookup — and the same tag on two
+different Ollama hosts stays two different clients.
 """
 
-from utils import Settings, get_logger
+from utils import Settings, get_logger, host_for, split_source
 
 from .llmchatting import LLMChattingFactory, LLMChattingInterface
 from .llmembedding import LLMEmbeddingFactory, LLMEmbeddingInterface
@@ -39,10 +40,18 @@ class ProviderCache:
         if cached is not None:
             return cached
 
-        # A shallow copy of Settings with the model swapped: the factory reads
-        # every other knob (backend, key, host, temperature) from it, so this
-        # overrides one field without duplicating that logic.
-        settings = self.settings.model_copy(update={"GENERATION_MODEL_ID": resolved})
+        # A shallow copy of Settings with the model and its host swapped: the
+        # factory reads every other knob (backend, key, temperature) from it,
+        # so this overrides two fields without duplicating that logic — and
+        # without the provider classes learning there are two hosts at all.
+        source, tag = split_source(resolved)
+
+        settings = self.settings.model_copy(
+            update={
+                "GENERATION_MODEL_ID": tag,
+                "OLLAMA_BASE_URL": host_for(self.settings, source),
+            }
+        )
 
         client = LLMChattingFactory(settings).create()
 
@@ -70,8 +79,14 @@ class ProviderCache:
         if cached is not None:
             return cached
 
+        source, tag = split_source(resolved)
+
         settings = self.settings.model_copy(
-            update={"EMBEDDING_MODEL_ID": resolved, "EMBEDDING_MODEL_SIZE": size}
+            update={
+                "EMBEDDING_MODEL_ID": tag,
+                "EMBEDDING_MODEL_SIZE": size,
+                "OLLAMA_BASE_URL": host_for(self.settings, source),
+            }
         )
 
         client = LLMEmbeddingFactory(settings).create()

@@ -1,0 +1,44 @@
+{# Right panel: generated outputs. Every card is a planned feature, so the
+   whole grid is marked rather than implying any of it works. #}
+<section class="panel panel--studio" id="panel-studio">
+  <header class="panel__head">
+    <h2 data-i18n="studio"></h2>
+    <button class="panel__collapse" data-collapse="panel-studio" aria-label="collapse"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-collapse"/></svg></button>
+  </header>
+
+  <div class="panel__body">
+    <div class="studio__grid">
+      <button class="studio-card studio-card--audio"  data-soon="Audio Overview"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-audio"/></svg></span><span data-i18n="audioOverview"></span></button>
+      <button class="studio-card studio-card--slides" data-soon="Slide Deck"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-slides"/></svg></span><span data-i18n="slideDeck"></span></button>
+      <button class="studio-card studio-card--video"  data-soon="Video Overview"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-video"/></svg></span><span data-i18n="videoOverview"></span></button>
+      <button class="studio-card studio-card--mind"   data-soon="Mind Map"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-mindmap"/></svg></span><span data-i18n="mindMap"></span></button>
+      <button class="studio-card studio-card--report" data-soon="Reports"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-report"/></svg></span><span data-i18n="reports"></span></button>
+      <button class="studio-card studio-card--cards"  data-soon="Flashcards"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-cards"/></svg></span><span data-i18n="flashcards"></span></button>
+      <button class="studio-card studio-card--quiz"   data-soon="Quiz"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-quiz"/></svg></span><span data-i18n="quiz"></span></button>
+      <button class="studio-card studio-card--info"   data-soon="Infographic"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-info"/></svg></span><span data-i18n="infographic"></span></button>
+      <button class="studio-card studio-card--table"  data-soon="Data Table"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-table"/></svg></span><span data-i18n="dataTable"></span></button>
+    </div>
+
+    <div class="empty" id="studio-empty">
+      <span class="empty__icon"><svg class="ico ico--lg" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-spark"/></svg></span>
+      <p class="empty__title" data-i18n="studioEmptyTitle"></p>
+      <p class="empty__body" data-i18n="studioEmptyBody"></p>
+    </div>
+
+    {# The note editor takes the empty state's place rather than sitting beside
+       it: the panel is one column and both want the same room. #}
+    <div class="note" id="note-editor" hidden>
+      <input class="note__title" id="note-title" type="text" data-i18n-placeholder="noteTitle" autocomplete="off">
+      <textarea class="note__body" id="note-body" data-i18n-placeholder="notePlaceholder" spellcheck="false"></textarea>
+      <div class="note__foot">
+        <span class="note__count" id="note-count"></span>
+        <button class="btn btn--ghost btn--pill" id="btn-note-discard" type="button"><span data-i18n="discard"></span></button>
+      </div>
+    </div>
+
+    {# One button, two jobs: it opens the editor, then saves what is in it. #}
+    <button class="btn btn--dark btn--block" id="btn-note" type="button">
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-note"/></svg> <span data-i18n="addNote" id="btn-note-label"></span>
+    </button>
+  </div>
+</section>

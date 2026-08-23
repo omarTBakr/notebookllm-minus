@@ -1,22 +1,25 @@
-"""Swappable provider layer: text generation, embeddings, vector storage.
+"""Provider cache and factory wrappers.
 
-Each subpackage is one abstract interface plus a concrete implementation per
-vendor, built by a factory that reads the backend name out of ``Settings``.
-Nothing above this package names a vendor, so changing provider is an ``.env``
-edit rather than a code change.
+A "factory" parses configuration, sets up credentials, and maps the provider
+name to an implementation class.
+
+A "provider" is the implementation itself: it holds the connection pool or HTTP
+session, and exposes the specific backend's features through the shared
+interface.
 """
 
-from .provider_cache import ProviderCache
+from .db import DbFactory, DbProvider, VectorRepository
 from .llmchatting import LLMChattingFactory, LLMChattingInterface
 from .llmembedding import LLMEmbeddingFactory, LLMEmbeddingInterface
-from .vectordb import VectorDBFactory, VectorDBInterface
+from .provider_cache import ProviderCache
 
 __all__ = [
-    "ProviderCache",
+    "DbFactory",
+    "DbProvider",
+    "VectorRepository",
     "LLMChattingFactory",
     "LLMChattingInterface",
     "LLMEmbeddingFactory",
     "LLMEmbeddingInterface",
-    "VectorDBFactory",
-    "VectorDBInterface",
+    "ProviderCache",
 ]

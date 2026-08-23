@@ -88,19 +88,36 @@ class ChatController(BaseController):
         return parser.get("rag", "system_prompt"), user_prompt
 
     @staticmethod
-    def to_citations(hits: list[dict]) -> list[dict]:
-        """The parts of a hit worth showing and storing next to an answer."""
+    def to_citations(hits: list[dict], names: dict[str, str] | None = None) -> list[dict]:
+        """The parts of a hit worth showing and storing next to an answer.
+
+        ``names`` maps asset_id to the source's current name. The vector
+        payload carries a copy of the name from index time, which goes stale
+        the moment someone renames a source, so the live name wins when the
+        caller supplies one. A plain dict rather than a model keeps this class
+        free of MongoDB, as promised above.
+        """
         citations = []
+        names = names or {}
 
         for number, hit in enumerate(hits, start=1):
             metadata = hit.get("metadata") or {}
+            asset_id = metadata.get("asset_id")
+
             citations.append(
                 {
                     "num": number,
-                    "source": metadata.get("source") or "unknown",
-                    "asset_id": metadata.get("asset_id"),
+                    # Falls back to the indexed copy for an asset that has
+                    # since been deleted — a stale name beats "unknown".
+                    "source": names.get(asset_id) or metadata.get("source") or "unknown",
+                    "asset_id": asset_id,
                     "chunk_order": metadata.get("chunk_order"),
-                    "score": round(hit["score"], 4) if hit.get("score") else None,
+                    # `is not None`, not truthiness: 0.0 is a real score — an
+                    # orthogonal match — and reporting it as "no score"
+                    # loses the one number that says the hit was poor.
+                    "score": (
+                        round(hit["score"], 4) if hit.get("score") is not None else None
+                    ),
                 }
             )
 
@@ -115,6 +132,10 @@ class ChatController(BaseController):
         lang: str,
         history: list[dict] | None = None,
         top_k: int = 5,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        asset_ids: list[str] | None = None,
+        source_names: dict[str, str] | None = None,
     ) -> AsyncIterator[dict]:
         """Yield the answer as a sequence of events.
 
@@ -125,20 +146,24 @@ class ChatController(BaseController):
         """
         hits: list[dict] = []
 
-        if await self.is_grounded(chat_id):
-            hits = await self.nlp.search(chat_id, question, limit=top_k)
+        # An empty list is not the same as None: it means every source was
+        # switched off, so there is nothing to retrieve and the answer should
+        # be ungrounded rather than searching all of them.
+        if asset_ids != [] and await self.is_grounded(chat_id):
+            hits = await self.nlp.search(chat_id, question, limit=top_k, asset_ids=asset_ids)
 
         system_prompt, user_prompt = self.build_prompt(question, hits, lang)
 
-        citations = self.to_citations(hits)
+        citations = self.to_citations(hits, source_names)
 
         self.logger.info(
-            "Answering chat %r (grounded=%s, hits=%d, lang=%s, history=%d)",
+            "Answering chat %r (grounded=%s, hits=%d, lang=%s, history=%d, sources=%s)",
             chat_id,
             bool(hits),
             len(hits),
             lang,
             len(history or []),
+            "all" if asset_ids is None else len(asset_ids),
         )
 
         yield {"type": "meta", "grounded": bool(hits), "citations": citations}
@@ -150,8 +175,13 @@ class ChatController(BaseController):
         ]
         messages.extend(history or [])
 
+        # None for either falls through to the provider's configured default,
+        # so a chat that was never tuned follows .env.
         async for piece in self.generation_client.stream_text(
-            prompt=user_prompt, chat_history=messages
+            prompt=user_prompt,
+            chat_history=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
         ):
             # Reasoning is surfaced under its own event type so the UI can show
             # it while waiting and keep it out of the stored answer.

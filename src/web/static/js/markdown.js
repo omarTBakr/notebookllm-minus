@@ -59,12 +59,10 @@ function inlineNodes(text) {
  * the sub-items inside the step they belong to.
  */
 function createListBuilder(fragment) {
-  // Each level: { list, ordered, indent, lastItem }
   const stack = [];
 
   return {
     add(indent, ordered, text) {
-      // Leave any level indented deeper than this line.
       while (stack.length && indent < stack[stack.length - 1].indent) stack.pop();
 
       let top = stack[stack.length - 1];
@@ -76,7 +74,6 @@ function createListBuilder(fragment) {
         const list = document.createElement(ordered ? "ol" : "ul");
 
         if (deeper && top.lastItem) {
-          // A nested list belongs inside the item it sits under.
           top.lastItem.append(list);
         } else {
           if (switched) stack.pop();
@@ -93,13 +90,8 @@ function createListBuilder(fragment) {
       top.lastItem = li;
     },
 
-    flush() {
-      stack.length = 0;
-    },
-
-    get active() {
-      return stack.length > 0;
-    },
+    flush() { stack.length = 0; },
+    get active() { return stack.length > 0; },
   };
 }
 
@@ -107,7 +99,6 @@ function flushParagraph(fragment, lines) {
   if (!lines.length) return;
 
   const p = document.createElement("p");
-  // A single newline inside a paragraph is a soft break, as in chat UIs.
   lines.join("\n").split("\n").forEach((line, index) => {
     if (index) p.append(document.createElement("br"));
     p.append(...inlineNodes(line));

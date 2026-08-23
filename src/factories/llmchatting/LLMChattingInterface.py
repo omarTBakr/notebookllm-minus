@@ -211,9 +211,13 @@ class LLMChattingInterface(ABC):
             "text": await self._generate_text(messages, max_tokens, temperature),
         }
 
-    @abstractmethod
     async def aclose(self) -> None:
-        """Release the underlying HTTP connection pool."""
+        """Release the client's connection pool.
+
+        The default suits every SDK whose client exposes ``close()`` — which
+        is most of them. Google and Cohere name it differently and override.
+        """
+        await self.client.close()
 
     # --- helpers shared by every provider ------------------------------------
 

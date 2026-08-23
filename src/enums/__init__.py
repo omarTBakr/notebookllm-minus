@@ -5,7 +5,7 @@ from .AssetTypes import AssetType
 from .FileExtensions import FileExtension
 from .LLMChattingEnum import ChatRole, LLMChattingProvider
 from .LLMEmbeddingEnum import EmbeddingInputType, LLMEmbeddingProvider
-from .VectorDBEnum import DistanceMethod, VectorDBProvider, DistanceFunction
+from .db import DistanceMethod, DbBackend
 
 __all__ = [
     "FileStatus",
@@ -17,7 +17,6 @@ __all__ = [
     "LLMChattingProvider",
     "EmbeddingInputType",
     "LLMEmbeddingProvider",
-    "DistanceMethod",
-    "DistanceFunction",
-    "VectorDBProvider",
+
+    "DbBackend",
 ]
