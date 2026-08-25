@@ -83,7 +83,15 @@ class MongoProvider(DbProvider):
         await chunk_repo.create_index([("project_id", 1), ("asset_id", 1)])
         await chunk_repo.create_index([("project_id", 1), ("asset_id", 1), ("chunk_order", 1)])
 
-        await MongoAssetRepository(self.db).create_index([("project_id", 1), ("created_at", -1)])
+        asset_repo = MongoAssetRepository(self.db)
+        await asset_repo.create_index([("project_id", 1), ("created_at", -1)])
+        # One copy of a document per notebook. Partial, so the assets written
+        # before content_hash existed do not all collide on "".
+        await asset_repo.create_index(
+            [("project_id", 1), ("content_hash", 1)],
+            unique=True,
+            partialFilterExpression={"content_hash": {"$gt": ""}},
+        )
         await MongoUserRepository(self.db).create_index([("user_id", 1)], unique=True)
 
         session_repo = MongoSessionRepository(self.db)

@@ -1,6 +1,7 @@
 // Left panel: the documents a notebook can answer from.
 
 import { api } from "./api.js";
+import { confirmDialog } from "./dialog.js";
 import { t } from "./i18n.js";
 import { toast } from "./soon.js";
 import { state } from "./state.js";
@@ -40,7 +41,7 @@ function row(source) {
   // rename does not also open a preview behind the edit field, and the
   // checkbox is excluded because ticking is not opening.
   item.addEventListener("click", (event) => {
-    if (event.target.closest(".source__name, .source__check")) return;
+    if (event.target.closest(".source__name, .source__check, .source__delete")) return;
     preview(source);
   });
 
@@ -53,8 +54,42 @@ function row(source) {
   check.title = source.name;
   check.addEventListener("change", () => toggle(source.asset_id, check.checked));
 
-  item.append(icon, name, check);
+  // Destructive and not undoable, so it asks first — the same native dialog
+  // the rename flows already use.
+  const del = document.createElement("button");
+  del.className = "source__delete";
+  del.type = "button";
+  del.title = t("deleteSource");
+  del.setAttribute("aria-label", `${t("deleteSource")} — ${source.name}`);
+  del.innerHTML =
+    '<svg class="ico ico--sm" width="14" height="14" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<use href="#i-close"/></svg>';
+  del.addEventListener("click", () => remove(source));
+
+  item.append(icon, name, del, check);
   return item;
+}
+
+/** Delete a source, and with it every chunk and vector derived from it. */
+async function remove(source) {
+  if (!state.notebook) return;
+  const ok = await confirmDialog({
+    title: t("deleteSource"),
+    message: t("confirmDeleteSource").replace("{name}", source.name),
+    confirm: t("deleteSource"),
+    danger: true,
+  });
+  if (!ok) return;
+
+  try {
+    await api.deleteSource(state.notebook.chat_id, source.asset_id);
+    await load(state.notebook.chat_id);
+    onSourcesChanged();
+    toast(t("sourceDeleted").replace("{name}", source.name));
+  } catch (error) {
+    toast(error.message);
+  }
 }
 
 /** Sources currently switched on — what a question will actually search. */
@@ -265,10 +300,21 @@ export async function add(file) {
   const name = document.createElement("span");
   name.className = "source__name";
   name.textContent = `${file.name} — ${t("indexing")}`;
-  pending.append(icon, name);
+
+  // Under the row, not beside it: the panel is narrow and the bar has to be
+  // able to span the whole width to read as a proportion at all.
+  const meter = document.createElement("div");
+  meter.className = "source__meter is-waiting";
+  const fill = document.createElement("div");
+  fill.className = "source__meter-fill";
+  meter.append(fill);
+
+  pending.append(icon, name, meter);
 
   $("sources-empty").hidden = true;
   $("sources-list").append(pending);
+
+  const stopPolling = trackProgress(state.notebook.chat_id, name, meter, fill, file.name);
 
   try {
     await api.addSource(state.notebook.chat_id, file);
@@ -280,7 +326,56 @@ export async function add(file) {
     render();
     toast(error.message);
     return false;
+  } finally {
+    // The bar belongs to this upload; render() replaces the list on success
+    // and the catch removes the row, so either way the poll must stop.
+    stopPolling();
   }
+}
+
+/** Poll the server's view of this upload and paint it onto the row.
+ *
+ *  Returns the canceller. Any failure to read progress is ignored on purpose:
+ *  a missing bar must never be the reason an otherwise fine upload reports an
+ *  error, so the row simply falls back to the indeterminate state.
+ */
+function trackProgress(chatId, nameEl, meter, fill, filename) {
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped) return;
+
+    try {
+      const progress = await api.indexingProgress(chatId);
+
+      if (!stopped && progress.active) {
+        const label = t(`stage_${progress.stage}`);
+        const pct = progress.percent;
+
+        if (typeof pct === "number") {
+          // Determinate: the embedding pass knows how many chunks there are.
+          meter.classList.remove("is-waiting");
+          fill.style.inlineSize = `${pct}%`;
+          nameEl.textContent = `${filename} — ${label} ${pct}%`;
+        } else {
+          // Extracting and chunking have no honest fraction to report.
+          meter.classList.add("is-waiting");
+          nameEl.textContent = `${filename} — ${label}`;
+        }
+      }
+    } catch {
+      // Leave whatever the row is already showing.
+    }
+
+    if (!stopped) timer = setTimeout(tick, 600);
+  };
+
+  let timer = setTimeout(tick, 250);
+
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
 }
 
 export function bindSources() {

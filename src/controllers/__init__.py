@@ -4,6 +4,7 @@ from .FileController import FileController
 from .ModelController import ModelController
 from .NLPController import NLPController
 from .ProcessController import ProcessController
+from .TextProcessingController import TextProcessingController
 
 __all__ = [
     "ChatController",
@@ -12,4 +13,5 @@ __all__ = [
     "ModelController",
     "NLPController",
     "ProcessController",
+    "TextProcessingController",
 ]

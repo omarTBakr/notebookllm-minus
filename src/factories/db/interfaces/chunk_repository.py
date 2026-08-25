@@ -23,7 +23,7 @@ class ChunkRepository(ABC):
         pass
 
     @abstractmethod
-    async def delete_chunks_for_asset(self, project_id: str, asset_id: str) -> None:
+    async def delete_chunks_for_asset(self, project_id: str, asset_id: str) -> list[str]:
         pass
 
     @abstractmethod

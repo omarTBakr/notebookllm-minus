@@ -96,3 +96,53 @@ def test_the_objectid_field_list_is_derived_from_the_model(repo):
 
     assert set(repo._objectid_fields(User)) == {"_id"}
     assert set(repo._objectid_fields(DataChunk)) == {"_id", "project_id"}
+
+
+def test_a_list_of_objectids_is_coerced_element_by_element(repo):
+    """Project.chunks_ids and assets_ids are `list[ObjectId]`, stored as JSONB
+    arrays of hex strings. Coercing only scalars left every project that had
+    ever ingested a document failing validation on read."""
+    from bson.objectid import ObjectId
+    from models.db_schema import Project
+
+    chunk_oids = [ObjectId(), ObjectId()]
+    asset_oid = ObjectId()
+
+    project = repo._record_to_model(
+        {
+            "id": str(ObjectId()),
+            "project_id": "p1",
+            "name": "doc.pdf",
+            "chunks_ids": [str(o) for o in chunk_oids],
+            "assets_ids": [str(asset_oid)],
+        },
+        Project,
+    )
+
+    assert project.chunks_ids == chunk_oids
+    assert project.assets_ids == [asset_oid]
+
+
+def test_an_orm_row_becomes_a_model(repo):
+    """The repositories hand back mapped instances, not dicts.
+
+    Timestamps are spelled out because they are *server* defaults: a row that
+    has been through the database always has them, a freshly constructed
+    instance does not.
+    """
+    from datetime import datetime, timezone
+
+    from bson.objectid import ObjectId
+
+    from factories.db.postgres.base_repository import UserRow
+
+    now = datetime.now(timezone.utc)
+    oid = ObjectId()
+    row = UserRow(
+        id=str(oid), user_id="u1", label="Omar", created_at=now, updated_at=now
+    )
+
+    user = repo._record_to_model(row, User)
+
+    assert isinstance(user, User)
+    assert (user.id, user.user_id, user.label) == (oid, "u1", "Omar")

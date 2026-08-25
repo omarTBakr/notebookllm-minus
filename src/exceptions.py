@@ -63,6 +63,17 @@ class AssetNotFoundError(NotFoundError):
     """No asset matches the given asset_id."""
 
 
+class DuplicateAssetError(NotebookLLMError):
+    """This notebook already holds a document with these exact bytes.
+
+    409 rather than 400: the request is well formed and would have been
+    accepted a moment ago — it conflicts with what is already stored. The UI
+    shows the message as-is, so it names the document the user already has.
+    """
+
+    status_code = 409
+
+
 class UserNotFoundError(NotFoundError):
     """No user matches the given user_id.
 

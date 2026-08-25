@@ -1,0 +1,181 @@
+/* Panel chrome: the drag bars between panels, and the top-bar group that
+ * dismisses a panel or brings it back.
+ *
+ * The grid itself is in layout.css — this file only styles the parts that
+ * make the three panels independent of one another. */
+
+/* Wide enough to be the seam between two panels and still be grabbable —
+   the workspace sets gap:0 and lets this track do both jobs. */
+:root {
+  --resizer-w: 14px;
+  /* Keep in step with TAB_W in panels.js. */
+  --tab-w: 44px;
+}
+
+/* --- drag bars ---------------------------------------------------------------- */
+
+/* A wide-enough hit area around a hairline: the bar you can grab is 10px, the
+   bar you can see is 2px, which is the only way this reads as a seam rather
+   than a fourth column. */
+.resizer {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  align-self: stretch;
+}
+
+.resizer::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(50% - 1px);
+  width: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.14s ease;
+}
+
+.resizer:hover::before,
+.resizer:focus-visible::before,
+.resizer.is-dragging::before {
+  background: var(--accent);
+}
+
+.resizer:focus-visible {
+  outline: none;
+}
+
+/* While a drag is live the cursor must not flicker as it crosses the panels,
+   and a stray selection must not appear in whatever text it passes over. */
+body.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* --- folded to a tab ------------------------------------------------------------ */
+
+/* Dragged past its minimum, a panel keeps its place in the row but gives the
+   width back: all that is left is its title, turned on its side, and the whole
+   rail reopens it.
+ *
+ * Scoped above the stacking width rather than undone below it — stacked, the
+ * panels are full-width rows and a 44px rail across one would say nothing.
+ * panels.js keeps the state either way, so widening the window folds it back. */
+@media (min-width: 781px) {
+  .panel.is-tab {
+    cursor: pointer;
+  }
+
+  .panel.is-tab .panel__body {
+    display: none;
+  }
+
+  /* The × would be a 14px target on a 44px rail, and the rail already has one
+     job. Dismissing a folded panel goes through the top bar's toggles. */
+  .panel.is-tab .panel__head-actions,
+  .panel.is-tab .panel__collapse {
+    display: none;
+  }
+
+  .panel.is-tab .panel__head {
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    height: 100%;
+    padding: 14px 0;
+    gap: 12px;
+    color: var(--text-muted);
+  }
+
+  .panel.is-tab:hover .panel__head {
+    color: var(--text);
+  }
+
+  .panel.is-tab .panel__head h2 {
+    /* Reads bottom-to-top, so it starts at the end nearest the content. */
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-height: calc(100% - 32px);
+    color: inherit;
+  }
+
+  /* A chevron pointing at the space the panel would reopen into — outward from
+     whichever edge it is folded against. */
+  .panel.is-tab .panel__head::before {
+    content: "";
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    border-radius: 1px;
+  }
+
+  .panel--sources.is-tab .panel__head::before {
+    transform: rotate(-45deg);
+  }
+
+  .panel--studio.is-tab .panel__head::before {
+    transform: rotate(135deg);
+  }
+}
+
+/* --- dismissed ---------------------------------------------------------------- */
+
+/* display:none rather than a zero track: a hidden panel has to leave the grid
+   entirely, so the track list panels.js writes lines up with what is left. */
+.panel.is-gone,
+.resizer.is-gone {
+  display: none;
+}
+
+/* --- the top-bar toggle group -------------------------------------------------- */
+
+.panel-toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  flex: none;
+}
+
+.panel-toggle {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.panel-toggle:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.panel-toggle.is-active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* Below the stacking width the panels are a single column, so there is no
+   width to drag and the seams are meaningless. Dismissing still works. */
+@media (max-width: 780px) {
+  .resizer {
+    display: none;
+  }
+}

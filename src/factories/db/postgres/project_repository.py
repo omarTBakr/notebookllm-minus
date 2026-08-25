@@ -1,36 +1,40 @@
-import json
-
 from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
+
+from sqlalchemy import cast, delete, func, select, update
+from sqlalchemy.dialects.postgresql import JSONB, insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from exceptions import ProjectNotFoundError, DbError
 from models.db_schema import Project
-from .base_repository import PostgresBaseRepository
+from .base_repository import PostgresBaseRepository, ProjectRow
 from ..interfaces.project_repository import ProjectRepository
 
 
 class PostgresProjectRepository(PostgresBaseRepository, ProjectRepository):
     """PostgreSQL implementation of ProjectRepository."""
 
+    @staticmethod
+    def _id_strings(object_ids) -> list[str]:
+        """ObjectId is not JSON-serialisable; the columns hold the hex form."""
+        return [str(oid) for oid in object_ids]
+
     async def create_project(self, project: Project) -> str:
-        record_id = self._generate_id()
         try:
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO projects (id, project_id, name, description, chunks_ids, assets_ids, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                    """,
-                    record_id,
-                    project.project_id,
-                    project.name,
-                    project.description,
-                    json.dumps([str(c) for c in project.chunks_ids]),
-                    json.dumps([str(a) for a in project.assets_ids]),
-                    project.created_at,
-                    project.updated_at,
+            async with self.session_factory.begin() as db:
+                await db.execute(
+                    insert(ProjectRow).values(
+                        id=self._generate_id(),
+                        project_id=project.project_id,
+                        name=project.name,
+                        description=project.description,
+                        chunks_ids=self._id_strings(project.chunks_ids),
+                        assets_ids=self._id_strings(project.assets_ids),
+                        created_at=project.created_at,
+                        updated_at=project.updated_at,
+                    )
                 )
             return project.project_id
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to create project: {exc}") from exc
 
     async def update_project(self, project: Project) -> ObjectId:
@@ -41,126 +45,120 @@ class PostgresProjectRepository(PostgresBaseRepository, ProjectRepository):
         must create it rather than 404. It returns the row's ObjectId because
         that is what DataChunk.project_id is, not the business project_id.
         """
-        record_id = self._generate_id()
+        statement = insert(ProjectRow).values(
+            id=self._generate_id(),
+            project_id=project.project_id,
+            name=project.name,
+            description=project.description,
+            chunks_ids=self._id_strings(project.chunks_ids),
+            assets_ids=self._id_strings(project.assets_ids),
+            created_at=project.created_at,
+            updated_at=project.updated_at,
+        )
+        # The id lists are deliberately not overwritten on conflict: a re-upload
+        # must not forget the chunks and assets already attached.
+        statement = statement.on_conflict_do_update(
+            index_elements=["project_id"],
+            set_={
+                "name": statement.excluded.name,
+                "description": statement.excluded.description,
+                "updated_at": statement.excluded.updated_at,
+            },
+        ).returning(ProjectRow.id)
+
         try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO projects (id, project_id, name, description,
-                                          chunks_ids, assets_ids, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                    ON CONFLICT (project_id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        description = EXCLUDED.description,
-                        updated_at = EXCLUDED.updated_at
-                    RETURNING id
-                    """,
-                    record_id,
-                    project.project_id,
-                    project.name,
-                    project.description,
-                    json.dumps([str(c) for c in project.chunks_ids]),
-                    json.dumps([str(a) for a in project.assets_ids]),
-                    project.created_at,
-                    project.updated_at,
-                )
-            return ObjectId(row["id"])
-        except Exception as exc:
+            async with self.session_factory.begin() as db:
+                row_id = await db.scalar(statement)
+            return ObjectId(row_id)
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to update project: {exc}") from exc
 
     async def get_project(self, project_id: str) -> Project:
         try:
-            async with self.pool.acquire() as conn:
-                record = await conn.fetchrow(
-                    "SELECT * FROM projects WHERE project_id = $1", project_id
+            async with self.session_factory() as db:
+                row = await db.scalar(
+                    select(ProjectRow).where(ProjectRow.project_id == project_id)
                 )
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to get project: {exc}") from exc
 
-        if not record:
+        if row is None:
             raise ProjectNotFoundError(f"Project {project_id!r} not found")
-        
-        return self._record_to_model(record, Project)
+
+        return self._record_to_model(row, Project)
 
     async def list_projects(self) -> list[Project]:
         try:
-            async with self.pool.acquire() as conn:
-                records = await conn.fetch("SELECT * FROM projects ORDER BY created_at DESC")
-                return self._records_to_models(records, Project)
-        except Exception as exc:
+            async with self.session_factory() as db:
+                rows = (
+                    await db.scalars(
+                        select(ProjectRow).order_by(ProjectRow.created_at.desc())
+                    )
+                ).all()
+                return self._records_to_models(list(rows), Project)
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to list projects: {exc}") from exc
 
     async def rename(self, project_id: str, name: str) -> None:
         try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    "UPDATE projects SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE project_id = $2",
-                    name,
-                    project_id,
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    update(ProjectRow)
+                    .where(ProjectRow.project_id == project_id)
+                    .values(name=name, updated_at=func.now())
                 )
-                if result == "UPDATE 0":
-                    raise ProjectNotFoundError(f"Project {project_id!r} not found")
-        except ProjectNotFoundError:
-            raise
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to rename project: {exc}") from exc
+
+        if result.rowcount == 0:
+            raise ProjectNotFoundError(f"Project {project_id!r} not found")
 
     async def delete_project(self, project_id: str) -> None:
         try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    "DELETE FROM projects WHERE project_id = $1",
-                    project_id,
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    delete(ProjectRow).where(ProjectRow.project_id == project_id)
                 )
-                if result == "DELETE 0":
-                    raise ProjectNotFoundError(f"Project {project_id!r} not found")
-        except ProjectNotFoundError:
-            raise
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete project: {exc}") from exc
 
-    async def add_asset_id(self, project_id: str, asset_object_id: str) -> None:
+        if result.rowcount == 0:
+            raise ProjectNotFoundError(f"Project {project_id!r} not found")
+
+    async def _append_ids(self, project_id: str, column, ids: list[str], what: str) -> None:
+        """Append to one of the JSONB id arrays, server-side.
+
+        `||` on jsonb concatenates, so this is one statement and cannot lose a
+        concurrent append the way read-modify-write would. The column is NOT
+        NULL DEFAULT '[]', so there is nothing to COALESCE away.
+        """
         try:
-            async with self.pool.acquire() as conn:
-                # We can append to the JSONB array using Postgres jsonb operator `||`
-                result = await conn.execute(
-                    """
-                    UPDATE projects 
-                    SET assets_ids = COALESCE(assets_ids, '[]'::jsonb) || $1::jsonb,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE project_id = $2
-                    """,
-                    # ObjectId is not JSON-serialisable; the column holds
-                    # the 24-hex string form.
-                    json.dumps([str(asset_object_id)]),
-                    project_id,
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    update(ProjectRow)
+                    .where(ProjectRow.project_id == project_id)
+                    .values(
+                        {
+                            column: column.op("||")(cast(ids, JSONB)),
+                            "updated_at": func.now(),
+                        }
+                    )
                 )
-                if result == "UPDATE 0":
-                    raise ProjectNotFoundError(f"Project {project_id!r} not found")
-        except ProjectNotFoundError:
-            raise
-        except Exception as exc:
-            raise DbError(f"Failed to add asset id to project: {exc}") from exc
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to add {what} to project: {exc}") from exc
+
+        if result.rowcount == 0:
+            raise ProjectNotFoundError(f"Project {project_id!r} not found")
+
+    async def add_asset_id(self, project_id: str, asset_object_id: str) -> None:
+        await self._append_ids(
+            project_id, ProjectRow.assets_ids, [str(asset_object_id)], "asset id"
+        )
 
     async def add_chunk_ids(self, project_id: str, chunk_object_ids: list[str]) -> None:
         if not chunk_object_ids:
             return
-            
-        try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    """
-                    UPDATE projects 
-                    SET chunks_ids = COALESCE(chunks_ids, '[]'::jsonb) || $1::jsonb,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE project_id = $2
-                    """,
-                    json.dumps([str(c) for c in chunk_object_ids]),
-                    project_id,
-                )
-                if result == "UPDATE 0":
-                    raise ProjectNotFoundError(f"Project {project_id!r} not found")
-        except ProjectNotFoundError:
-            raise
-        except Exception as exc:
-            raise DbError(f"Failed to add chunk ids to project: {exc}") from exc
+
+        await self._append_ids(
+            project_id, ProjectRow.chunks_ids, self._id_strings(chunk_object_ids), "chunk ids"
+        )

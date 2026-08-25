@@ -66,8 +66,15 @@ export const api = {
   renameSource: (chatId, assetId, name) =>
     request(`/chat/chats/${chatId}/assets/${assetId}`, patch({ name })),
 
+  deleteSource: (chatId, assetId) =>
+    request(`/chat/chats/${chatId}/assets/${assetId}`, { method: "DELETE" }),
+
   selectSources: (chatId, excluded) =>
     request(`/chat/chats/${chatId}/sources`, patch({ excluded_assets: excluded })),
+  // How far the in-flight upload for this notebook has got. Polled while
+  // addSource is still outstanding, so it must stay cheap on the server.
+  indexingProgress: (chatId) => request(`/chat/chats/${chatId}/indexing`),
+
   addSource: (chatId, file) => {
     const form = new FormData();
     form.append("file", file);

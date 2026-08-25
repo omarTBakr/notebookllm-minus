@@ -15,8 +15,44 @@ from utils import get_logger
 logger = get_logger("routes.chat")
 
 # Splitter settings for documents attached through the UI.
-CHAT_CHUNK_SIZE = 500
+#
+# 1000 rather than 500: chunk count is the row count of the ingest INSERT and
+# the number of texts sent to the embedding model, so halving it halves both.
+# A 222-page book went from ~1700 chunks to ~850 on this change alone.
+CHAT_CHUNK_SIZE = 1000
 CHAT_CHUNK_OVERLAP = 50
+
+
+# --- indexing progress --------------------------------------------------------
+# Attaching a document is one long request — extract, chunk, then embed every
+# chunk through the model — so the browser sees nothing until it finishes. The
+# route posts its position here as it goes and the UI polls for it.
+#
+# Keyed by chat because the asset id is minted inside the request: the client
+# cannot poll for something whose id it will not learn until the response it is
+# waiting on arrives. One upload at a time per notebook is what the UI allows.
+#
+# In-process and deliberately not persisted: it describes work happening in
+# *this* worker right now and means nothing once the request ends.
+_INDEXING: dict[str, dict] = {}
+
+
+def indexing_start(chat_id: str, filename: str) -> None:
+    _INDEXING[chat_id] = {"filename": filename, "stage": "extracting", "done": 0, "total": 0}
+
+
+def indexing_stage(chat_id: str, stage: str, done: int = 0, total: int = 0) -> None:
+    entry = _INDEXING.get(chat_id)
+    if entry is not None:
+        entry.update(stage=stage, done=done, total=total)
+
+
+def indexing_finish(chat_id: str) -> None:
+    _INDEXING.pop(chat_id, None)
+
+
+def indexing_status(chat_id: str) -> dict | None:
+    return _INDEXING.get(chat_id)
 
 
 def _new_id() -> str:

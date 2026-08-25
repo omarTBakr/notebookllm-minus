@@ -126,14 +126,20 @@
 
 .workspace {
   display: grid;
-  /* Always three columns. An earlier version hid the side panels below
-     1180px and 860px, which turned the workspace into one column on a
-     normal laptop window. They shrink now instead of disappearing. */
+  /* The full house, and only the first paint's worth: panels.js rewrites this
+     inline as panels are resized or dismissed. Stated here so the page is
+     already laid out correctly before that module runs — the tracks below
+     match the markup's five items, panel/bar/panel/bar/panel. */
   grid-template-columns:
-    minmax(190px, 300px)
+    300px
+    var(--resizer-w)
     minmax(0, 1fr)
-    minmax(190px, 300px);
-  gap: var(--gap);
+    var(--resizer-w)
+    300px;
+  /* No gap: the drag bars are the gap. A grid gap either side of them would
+     put 34px of dead ground between panels and leave only the middle of it
+     grabbable. */
+  gap: 0;
   padding: 0 14px 6px;
   /* Fills whatever the top bar and disclaimer leave. */
   height: calc(100vh - var(--topbar-h) - 26px);
@@ -180,8 +186,8 @@
   overflow: hidden;
 }
 
-/* Collapsed panels keep their header so they can be reopened. */
-.panel.is-collapsed .panel__body { display: none; }
+/* Dismissing a panel is in panels.css: it leaves the grid entirely, and the
+   top bar's toggle group is what brings it back. */
 
 .disclaimer {
   margin: 0;
@@ -199,6 +205,8 @@
     grid-template-columns: 1fr;
     height: auto;
     min-height: calc(100vh - var(--topbar-h) - 26px);
+    /* Stacked, the drag bars are gone, so the gap has to come back. */
+    gap: var(--gap);
   }
   .panel--sources, .panel--studio { min-height: 220px; }
   .panel--chat { min-height: 60vh; }

@@ -21,6 +21,7 @@ import {
   showBackend,
   showFor,
 } from "./settings.js";
+import { bindPanels, repaint as repaintPanels } from "./panels.js";
 import { bindSources, bindSourcesChanged, load as loadSources } from "./sources.js";
 import { bindStudio, repaint as repaintStudio } from "./studio.js";
 import { bindTheme } from "./theme.js";
@@ -145,14 +146,6 @@ function bindComposer() {
   });
 }
 
-function bindCollapse() {
-  document.querySelectorAll("[data-collapse]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.getElementById(btn.dataset.collapse)?.classList.toggle("is-collapsed");
-    });
-  });
-}
-
 // --- boot ---------------------------------------------------------------------
 
 async function main() {
@@ -161,7 +154,7 @@ async function main() {
   bindTheme();
   bindComingSoon();
   bindComposer();
-  bindCollapse();
+  bindPanels();
   bindNotebooks();
   bindProfile();
   bindSettings();
@@ -180,6 +173,7 @@ async function main() {
     paintTitle();
     paintMeta();
     repaintStudio();
+    repaintPanels();
     showFor(state.notebook);
   });
 

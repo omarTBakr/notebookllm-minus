@@ -154,8 +154,11 @@ async def process_data(
         # --- Process the bytes through the controller -------------------------
         # process_bytes writes to a named temp file (keyed on the asset's
         # extension) so the existing loader/splitter logic is reused unchanged.
-        docs = process_controller.process_bytes(asset.file_bytes, asset.name)
-        chunked_docs = process_controller.split_file(docs)
+        # Awaited onto a thread: this loop is per asset, so a multi-asset
+        # project would otherwise hold the event loop for the sum of them.
+        chunked_docs = await process_controller.process_and_split(
+            asset.file_bytes, asset.name
+        )
         # ----------------------------------------------------------------------
 
         # --- Persist chunks to MongoDB ----------------------------------------

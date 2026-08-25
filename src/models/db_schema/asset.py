@@ -4,10 +4,12 @@ from typing import Optional
 from bson.objectid import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from enums import AssetType
+from utils import get_settings
 
-# These match the defaults in .env — they are schema-level ceilings, not
-# runtime limits. Update here if you change the .env values significantly.
-_MAX_ASSET_BYTES    = 10_485_760     # 10 MB            (MAX_ASSET_SIZE_BYTES)
+# Schema-level ceiling on a single asset's bytes. Sourced from .env's
+# MAX_FILE_SIZE so the upload check (DataController) and this model can never
+# disagree about the limit.
+_MAX_ASSET_BYTES = get_settings().MAX_FILE_SIZE
 
 def utcnow() -> datetime:
     """Timezone-aware UTC. Naive local times sort wrongly across DST."""
@@ -28,6 +30,12 @@ class Asset(BaseModel):
     description: str = Field("", max_length=1000)
     
     file_bytes: bytes = Field(default=b"", max_length=_MAX_ASSET_BYTES)
+
+    # sha256 of file_bytes, hex. What makes "the same document" a question the
+    # database can answer: asset_id is a fresh uuid on every upload, and the
+    # filename is neither stable (rename) nor meaningful (two files can share
+    # one). Unique per project, so the same file may live in several notebooks.
+    content_hash: str = Field("", max_length=64)
 
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

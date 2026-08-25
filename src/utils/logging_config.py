@@ -19,6 +19,8 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from enums import LogFormat
+
 if TYPE_CHECKING:  # avoid a circular import at runtime (config imports nothing here)
     from .config import Settings
 
@@ -89,7 +91,13 @@ def _jsonable(value):
 
 
 def _build_config(settings: "Settings", log_file: Path | None) -> dict:
-    formatter = "json" if settings.LOG_FORMAT.lower() == "json" else "text"
+    # Settings validated this against LogFormat and stored the lower-cased
+    # value, so the comparison needs no defensive .lower() of its own.
+    formatter = (
+        LogFormat.JSON.value
+        if settings.LOG_FORMAT == LogFormat.JSON
+        else LogFormat.TEXT.value
+    )
 
     handlers: dict[str, dict] = {}
     if settings.LOG_TO_CONSOLE:

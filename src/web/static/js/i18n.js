@@ -15,9 +15,17 @@ const STRINGS = {
     profiles: "Profiles",
     newProfile: "New profile",
     rename: "Rename",
+    cancel: "Cancel",
+    confirm: "Confirm",
+    save: "Save",
     renamePrompt: "Name this profile:",
     renameNotebook: "Rename this notebook:",
     noNotebooks: "No notebooks yet.",
+
+    // panels
+    hidePanel: "Hide",
+    showPanel: "Show",
+    panelLast: "At least one panel has to stay open.",
 
     // sources
     sources: "Sources",
@@ -31,6 +39,14 @@ const STRINGS = {
       "Add files, then ask questions and get answers grounded in them. Drop a PDF or a text file to begin.",
     indexing: "Indexing",
     loading: "Loading…",
+    deleteSource: "Delete",
+    confirmDeleteSource: "Delete “{name}”? Its text and embeddings go too.",
+    sourceDeleted: "Deleted “{name}”.",
+    // The stages of attaching a document, shown on its progress bar.
+    stage_extracting: "Reading",
+    stage_chunking: "Splitting",
+    stage_storing: "Saving",
+    stage_indexing: "Indexing",
 
     // chat
     chat: "Chat",
@@ -111,9 +127,16 @@ const STRINGS = {
     profiles: "الملفات الشخصية",
     newProfile: "ملف جديد",
     rename: "إعادة تسمية",
+    cancel: "إلغاء",
+    confirm: "تأكيد",
+    save: "حفظ",
     renamePrompt: "اسم هذا الملف:",
     renameNotebook: "اسم هذا الدفتر:",
     noNotebooks: "لا توجد دفاتر بعد.",
+
+    hidePanel: "إخفاء",
+    showPanel: "إظهار",
+    panelLast: "يجب أن تبقى لوحة واحدة على الأقل مفتوحة.",
 
     sources: "المصادر",
     addSources: "إضافة مصادر",
@@ -126,6 +149,13 @@ const STRINGS = {
       "أضف ملفات، ثم اطرح أسئلة واحصل على إجابات مستندة إليها. أفلت ملف PDF أو نصًا للبدء.",
     indexing: "جارٍ الفهرسة",
     loading: "جارٍ التحميل…",
+    deleteSource: "حذف",
+    confirmDeleteSource: "حذف «{name}»؟ سيُحذف نصه وتضميناته أيضًا.",
+    sourceDeleted: "حُذف «{name}».",
+    stage_extracting: "جارٍ القراءة",
+    stage_chunking: "جارٍ التقطيع",
+    stage_storing: "جارٍ الحفظ",
+    stage_indexing: "جارٍ الفهرسة",
 
     chat: "المحادثة",
     customize: "تخصيص",

@@ -1,20 +1,31 @@
+"""Getting a document off disk (or out of a byte string) and into Documents.
+
+Loading only. What happens to the text afterwards — sanitising it, cutting it
+into chunks — belongs to TextProcessingController, which this delegates to.
+"""
+
+import asyncio
 import tempfile
 from pathlib import Path
 
 from langchain_core.documents import Document  # ty: ignore[unresolved-import]
 from langchain_community.document_loaders import TextLoader, PyPDFLoader # ty: ignore[unresolved-import]
-from langchain_text_splitters import RecursiveCharacterTextSplitter # ty: ignore[unresolved-import]
 
 from enums import FileExtension, ProcessStatus
-from exceptions import ChunkingError, ExtractionError, UnsupportedFileTypeError
+from exceptions import ExtractionError, UnsupportedFileTypeError
 from .BaseController import BaseController
+from .TextProcessingController import TextProcessingController
+
 
 class ProcessController(BaseController):
     def __init__(self, chunk_size=1000, chunk_overlap=200):
         super().__init__()
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
- 
+        # Everything text-shaped goes through here.
+        self.text = TextProcessingController(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap
+        )
 
     def get_loader(self, file_path: Path):
         extension = file_path.suffix.lower()
@@ -24,11 +35,6 @@ class ProcessController(BaseController):
             return TextLoader(str(file_path))
         else:
             raise UnsupportedFileTypeError(f"Unsupported file type: {extension}")
-
-    def get_splitter(self) -> RecursiveCharacterTextSplitter:
-        return RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
-        )
 
     def process_file(self, file_path: Path) -> list[Document]:
         # get_loader raises UnsupportedFileTypeError (a 400) — let it through
@@ -41,6 +47,10 @@ class ProcessController(BaseController):
             raise ExtractionError(
                 f"{ProcessStatus.EXTRACTION_FAILED.value}: {file_path.name}"
             ) from exc
+
+        # Before anything else sees it: the loaders can emit text the stores
+        # will not accept.
+        self.text.sanitize(docs, source=file_path.name)
 
         self.logger.info(
             "Extracted %d document(s) from %s", len(docs), file_path.name
@@ -74,20 +84,23 @@ class ProcessController(BaseController):
         return docs
 
     def split_file(self, docs: list[Document]) -> list[Document]:
-        try:
-            splitter = self.get_splitter()
-            chunks = splitter.split_documents(docs)
-        except Exception as exc:
-            raise ChunkingError(
-                f"{ProcessStatus.CHUNKING_FAILED.value}: chunk_size={self.chunk_size}, "
-                f"overlap={self.chunk_overlap}"
-            ) from exc
-        self.logger.info(
-            "Split %d document(s) into %d chunk(s) (chunk_size=%s, overlap=%s)",
-            len(docs),
-            len(chunks),
-            self.chunk_size,
-            self.chunk_overlap,
-        )
-        return chunks
-    
+        """Chunk the extracted text. Delegates; see TextProcessingController."""
+        return self.text.split(docs)
+
+    async def process_and_split(self, file_bytes: bytes, filename: str) -> list[Document]:
+        """Extract and split, off the event loop.
+
+        Both halves are synchronous CPU work — pypdf parsing every page, then
+        the splitter walking the whole text — and neither yields. Called
+        straight from an `async def` route they run *on* the event loop, which
+        is what stopped the server answering anything at all while a large PDF
+        was ingesting: one 200-page upload froze every other request behind it.
+
+        One thread hop covers both steps rather than one each, so the loop is
+        released once and the intermediate document list never crosses back.
+        """
+
+        def work() -> list[Document]:
+            return self.split_file(self.process_bytes(file_bytes, filename))
+
+        return await asyncio.to_thread(work)

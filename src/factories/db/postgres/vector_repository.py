@@ -1,24 +1,53 @@
-import json
 import uuid
+
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from utils import get_logger
 
 from exceptions import DbError
-import asyncpg
 from enums import DistanceMethod
 from .base_repository import PostgresBaseRepository
 from ..interfaces.vector_repository import VectorRepository
 
+# The identifier quoter for Postgres. Table names below are built from
+# collection names, so they go through this rather than into an f-string raw.
+_PREPARER = postgresql.dialect().identifier_preparer
+
+# pgvector operator and index opclass per distance metric.
+#   cosine: <=> / vector_cosine_ops
+#   dot:    <#> / vector_ip_ops      (inner product; pgvector negates it)
+#   euclid: <-> / vector_l2_ops
+_DISTANCE_SQL = {
+    DistanceMethod.COSINE: ("<=>", "vector_cosine_ops"),
+    DistanceMethod.DOT: ("<#>", "vector_ip_ops"),
+    DistanceMethod.EUCLID: ("<->", "vector_l2_ops"),
+}
+
 
 class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
     """PostgreSQL implementation of VectorRepository using pgvector.
-    
+
     Each 'collection' is implemented as a separate table to allow independent
     vector indices and optimized distance searching.
+
+    This is the one part of the backend Alembic does not own, and cannot: the
+    tables are created per chat at runtime, and the vector width is not known
+    until an embedding model is chosen. A single shared table would mean one
+    fixed width for every chat, or a column no HNSW index can cover. So the DDL
+    stays here, written by hand — but executed through the same engine and the
+    same session factory as everything else.
     """
 
-    def __init__(self, pool: asyncpg.Pool, distance_method: str = "cosine") -> None:
-        super().__init__(pool)
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        distance_method: str = "cosine",
+    ) -> None:
+        super().__init__(session_factory)
         self.distance_method = DistanceMethod(distance_method)
         self.logger = get_logger(type(self).__module__)
 
@@ -29,46 +58,55 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
         clean_name = "".join(c if c.isalnum() else "_" for c in collection_name)
         return f"vec_{clean_name}"
 
+    def _quoted_table(self, collection_name: str) -> str:
+        """The table name as it may be interpolated into a DDL string.
+
+        Sanitising is not quoting: it stops SQL from being injected but still
+        leaves an identifier the server has to parse. Belt and braces.
+        """
+        return _PREPARER.quote(self._table_name(collection_name))
+
     async def collection_exists(self, collection_name: str) -> bool:
         try:
-            async with self.pool.acquire() as conn:
-                result = await conn.fetchval(
-                    """
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE table_name = $1
-                    )
-                    """,
-                    self._table_name(collection_name)
+            async with self.session_factory() as db:
+                result = await db.scalar(
+                    text(
+                        "SELECT EXISTS (SELECT FROM information_schema.tables "
+                        "WHERE table_name = :name)"
+                    ),
+                    {"name": self._table_name(collection_name)},
                 )
                 return bool(result)
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to check if collection exists: {exc}") from exc
 
     async def list_collections(self) -> list[str]:
         try:
-            async with self.pool.acquire() as conn:
-                records = await conn.fetch(
-                    """
-                    SELECT table_name 
-                    FROM information_schema.tables 
-                    WHERE table_name LIKE 'vec_%'
-                    """
+            async with self.session_factory() as db:
+                result = await db.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_name LIKE 'vec\\_%'"
+                    )
                 )
-                # Strip the 'vec_' prefix to get back the collection name
-                return [r["table_name"][4:] for r in records]
-        except Exception as exc:
+                # Strip the 'vec_' prefix. Note this does not fully invert
+                # _table_name: the punctuation it replaced with '_' cannot be
+                # put back, so a name with a dash comes out with an underscore.
+                # The only callers (the /nlp health checks) count these rather
+                # than look them up, so it has never mattered.
+                return [name[4:] for (name,) in result.all()]
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to list collections: {exc}") from exc
 
     async def get_collection_info(self, collection_name: str) -> dict:
-        table = self._table_name(collection_name)
-        exists = await self.collection_exists(collection_name)
-        if not exists:
+        if not await self.collection_exists(collection_name):
             return {"status": "missing"}
-            
+
+        table = self._quoted_table(collection_name)
+
         try:
-            async with self.pool.acquire() as conn:
-                count = await conn.fetchval(f"SELECT COUNT(*) FROM {table}")
+            async with self.session_factory() as db:
+                count = await db.scalar(text(f"SELECT COUNT(*) FROM {table}"))
                 return {
                     "status": "green",
                     "points_count": count,
@@ -78,7 +116,7 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
                         }
                     }
                 }
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to get collection info: {exc}") from exc
 
     # pgvector's ceiling for an HNSW index. Storage allows more.
@@ -87,46 +125,50 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
     async def create_collection(
         self, collection_name: str, embedding_size: int, reset: bool = False
     ) -> bool:
-        table = self._table_name(collection_name)
-        
+        # Interpolated into the DDL below, so it has to be a number and not
+        # something that merely stringifies into one.
+        if not isinstance(embedding_size, int) or isinstance(embedding_size, bool):
+            raise DbError(f"embedding_size must be an int, got {embedding_size!r}")
+        if embedding_size < 1:
+            raise DbError(f"embedding_size must be positive, got {embedding_size}")
+
+        table = self._quoted_table(collection_name)
+        _, opclass = _DISTANCE_SQL[self.distance_method]
+
         try:
-            async with self.pool.acquire() as conn:
-                if await self.collection_exists(collection_name):
-                    if not reset:
-                        return False
-                    await conn.execute(f"DROP TABLE IF EXISTS {table}")
-                
-                # Create the table with pgvector type
-                await conn.execute(f"""
-                    CREATE TABLE {table} (
-                        id VARCHAR(200) PRIMARY KEY,
-                        embedding VECTOR({embedding_size}),
-                        text TEXT,
-                        metadata JSONB
+            if await self.collection_exists(collection_name):
+                if not reset:
+                    return False
+                async with self.session_factory.begin() as db:
+                    await db.execute(text(f"DROP TABLE IF EXISTS {table}"))
+
+            async with self.session_factory.begin() as db:
+                await db.execute(
+                    text(
+                        f"""
+                        CREATE TABLE {table} (
+                            id VARCHAR(200) PRIMARY KEY,
+                            embedding VECTOR({embedding_size}),
+                            text TEXT,
+                            metadata JSONB
+                        )
+                        """
                     )
-                """)
-                
-                # Create an HNSW index based on the chosen distance method
-                # pgvector operators:
-                # cosine: vector_cosine_ops (<=>)
-                # dot: vector_ip_ops (<#>)
-                # euclid: vector_l2_ops (<->)
-                opclass = "vector_cosine_ops"
-                if self.distance_method == DistanceMethod.DOT:
-                    opclass = "vector_ip_ops"
-                elif self.distance_method == DistanceMethod.EUCLID:
-                    opclass = "vector_l2_ops"
-                    
+                )
+
                 # pgvector will not build an HNSW index past this width. The
                 # column itself is fine, and search still works — it just does
                 # an exact scan instead of an approximate one. Refusing to
                 # create the collection at all would mean a 4096-dimension
                 # embedding model simply could not be used.
                 if embedding_size <= self.MAX_INDEXABLE_DIMENSIONS:
-                    await conn.execute(f"""
-                        CREATE INDEX idx_{table}_embedding ON {table}
-                        USING hnsw (embedding {opclass})
-                    """)
+                    index = _PREPARER.quote(f"idx_{self._table_name(collection_name)}_embedding")
+                    await db.execute(
+                        text(
+                            f"CREATE INDEX {index} ON {table} "
+                            f"USING hnsw (embedding {opclass})"
+                        )
+                    )
                 else:
                     self.logger.warning(
                         "Collection %r has %d dimensions, above pgvector's HNSW "
@@ -139,17 +181,24 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
                     )
 
                 return True
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to create collection {collection_name}: {exc}") from exc
 
     async def delete_collection(self, collection_name: str) -> bool:
-        table = self._table_name(collection_name)
+        existed = await self.collection_exists(collection_name)
+        table = self._quoted_table(collection_name)
+
         try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(f"DROP TABLE IF EXISTS {table}")
-                return result == "DROP TABLE"
-        except Exception as exc:
+            async with self.session_factory.begin() as db:
+                await db.execute(text(f"DROP TABLE IF EXISTS {table}"))
+            return existed
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete collection {collection_name}: {exc}") from exc
+
+    @staticmethod
+    def _vector_literal(vector: list[float]) -> str:
+        """pgvector's text input format. Cast to ::vector on the way in."""
+        return "[" + ",".join(str(v) for v in vector) + "]"
 
     async def insert_many(
         self,
@@ -162,54 +211,58 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
     ) -> bool:
         if not texts:
             return True
-            
-        table = self._table_name(collection_name)
-        
-        # Format the data for asyncpg executemany
-        records = []
+
+        table = self._quoted_table(collection_name)
+
+        rows = []
         for i in range(len(texts)):
             r_id = record_ids[i] if record_ids and record_ids[i] else str(uuid.uuid4())
-            meta = metadata[i] if metadata else {}
-            # pgvector accepts vector as a string representation or a list
-            # asyncpg pgvector integration needs string if we don't register the type explicitly,
-            # but we can just cast from text: $2::vector
-            vec_str = "[" + ",".join(str(v) for v in vectors[i]) + "]"
-            records.append((r_id, vec_str, texts[i], json.dumps(meta)))
-            
+            rows.append(
+                {
+                    "id": r_id,
+                    "embedding": self._vector_literal(vectors[i]),
+                    "text": texts[i],
+                    "metadata": metadata[i] if metadata else {},
+                }
+            )
+
+        statement = text(
+            f"""
+            INSERT INTO {table} (id, embedding, text, metadata)
+            VALUES (:id, (:embedding)::vector, :text, :metadata)
+            ON CONFLICT (id) DO UPDATE
+            SET embedding = EXCLUDED.embedding,
+                text = EXCLUDED.text,
+                metadata = EXCLUDED.metadata
+            """
+        ).bindparams(bindparam("metadata", type_=JSONB))
+
         try:
-            async with self.pool.acquire() as conn:
-                # Use executemany for batch insertion
-                # ON CONFLICT update to allow idempotency
-                await conn.executemany(f"""
-                    INSERT INTO {table} (id, embedding, text, metadata)
-                    VALUES ($1, $2::vector, $3, $4::jsonb)
-                    ON CONFLICT (id) DO UPDATE 
-                    SET embedding = EXCLUDED.embedding, 
-                        text = EXCLUDED.text, 
-                        metadata = EXCLUDED.metadata
-                """, records)
+            async with self.session_factory.begin() as db:
+                # Honour batch_size, which the interface documents and the old
+                # implementation ignored: one executemany for a whole document
+                # is a single very large round trip.
+                for start in range(0, len(rows), batch_size):
+                    await db.execute(statement, rows[start : start + batch_size])
             return True
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to insert into {collection_name}: {exc}") from exc
 
     async def delete_by_metadata(self, collection_name: str, key: str, value: str) -> int:
-        table = self._table_name(collection_name)
         if not await self.collection_exists(collection_name):
             return 0
-            
+
+        table = self._quoted_table(collection_name)
+
         try:
-            async with self.pool.acquire() as conn:
+            async with self.session_factory.begin() as db:
                 # ->> operator extracts jsonb field as text
-                result = await conn.execute(f"""
-                    DELETE FROM {table} 
-                    WHERE metadata->>$1 = $2
-                """, key, value)
-                
-                # format is "DELETE N"
-                if result.startswith("DELETE "):
-                    return int(result.split(" ")[1])
-                return 0
-        except Exception as exc:
+                result = await db.execute(
+                    text(f"DELETE FROM {table} WHERE metadata->>:key = :value"),
+                    {"key": key, "value": value},
+                )
+                return result.rowcount
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete by metadata in {collection_name}: {exc}") from exc
 
     async def search_by_vector(
@@ -219,47 +272,45 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
         limit: int = 5,
         asset_ids: list[str] | None = None,
     ) -> list[dict]:
-        table = self._table_name(collection_name)
         if not await self.collection_exists(collection_name):
             return []
-            
-        vec_str = "[" + ",".join(str(v) for v in vector) + "]"
-        
-        # operator based on distance
-        operator = "<=>" # cosine
-        if self.distance_method == DistanceMethod.DOT:
-            operator = "<#>" # pgvector inner product is negative, but we'll just use it for sorting
-        elif self.distance_method == DistanceMethod.EUCLID:
-            operator = "<->"
-            
-        query = f"""
-            SELECT id, text, metadata, (embedding {operator} $1::vector) as distance
-            FROM {table}
-        """
-        
-        args = [vec_str]
-        
+
+        table = self._quoted_table(collection_name)
+        operator, _ = _DISTANCE_SQL[self.distance_method]
+
+        params = {"vector": self._vector_literal(vector), "limit": limit}
+        where = ""
+
         if asset_ids:
-            # Add filtering by metadata
-            # We can check if metadata->>'asset_id' is in the array
-            query += " WHERE metadata->>'asset_id' = ANY($2)"
-            args.append(asset_ids)
-            
-        query += f" ORDER BY embedding {operator} $1::vector LIMIT ${len(args) + 1}"
-        args.append(limit)
-        
+            where = " WHERE metadata->>'asset_id' = ANY(:asset_ids)"
+            params["asset_ids"] = list(asset_ids)
+
+        query = text(
+            f"""
+            SELECT id, text, metadata,
+                   (embedding {operator} (:vector)::vector) AS distance
+            FROM {table}{where}
+            ORDER BY embedding {operator} (:vector)::vector
+            LIMIT :limit
+            """
+        )
+
         try:
-            async with self.pool.acquire() as conn:
-                records = await conn.fetch(query, *args)
-                
-                hits = []
-                for r in records:
-                    hits.append({
-                        "id": r["id"],
-                        "score": float(r["distance"]), # note: pgvector returns distance, not score. 
-                        "text": r["text"],
-                        "metadata": json.loads(r["metadata"]) if r["metadata"] else {}
-                    })
-                return hits
-        except Exception as exc:
+            async with self.session_factory() as db:
+                result = await db.execute(query, params)
+
+                # .mappings() rather than attribute access: one of the columns
+                # is called `metadata`, which is not a name to reach for on a
+                # SQLAlchemy object.
+                return [
+                    {
+                        "id": row["id"],
+                        # note: pgvector returns distance, not score.
+                        "score": float(row["distance"]),
+                        "text": row["text"],
+                        "metadata": row["metadata"] or {},
+                    }
+                    for row in result.mappings().all()
+                ]
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to search in {collection_name}: {exc}") from exc

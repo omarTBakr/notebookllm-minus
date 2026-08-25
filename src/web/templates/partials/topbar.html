@@ -10,6 +10,14 @@
   </div>
 
   <div class="topbar__actions">
+    {# Which panels are up. Also the only way back once one is dismissed, so it
+       stays in the bar rather than inside any panel that can disappear. #}
+    <div class="panel-toggles" role="group" aria-label="panels">
+      <button class="panel-toggle" data-panel-toggle="sources" aria-pressed="true"><svg class="ico" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-panel-left"/></svg></button>
+      <button class="panel-toggle" data-panel-toggle="chat" aria-pressed="true"><svg class="ico" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-panel-center"/></svg></button>
+      <button class="panel-toggle" data-panel-toggle="studio" aria-pressed="true"><svg class="ico" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-panel-right"/></svg></button>
+    </div>
+
     <button class="btn btn--dark" id="btn-create-notebook">
       <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-plus"/></svg> <span data-i18n="createNotebook"></span>
     </button>

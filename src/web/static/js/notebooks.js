@@ -3,6 +3,7 @@
 // A notebook is a chat. Sessions still exist in Mongo but the interface has no
 // concept of them — the backend files new notebooks under an implicit one.
 
+import { promptDialog } from "./dialog.js";
 import { api } from "./api.js";
 import { currentLang, t } from "./i18n.js";
 import { toast } from "./soon.js";
@@ -97,10 +98,12 @@ async function rename() {
     return;
   }
 
-  const next = prompt(t("renameNotebook"), state.notebook.title);
-  if (next === null) return;
-
-  const title = next.trim();
+  const title = await promptDialog({
+    title: t("rename"),
+    message: t("renameNotebook"),
+    value: state.notebook.title,
+  });
+  // null covers both dismissal and a name emptied to nothing.
   if (!title) return;
 
   try {
