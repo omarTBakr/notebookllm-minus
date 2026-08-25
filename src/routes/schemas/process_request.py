@@ -3,8 +3,11 @@ from pydantic import BaseModel, Field, model_validator
 
 class ProcessRequest(BaseModel):
     asset_id: str | None = Field(None, description="UUID of the asset to process")
-    chunk_size: int = Field(100, gt=0)
-    overlap_size: int = Field(20, ge=0)
+    # Matches ProcessController's own default and the UI's CHAT_CHUNK_SIZE. The
+    # old 100 produced roughly ten rows per page of a PDF, which is the number
+    # that makes the ingest INSERT and the embedding pass expensive.
+    chunk_size: int = Field(1000, gt=0)
+    overlap_size: int = Field(200, ge=0)
     reset: bool = False
 
     @model_validator(mode="after")

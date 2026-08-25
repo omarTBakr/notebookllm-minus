@@ -72,15 +72,82 @@
 
 .source__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: text; }
 
+/* Hidden until the row is hovered or the button itself is focused: a delete
+   control on every row at rest turns a list of documents into a list of
+   things to be careful around. Keyboard users still reach it via Tab. */
+.source__delete {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.source:hover .source__delete,
+.source__delete:focus-visible { opacity: 1; }
+.source__delete:hover { color: var(--warn); background: var(--surface); }
+
 .source__check { flex: none; accent-color: var(--accent); cursor: pointer; margin: 0; }
 .source:has(.source__check:not(:checked)) { opacity: 0.5; }
 .selectall input { accent-color: var(--accent); cursor: pointer; margin: 0; }
 
 /* A file being uploaded and indexed, before it becomes a real source. */
-.source--pending { opacity: 0.65; }
+.source--pending {
+  /* Only the pending row wraps, so the meter can take a line of its own
+     underneath the icon and name rather than squeezing in beside them. */
+  flex-wrap: wrap;
+  opacity: 0.8;
+}
 .source--pending .source__name::after {
   content: "…";
   color: var(--text-muted);
+}
+
+/* The indexing bar. Lives only on a pending row, so it goes when the row is
+   replaced by the real source — there is nothing to hide or clean up. */
+.source__meter {
+  flex: 0 0 100%;
+  block-size: 3px;
+  margin-block-start: 6px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.source__meter-fill {
+  block-size: 100%;
+  inline-size: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  /* Chunk counts arrive in batches, so the bar would otherwise jump. */
+  transition: inline-size 0.3s ease;
+}
+
+/* Reading and splitting report no fraction — there is nothing honest to fill
+   to, so the bar sweeps instead of pretending to a percentage. */
+.source__meter.is-waiting .source__meter-fill {
+  inline-size: 35%;
+  transition: none;
+  animation: source-meter-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes source-meter-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(340%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source__meter.is-waiting .source__meter-fill {
+    animation: none;
+    inline-size: 100%;
+    opacity: 0.45;
+  }
 }
 
 /* The name mid-rename. Sized and positioned like the span it replaces so the

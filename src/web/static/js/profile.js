@@ -1,6 +1,7 @@
 // The avatar menu: which profile you are, and every profile on this install.
 // No authentication — a picker, not a login.
 
+import { promptDialog } from "./dialog.js";
 import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { toast } from "./soon.js";
@@ -115,10 +116,11 @@ export async function createProfile() {
 async function renameCurrent() {
   if (!state.userId) return;
 
-  const next = prompt(t("renamePrompt"), state.userLabel ?? "");
-  if (next === null) return;
-
-  const label = next.trim();
+  const label = await promptDialog({
+    title: t("rename"),
+    message: t("renamePrompt"),
+    value: state.userLabel ?? "",
+  });
   if (!label) return;
 
   try {

@@ -1,50 +1,102 @@
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote_plus
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from enums import (
+    DbBackend,
     DistanceMethod,
+    Language,
     LLMChattingProvider,
     LLMEmbeddingProvider,
-    DbBackend,
+    LogFormat,
+    LogLevel,
+    ThinkingLevel,
 )
 
 SRC_DIR = Path(__file__).parent.parent
 
+# Fields whose value must name a member of some enum. Annotating them with the
+# enum is what validates them: pydantic reports the whole allowed set on a bad
+# value, so none of these needs a hand-written validator any more. The two
+# normalizers below only fix case and whitespace before that check runs.
+_LOWERCASE_CHOICES = (
+    "DOCUMENT_DB_BACKEND",
+    "GENERATION_BACKEND",
+    "EMBEDDING_BACKEND",
+    "VECTOR_DB_DISTANCE_METHOD",
+    "DEFAULT_LANG",
+    "GENERATION_THINKING",
+    "LOG_FORMAT",
+)
 
-def _normalize_choice(value: str, choices: type, field_name: str) -> str:
-    """Lowercase *value* and check it names a member of the *choices* enum.
-
-    Same shape as _normalize_log_level below, factored out because four
-    provider fields need it and each one names a different enum.
-    """
-    normalized = value.strip().lower()
-    allowed = [member.value for member in choices]
-    if normalized not in allowed:
-        raise ValueError(f"{field_name} must be one of {allowed}, got {value!r}")
-    return normalized
+# GENERATION_THINKING is a yes/no that also takes three levels, and .env files
+# spell yes/no every which way. Mapped onto the enum rather than rejected.
+_THINKING_ALIASES = {
+    "1": ThinkingLevel.TRUE,
+    "yes": ThinkingLevel.TRUE,
+    "on": ThinkingLevel.TRUE,
+    "0": ThinkingLevel.FALSE,
+    "no": ThinkingLevel.FALSE,
+    "off": ThinkingLevel.FALSE,
+    "": ThinkingLevel.FALSE,
+}
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=SRC_DIR / ".env",  # resolves to src/.env regardless of CWD
+        case_sensitive=False,
+        extra="ignore",
+        # Store the enum's *value*, so every reader still sees a plain string:
+        # these end up in log config, JSON responses and f-strings, where an
+        # enum member would render as "LogLevel.INFO" rather than "INFO".
+        use_enum_values=True,
+        # ...including the defaults below, which pydantic would otherwise leave
+        # as enum members, making a field's type depend on whether it was set.
+        validate_default=True,
+    )
+
+    # --- application ---------------------------------------------------------
     APPLICATION_NAME: str
     APP_VERSION: str
 
+    # --- uploads -------------------------------------------------------------
     ALLOWED_TYPES: list
-    MAX_FILE_CHUNK_SIZE: int
- 
-    MAX_FILE_SIZE: int = 10485760  # hard ceiling on a single upload (bytes)
+    MAX_FILE_SIZE: int = 10485760       # hard ceiling on a single upload (bytes)
+    MAX_FILE_CHUNK_SIZE: int            # streaming read size while uploading
 
-    # document db — which provider backs the main data store
-    DOCUMENT_DB_BACKEND: str = "mongo"
+    # --- document database ---------------------------------------------------
+    # Which provider backs the main data store. Postgres also holds the vectors;
+    # Mongo pairs with Qdrant. See the README's "Database backends".
+    DOCUMENT_DB_BACKEND: DbBackend = DbBackend.MONGO
 
-    # mongo db configurations
+    # mongo — only read when DOCUMENT_DB_BACKEND is "mongo"
     MONGO_URI: str = "mongodb://localhost:27017"
     MONGO_DB_NAME: str = "notebookllm"
 
-    # llm provider configurations
-    GENERATION_BACKEND: str  # one of LLMChattingProvider
-    EMBEDDING_BACKEND: str   # one of LLMEmbeddingProvider
+    # postgres — only read when DOCUMENT_DB_BACKEND is "postgres". The DSN is
+    # assembled from these by postgres_url / postgres_async_url below.
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "[PASSWORD]"
+    POSTGRES_DB: str = "notebookllm-minus"
+
+    # --- vector database -----------------------------------------------------
+    # VECTOR_DB_PATH: str = "assets/qdrant_db"  # embedded mode; relative resolves against src/
+    VECTOR_DB_URL: str | None = None   # set to use a server instead of VECTOR_DB_PATH
+    VECTOR_DB_API_KEY: str | None = None
+    # Fixed when a collection is created; changing it means rebuilding.
+    VECTOR_DB_DISTANCE_METHOD: DistanceMethod = DistanceMethod.COSINE
+
+    # --- llm providers -------------------------------------------------------
+    # Deliberately different types: Anthropic ships no embeddings API, so
+    # "anthropic" is valid for generation and rejected for embedding.
+    GENERATION_BACKEND: LLMChattingProvider
+    EMBEDDING_BACKEND: LLMEmbeddingProvider
 
     ANTHROPIC_API_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
@@ -58,41 +110,29 @@ class Settings(BaseSettings):
     # is the ordinary setup and behaves exactly as before.
     OLLAMA_CLOUD_BASE_URL: str | None = None
 
+    # --- generation ----------------------------------------------------------
     GENERATION_MODEL_ID: str
     # Generous on purpose: a reasoning model spends this budget on its
     # scratchpad *before* the answer, so a small cap can be consumed entirely
     # by thinking and leave the reply truncated or empty.
     GENERATION_DEFAULT_MAX_TOKENS: int = 4096
     GENERATION_DEFAULT_TEMPERATURE: float = 0.1
-
     # Ask the model to expose its reasoning. Ollama-only; ignored elsewhere,
     # and dropped automatically if the model doesn't support it.
-    # true/false, or "low" / "medium" / "high".
-    GENERATION_THINKING: str = "true"
+    GENERATION_THINKING: ThinkingLevel = ThinkingLevel.TRUE
 
+    # --- embedding -----------------------------------------------------------
     EMBEDDING_MODEL_ID: str
     EMBEDDING_MODEL_SIZE: int  # must match the embedding model, see .env.example
 
-    # chat configurations
-    DEFAULT_LANG: str = "en"          # prompt locale when a chat names none
-    CHAT_HISTORY_LIMIT: int = 10      # prior turns sent as context
-    RETRIEVAL_TOP_K: int = 5          # chunks retrieved per grounded answer
+    # --- chat ----------------------------------------------------------------
+    DEFAULT_LANG: Language = Language.EN  # prompt locale when a chat names none
+    CHAT_HISTORY_LIMIT: int = 10          # prior turns sent as context
+    RETRIEVAL_TOP_K: int = 5              # chunks retrieved per grounded answer
 
-    # vector database configurations (kept for postgres/qdrant connection properties)
-    POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: int = 5432
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "[PASSWORD]"
-    POSTGRES_DB: str = "notebookllm-minus"
-
-    # VECTOR_DB_PATH: str = "assets/qdrant_db"  # embedded mode; relative resolves against src/
-    VECTOR_DB_URL: str | None = None   # set to use a server instead of VECTOR_DB_PATH
-    VECTOR_DB_API_KEY: str | None = None
-    VECTOR_DB_DISTANCE_METHOD: str = "cosine"
-
-    # logging configurations
-    LOG_LEVEL: str = "INFO"
-    LOG_FORMAT: str = "text"  # "text" for humans, "json" for log aggregators
+    # --- logging -------------------------------------------------------------
+    LOG_LEVEL: LogLevel = LogLevel.INFO
+    LOG_FORMAT: LogFormat = LogFormat.TEXT
     LOG_TO_CONSOLE: bool = True
     LOG_TO_FILE: bool = True
     LOG_DIR: str = "logs"  # relative paths resolve against src/
@@ -100,68 +140,28 @@ class Settings(BaseSettings):
     LOG_MAX_BYTES: int = 10485760  # 10 MB per file before rotating
     LOG_BACKUP_COUNT: int = 5
 
+    # --- normalizers ---------------------------------------------------------
+    # `mode="before"` so they run ahead of the enum check: a .env saying
+    # "Ollama" or " postgres " is a spelling difference, not a wrong value.
 
-
-
-
-
-    @field_validator("GENERATION_BACKEND")
+    @field_validator(*_LOWERCASE_CHOICES, mode="before")
     @classmethod
-    def _normalize_generation_backend(cls, value: str) -> str:
-        return _normalize_choice(value, LLMChattingProvider, "GENERATION_BACKEND")
+    def _lowercase(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
 
-
-    @field_validator("EMBEDDING_BACKEND")
+    @field_validator("LOG_LEVEL", mode="before")
     @classmethod
-    def _normalize_embedding_backend(cls, value: str) -> str:
-        # Deliberately a different set from GENERATION_BACKEND: Anthropic ships
-        # no embeddings API, so "anthropic" is rejected here.
-        return _normalize_choice(value, LLMEmbeddingProvider, "EMBEDDING_BACKEND")
+    def _uppercase(cls, value: object) -> object:
+        # The one option whose canonical spelling is upper case, because that
+        # is how `logging` names its levels.
+        return value.strip().upper() if isinstance(value, str) else value
 
-
-    @field_validator("DEFAULT_LANG")
+    @field_validator("GENERATION_THINKING", mode="before")
     @classmethod
-    def _normalize_default_lang(cls, value: str) -> str:
-        # Imported here rather than at module scope: templates imports utils
-        # for its logger, so a top-level import would close the cycle.
-        from templates.locales import SUPPORTED_LANGS
+    def _resolve_thinking_alias(cls, value: object) -> object:
+        return _THINKING_ALIASES.get(value, value) if isinstance(value, str) else value
 
-        normalized = value.strip().lower()
-        if normalized not in SUPPORTED_LANGS:
-            raise ValueError(
-                f"DEFAULT_LANG must be one of {list(SUPPORTED_LANGS)}, got {value!r}"
-            )
-        return normalized
-
-    @field_validator("DOCUMENT_DB_BACKEND")
-    @classmethod
-    def _normalize_document_db_backend(cls, value: str) -> str:
-        return _normalize_choice(value, DbBackend, "DOCUMENT_DB_BACKEND")
-
-
-    @field_validator("VECTOR_DB_DISTANCE_METHOD")
-    @classmethod
-    def _normalize_distance_method(cls, value: str) -> str:
-        return _normalize_choice(value, DistanceMethod, "VECTOR_DB_DISTANCE_METHOD")
-
-
-    @field_validator("LOG_LEVEL")
-    @classmethod
-    def _normalize_log_level(cls, value: str) -> str:
-        level = value.strip().upper()
-        allowed = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
-        if level not in allowed:
-            raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}, got {value!r}")
-        return level
-
-
-    @field_validator("LOG_FORMAT")
-    @classmethod
-    def _normalize_log_format(cls, value: str) -> str:
-        fmt = value.strip().lower()
-        if fmt not in {"text", "json"}:
-            raise ValueError(f"LOG_FORMAT must be 'text' or 'json', got {value!r}")
-        return fmt
+    # --- derived paths and DSNs ----------------------------------------------
 
     @property
     def log_file_path(self) -> Path:
@@ -183,15 +183,32 @@ class Settings(BaseSettings):
     #         db_path = SRC_DIR / db_path
     #     return db_path
 
-    model_config = SettingsConfigDict(
-        env_file=SRC_DIR / ".env",  # resolves to src/.env regardless of CWD
-        case_sensitive=False,
-        extra="ignore"
-    )
+    def _postgres_url(self, driver: str) -> str:
+        """DSN for *driver*, with the credentials percent-encoded.
+
+        quote_plus because a password is free text: an unescaped `@` or `/` in
+        it silently reshapes the URL and the connection fails somewhere else
+        entirely.
+        """
+        user = quote_plus(self.POSTGRES_USER)
+        password = quote_plus(self.POSTGRES_PASSWORD)
+        database = quote_plus(self.POSTGRES_DB)
+        return (
+            f"{driver}://{user}:{password}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{database}"
+        )
+
     @property
-    def vector_db_url(self) -> str:
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-    
+    def postgres_url(self) -> str:
+        """Plain DSN — psql, and Alembic's offline mode."""
+        return self._postgres_url("postgresql")
+
+    @property
+    def postgres_async_url(self) -> str:
+        """The one the app connects with: SQLAlchemy over asyncpg."""
+        return self._postgres_url("postgresql+asyncpg")
+
+
 @lru_cache
 def get_settings() -> Settings:
     """The one Settings instance for this process.

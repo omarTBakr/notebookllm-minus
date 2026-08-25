@@ -172,6 +172,39 @@ class MongoAssetRepository(AssetRepository, BaseModel):
         except PyMongoError as exc:
             raise DbError("Could not read assets for the given projects") from exc
 
+    async def find_by_content_hash(self, project_id: str, content_hash: str) -> Asset | None:
+        """The project's asset with these exact bytes, or None.
+
+        file_bytes is projected away: this runs on every upload and only needs
+        to identify the existing document, not re-read it.
+        """
+        if not content_hash:
+            return None
+
+        try:
+            record = await self.collection.find_one(
+                {"project_id": project_id, "content_hash": content_hash},
+                projection={"file_bytes": 0},
+            )
+        except PyMongoError as exc:
+            raise DbError(
+                f"Could not look up asset by content hash in project {project_id!r}"
+            ) from exc
+
+        return Asset(**record) if record else None
+
+    async def delete_asset(self, asset_id: str) -> bool:
+        """Remove one asset. The caller clears its chunks and vectors."""
+        try:
+            result = await self.collection.delete_one({"asset_id": asset_id})
+        except PyMongoError as exc:
+            raise DbError(f"Could not delete asset {asset_id!r}") from exc
+
+        if result.deleted_count:
+            self.logger.info("Deleted asset %r", asset_id)
+
+        return result.deleted_count > 0
+
     async def delete_assets_for_project(self, project_id: str) -> None:
         """Drop every asset belonging to a project."""
         try:

@@ -22,6 +22,8 @@ are picked from whatever Ollama has installed rather than pinned in code.
 - [Tech stack](#tech-stack)
 - [How it fits together](#how-it-fits-together)
 - [Data model](#data-model)
+- [Database backends](#database-backends)
+  - [Migrations](#migrations)
 - [Providers](#providers)
 - [Project structure](#project-structure)
 - [Setup](#setup)
@@ -103,6 +105,8 @@ are picked from whatever Ollama has installed rather than pinned in code.
 - `pypdf` for PDF parsing
 - MongoDB via `motor` (async driver), with `mongo-express` in the Compose file for a look
   inside
+- PostgreSQL as the alternative document store — SQLAlchemy 2.0 (async ORM) over `asyncpg`,
+  with the schema owned by Alembic and vectors kept in the same database via pgvector
 - Native vendor SDKs for the providers — `anthropic`, `openai`, `google-genai`, `cohere`,
   `ollama` — rather than a wrapper library, so each backend's real API is visible at the
   one place it is used
@@ -231,6 +235,12 @@ Three collections, and one identifier distinction worth internalising early:
 | `assets`      | `Asset`     | `asset_id` (uuid4 string), `asset_type`, `project_id`, `file_bytes` |
 | `data_chunks` | `DataChunk` | `project_id` (**ObjectId** — the project's `_id`), `asset_id`, `chunk_order`, `chunk_content` |
 
+The same pydantic documents back both stores. On Postgres they are tables of the same names —
+except `data_chunks`, which is `chunks` — with one column per field; the primary key is still
+a 24-hex `ObjectId` string, because these models are shared with the Mongo backend and
+`DataChunk.project_id` is a real `ObjectId` on both. See
+[Database backends](#database-backends).
+
 ```mermaid
 erDiagram
     USERS ||--o{ SESSIONS : owns
@@ -300,6 +310,92 @@ Indexes are created at startup in `main.py`'s lifespan — idempotent, so restar
 | `assets`      | `project_id, created_at desc`  | listing a project's assets                 |
 | `data_chunks` | `project_id, created_at desc`  | project-wide chunk reads                   |
 | `data_chunks` | `project_id, asset_id`         | the per-asset skip check and reset delete  |
+
+## Database backends
+
+`DOCUMENT_DB_BACKEND` picks which store backs users, sessions, chats, messages, projects,
+assets and chunks. Both implement the same eight repository interfaces
+(`factories/db/interfaces/`), so nothing above `app.db` knows which one is running.
+
+| | `mongo` | `postgres` |
+| --- | --- | --- |
+| Documents | MongoDB, via `motor` | PostgreSQL, via SQLAlchemy 2.0 + `asyncpg` |
+| Vectors | Qdrant — a second service, or an embedded on-disk store | pgvector, in the same database |
+| Schema | implicit; indexes ensured at startup | explicit; owned by Alembic |
+| Services to run | two | one |
+| Configured by | `MONGO_URI`, `MONGO_DB_NAME` | `POSTGRES_HOST/PORT/USER/PASSWORD/DB` |
+
+They are not interchangeable at runtime — each keeps its own data, and switching the setting
+points the app at a different store rather than migrating anything.
+
+```dotenv
+DOCUMENT_DB_BACKEND = "postgres"
+
+POSTGRES_HOST     = "localhost"
+POSTGRES_PORT     = 5400          # compose publishes 5432 as 5400 on the host
+POSTGRES_USER     = "postgres"
+POSTGRES_PASSWORD = "password"
+POSTGRES_DB       = "notebookllm-minus"
+```
+
+The DSN is assembled from those five in `Settings.postgres_async_url`, with the credentials
+percent-encoded — there is no `DATABASE_URL` to keep in sync, and no password in a committed
+file.
+
+### Migrations
+
+The tables are declared once as SQLAlchemy models in
+`factories/db/postgres/base_repository.py`. Alembic reads that metadata, and every repository
+queries against the same classes — so a column that does not exist is an `AttributeError` at
+import rather than a 503 on the first request.
+
+Nothing needs running by hand for a fresh database: `PostgresProvider.setup_indexes()` runs
+`alembic upgrade head` during the app's lifespan, under a Postgres advisory lock so several
+uvicorn workers booting at once cannot race each other. To drive it yourself, from `src/`:
+
+```bash
+uv run alembic -c factories/db/postgres/alembic.ini upgrade head
+uv run alembic -c factories/db/postgres/alembic.ini current
+uv run alembic -c factories/db/postgres/alembic.ini downgrade base
+```
+
+The config lives beside the backend it migrates rather than at the repo root, which is why
+every invocation needs `-c`. It reads the DSN from `Settings`, so it picks up `src/.env` the
+same way the app does. `sqlalchemy.url` is deliberately left unset in it — `env.py` builds the
+DSN from `Settings` and would ignore it — which is what keeps the file free of credentials and
+safe to commit.
+
+**Changing the schema** is a two-step edit: change the model, then generate the migration and
+read what it produced.
+
+```bash
+uv run alembic -c factories/db/postgres/alembic.ini \
+    revision --autogenerate --rev-id 0002 -m "add whatever"
+```
+
+Revision ids are numbered by hand (`0001`, `0002`, …) rather than hashed, because this history
+is linear and `ls versions/` should read in order.
+
+An autogenerate run against a database already at `head` must produce an **empty** migration.
+That is the check the whole arrangement exists to make possible: if it is not empty, the
+models and the database have drifted.
+
+**pgvector collections are not Alembic's.** One table per chat, named `vec_<collection>`,
+created at runtime by `PostgresVectorRepository` — the vector width is not known until an
+embedding model is chosen, and a single shared table would mean one fixed width for every
+chat, or a column no HNSW index can cover. Alembic creates the extension; the repository
+creates the tables.
+
+**A database that predates Alembic** has the tables but no `alembic_version`, so
+`upgrade head` will try to create them again and fail. Either throw it away
+(`docker compose down -v`, or `DROP DATABASE`), or adopt it in place:
+
+```bash
+uv run alembic -c factories/db/postgres/alembic.ini stamp head
+```
+
+then apply by hand what `0001` has and the old DDL did not — `sessions.title`, and the
+`NOT NULL DEFAULT`s on the columns behind non-optional model fields.
 
 ## Providers
 
@@ -389,7 +485,17 @@ src/
 ├── factories/                  # swappable providers, see Providers above
 │   ├── llmchatting/            # LLMChattingInterface + 5 providers + LLMChattingFactory
 │   ├── llmembedding/           # LLMEmbeddingInterface + 4 providers + LLMEmbeddingFactory
-│   ├── vectordb/               # VectorDBInterface + QdrantProvider + VectorDBFactory
+│   ├── db/                     # the document + vector store, see Database backends above
+│   │   ├── factory.py          # DOCUMENT_DB_BACKEND -> MongoProvider | PostgresProvider
+│   │   ├── interfaces/         # DbProvider + the 8 repository ABCs both backends implement
+│   │   ├── mongo/              # motor repositories + QdrantVectorRepository
+│   │   └── postgres/
+│   │       ├── base_repository.py  # the SQLAlchemy models, and rows -> pydantic
+│   │       ├── provider.py         # engine, sessionmaker, `alembic upgrade head` at startup
+│   │       ├── *_repository.py     # one per entity, querying the models above
+│   │       ├── vector_repository.py# pgvector; a table per collection, its own DDL
+│   │       ├── alembic.ini         # needs `-c` — it does not live at the repo root
+│   │       └── alembic/versions/   # the schema's history, 0001 onwards
 │   └── cohere_support.py       # shared shutdown helper (Cohere's client has no close())
 ├── templates/                  # model-facing prompts (NOT html)
 │   ├── template_parser.py
@@ -417,12 +523,22 @@ obvious starting point if large files ever need GridFS or object storage instead
 
 ## Setup
 
-MongoDB first — the Compose file brings up Mongo and mongo-express:
+A database first. The Compose file brings up all of it — Mongo, mongo-express and pgvector —
+so which one you use is a matter of `DOCUMENT_DB_BACKEND`, not of what is running:
 
 ```bash
 cd Docker
-cp .env.example .env        # set MONGO_INITDB_ROOT_USERNAME / _PASSWORD
-docker compose up -d
+cp .env.example .env        # Mongo root credentials, and the Postgres user/password/db
+docker compose up -d        # or: docker compose up -d mongo mongo-express
+```
+
+The default is `mongo`. For the single-service setup — documents and vectors both in
+PostgreSQL — start `pgvector` instead and set `DOCUMENT_DB_BACKEND = "postgres"` in
+`src/.env`; the app applies the schema itself on first boot. See
+[Database backends](#database-backends).
+
+```bash
+docker compose up -d pgvector
 ```
 
 Then [Ollama](https://ollama.com), since the default configuration runs the whole stack
@@ -543,13 +659,26 @@ VECTOR_DB_PATH    = "qdrant_db"       # relative paths resolve against src/
 VECTOR_DB_DISTANCE_METHOD = "cosine"  # cosine | dot | euclid — fixed at creation
 ```
 
-All four backend names are validated against their enums when `Settings` loads, so a typo
-fails immediately with the list of valid options rather than at first use.
+**Every option-valued setting is typed as an enum on `Settings`**, not as a bare `str` — the
+backends, the distance method, `DEFAULT_LANG`, `GENERATION_THINKING`, `LOG_LEVEL` and
+`LOG_FORMAT`. Pydantic validates against the enum, so a typo fails when `Settings` loads,
+with the list of allowed values, rather than at first use:
+
+```
+DOCUMENT_DB_BACKEND
+  Input should be 'mongo' or 'postgres' [type=enum, input_value='mysql', input_type=str]
+```
+
+Case and surrounding whitespace are normalised first, so `"Ollama"` and `" postgres "` are
+accepted spellings. The enums live in `src/enums/` and are the single source of truth —
+`SUPPORTED_LANGS` is derived from `Language`, so adding a locale is one edit plus a
+directory. `use_enum_values` keeps the stored value a plain string, which is what reaches
+`logging.dictConfig` and the JSON in `/nlp/health`.
 
 The logging variables are all **optional** — the defaults below apply when unset:
 
 ```dotenv
-LOG_LEVEL = "INFO"          # DEBUG | INFO | WARNING | ERROR | CRITICAL
+LOG_LEVEL = "INFO"          # CRITICAL | ERROR | WARNING | INFO | DEBUG | NOTSET
 LOG_FORMAT = "text"         # text (human-readable) | json (structured)
 LOG_TO_CONSOLE = true
 LOG_TO_FILE = true

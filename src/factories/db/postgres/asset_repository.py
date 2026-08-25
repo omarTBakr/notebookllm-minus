@@ -2,9 +2,13 @@ from typing import AsyncIterator
 
 from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
 
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
+
 from exceptions import AssetNotFoundError, DbError
 from models.db_schema import Asset
-from .base_repository import PostgresBaseRepository
+from .base_repository import AssetRow, PostgresBaseRepository
 from ..interfaces.asset_repository import AssetRepository
 
 
@@ -12,26 +16,24 @@ class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
     """PostgreSQL implementation of AssetRepository."""
 
     async def create_asset(self, asset: Asset) -> str:
-        record_id = self._generate_id()
         try:
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO assets (id, asset_id, project_id, asset_type, name, description, file_bytes, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    """,
-                    record_id,
-                    asset.asset_id,
-                    asset.project_id,
-                    asset.asset_type.value,
-                    asset.name,
-                    asset.description,
-                    asset.file_bytes,
-                    asset.created_at,
-                    asset.updated_at,
+            async with self.session_factory.begin() as db:
+                await db.execute(
+                    insert(AssetRow).values(
+                        id=self._generate_id(),
+                        asset_id=asset.asset_id,
+                        project_id=asset.project_id,
+                        asset_type=asset.asset_type.value,
+                        name=asset.name,
+                        description=asset.description,
+                        file_bytes=asset.file_bytes,
+                        content_hash=asset.content_hash,
+                        created_at=asset.created_at,
+                        updated_at=asset.updated_at,
+                    )
                 )
             return asset.asset_id
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to create asset: {exc}") from exc
 
     async def update_asset(self, asset: Asset) -> ObjectId:
@@ -42,81 +44,123 @@ class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
         raise "not found". Returns the row's ObjectId, which is what the
         project's assets_ids list holds.
         """
-        record_id = self._generate_id()
+        statement = insert(AssetRow).values(
+            id=self._generate_id(),
+            asset_id=asset.asset_id,
+            project_id=asset.project_id,
+            asset_type=asset.asset_type.value,
+            name=asset.name,
+            description=asset.description,
+            file_bytes=asset.file_bytes,
+            content_hash=asset.content_hash,
+            created_at=asset.created_at,
+            updated_at=asset.updated_at,
+        )
+        statement = statement.on_conflict_do_update(
+            index_elements=["asset_id"],
+            set_={
+                "name": statement.excluded.name,
+                "description": statement.excluded.description,
+                "file_bytes": statement.excluded.file_bytes,
+                "updated_at": statement.excluded.updated_at,
+            },
+        ).returning(AssetRow.id)
+
         try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO assets (id, asset_id, project_id, asset_type,
-                                        name, description, file_bytes,
-                                        created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    ON CONFLICT (asset_id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        description = EXCLUDED.description,
-                        file_bytes = EXCLUDED.file_bytes,
-                        updated_at = EXCLUDED.updated_at
-                    RETURNING id
-                    """,
-                    record_id,
-                    asset.asset_id,
-                    asset.project_id,
-                    asset.asset_type.value,
-                    asset.name,
-                    asset.description,
-                    asset.file_bytes,
-                    asset.created_at,
-                    asset.updated_at,
-                )
-            return ObjectId(row["id"])
-        except Exception as exc:
+            async with self.session_factory.begin() as db:
+                row_id = await db.scalar(statement)
+            return ObjectId(row_id)
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to update asset: {exc}") from exc
 
     async def get_asset(self, asset_id: str) -> Asset:
         try:
-            async with self.pool.acquire() as conn:
-                record = await conn.fetchrow(
-                    "SELECT * FROM assets WHERE asset_id = $1", asset_id
+            async with self.session_factory() as db:
+                row = await db.scalar(
+                    select(AssetRow).where(AssetRow.asset_id == asset_id)
                 )
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to get asset: {exc}") from exc
 
-        if not record:
+        if row is None:
             raise AssetNotFoundError(f"Asset {asset_id!r} not found")
-        
-        return self._record_to_model(record, Asset)
+
+        return self._record_to_model(row, Asset)
 
     async def iter_assets_for_projects(self, project_ids: list[str]) -> AsyncIterator[Asset]:
         if not project_ids:
             return
-            
+
         try:
-            async with self.pool.acquire() as conn:
-                async with conn.transaction():
-                    query = "SELECT * FROM assets WHERE project_id = ANY($1) ORDER BY created_at DESC"
-                    async for record in conn.cursor(query, project_ids):
-                        yield self._record_to_model(record, Asset)
-        except Exception as exc:
+            async with self.session_factory() as db:
+                result = await db.stream_scalars(
+                    select(AssetRow)
+                    .where(AssetRow.project_id.in_(project_ids))
+                    .order_by(AssetRow.created_at.desc())
+                )
+                async for row in result:
+                    yield self._record_to_model(row, Asset)
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to iterate assets for projects: {exc}") from exc
+
+    async def find_by_content_hash(self, project_id: str, content_hash: str) -> Asset | None:
+        """The project's asset with these exact bytes, or None.
+
+        Everything but file_bytes: this runs on every upload, and loading a
+        50 MB column to answer "have I seen this?" would cost more than the
+        duplicate it prevents. Served by uq_assets_project_content.
+        """
+        if not content_hash:
+            return None
+
+        columns = [c for c in AssetRow.__table__.c if c.name != "file_bytes"]
+
+        try:
+            async with self.session_factory() as db:
+                result = await db.execute(
+                    select(*columns).where(
+                        AssetRow.project_id == project_id,
+                        AssetRow.content_hash == content_hash,
+                    )
+                )
+                row = result.mappings().first()
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to look up asset by content hash: {exc}") from exc
+
+        # file_bytes is absent by design; the model defaults it to b"".
+        return self._record_to_model(row, Asset) if row else None
 
     async def rename(self, asset_id: str, name: str) -> None:
         try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    "UPDATE assets SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE asset_id = $2",
-                    name,
-                    asset_id,
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    update(AssetRow)
+                    .where(AssetRow.asset_id == asset_id)
+                    .values(name=name, updated_at=func.now())
                 )
-                if result == "UPDATE 0":
-                    raise AssetNotFoundError(f"Asset {asset_id!r} not found")
-        except AssetNotFoundError:
-            raise
-        except Exception as exc:
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to rename asset: {exc}") from exc
+
+        if result.rowcount == 0:
+            raise AssetNotFoundError(f"Asset {asset_id!r} not found")
+
+    async def delete_asset(self, asset_id: str) -> bool:
+        """Remove one asset row. The caller clears its chunks and vectors."""
+        try:
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    delete(AssetRow).where(AssetRow.asset_id == asset_id)
+                )
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to delete asset: {exc}") from exc
+
+        return result.rowcount > 0
 
     async def delete_assets_for_project(self, project_id: str) -> None:
         try:
-            async with self.pool.acquire() as conn:
-                await conn.execute("DELETE FROM assets WHERE project_id = $1", project_id)
-        except Exception as exc:
+            async with self.session_factory.begin() as db:
+                await db.execute(
+                    delete(AssetRow).where(AssetRow.project_id == project_id)
+                )
+        except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete assets for project: {exc}") from exc

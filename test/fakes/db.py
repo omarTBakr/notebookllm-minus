@@ -174,6 +174,21 @@ class FakeAssetRepository(_Store):
     async def rename(self, asset_id, name):
         self._patch(asset_id, name=name)
 
+    async def find_by_content_hash(self, project_id, content_hash):
+        if not content_hash:
+            return None
+        return next(
+            (
+                a
+                for a in self.items.values()
+                if a.project_id == project_id and a.content_hash == content_hash
+            ),
+            None,
+        )
+
+    async def delete_asset(self, asset_id):
+        return self.items.pop(asset_id, None) is not None
+
     async def iter_assets_for_projects(self, project_ids):
         wanted = set(project_ids)
         for a in list(self.items.values()):
@@ -207,8 +222,17 @@ class FakeChunkRepository:
                 continue
             yield c
 
-    async def count_project_chunks(self, project_id):
-        return sum(1 for c in self.items if str(c.project_id) == str(project_id))
+    async def count_project_chunks(self, project_id, asset_id=None):
+        # asset_id mirrors the real repositories, which scope the count the
+        # same way iter_project_chunks scopes its walk. The fake was missing
+        # it, so an asset-scoped count raised TypeError rather than returning
+        # a number — invisible until something actually passed one.
+        return sum(
+            1
+            for c in self.items
+            if str(c.project_id) == str(project_id)
+            and (asset_id is None or c.asset_id == asset_id)
+        )
 
     async def has_asset_chunks(self, asset_id):
         return any(c.asset_id == asset_id for c in self.items)
@@ -218,10 +242,16 @@ class FakeChunkRepository:
         self.items = [c for c in self.items if str(c.project_id) != str(project_id)]
         return before - len(self.items)
 
-    async def delete_chunks_for_asset(self, asset_id):
-        before = len(self.items)
-        self.items = [c for c in self.items if c.asset_id != asset_id]
-        return before - len(self.items)
+    async def delete_chunks_for_asset(self, project_id, asset_id):
+        # Returns the removed ids, as both real backends do — the caller pulls
+        # exactly those out of the project's chunks_ids.
+        gone = [
+            c
+            for c in self.items
+            if c.asset_id == asset_id and str(c.project_id) == str(project_id)
+        ]
+        self.items = [c for c in self.items if c not in gone]
+        return [str(c.id) for c in gone]
 
 
 class FakeVectorRepository:

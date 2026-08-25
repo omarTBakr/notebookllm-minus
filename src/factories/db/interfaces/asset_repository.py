@@ -21,7 +21,21 @@ class AssetRepository(ABC):
         pass
 
     @abstractmethod
+    async def find_by_content_hash(self, project_id: str, content_hash: str) -> Asset | None:
+        """The project's asset with these exact bytes, or None.
+
+        Must not load file_bytes: this runs on every upload, and the point is
+        to answer before anything large is read or written.
+        """
+        pass
+
+    @abstractmethod
     async def rename(self, asset_id: str, name: str) -> None:
+        pass
+
+    @abstractmethod
+    async def delete_asset(self, asset_id: str) -> bool:
+        """Remove one asset. True if a row went, False if there was none."""
         pass
 
     @abstractmethod

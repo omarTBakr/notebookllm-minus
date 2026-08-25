@@ -1,4 +1,5 @@
 import re
+from typing import Callable
 
 from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
 
@@ -57,6 +58,7 @@ class NLPController(BaseController):
         asset_id: str | None = None,
         reset: bool = False,
         batch_size: int = 64,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> dict:
         """Embed a project's chunks and upsert them into the vector store.
 
@@ -107,9 +109,17 @@ class NLPController(BaseController):
             removed,
         )
 
+        # How many chunks this call will embed. Counted up front so a caller
+        # watching *on_progress* can show a real fraction rather than a
+        # spinner: this loop streams, so without it there is no denominator.
+        expected = await chunk_model.count_project_chunks(project_object_id, asset_id)
+
         total = 0
         batches = 0
         batch: list = []
+
+        if on_progress:
+            on_progress(0, expected)
 
         async for chunk in chunk_model.iter_project_chunks(project_object_id, asset_id):
 
@@ -120,12 +130,16 @@ class NLPController(BaseController):
                 total += len(batch)
                 batches += 1
                 batch = []
+                if on_progress:
+                    on_progress(total, expected)
 
         # Whatever is left over after the last full batch.
         if batch:
             await self._flush(collection, batch)
             total += len(batch)
             batches += 1
+            if on_progress:
+                on_progress(total, expected)
 
         self.logger.info(
             "Indexed %d chunk(s) for project %r in %d batch(es)", total, project_id, batches

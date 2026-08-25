@@ -172,3 +172,46 @@
 
 /* The footer echo of the notebook's two models. */
 .modelline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.76rem; color: var(--text-muted); }
+
+/* --- confirm / prompt dialogs ------------------------------------------------
+ *
+ * Built in dialog.js rather than templated: they are two questions with a
+ * variable label, not a screen. They reuse .modal above so a rename looks like
+ * the settings panel and not like the browser. */
+
+.dialog__panel { width: min(380px, 100%); }
+
+.dialog__message {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.dialog__input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.9rem;
+  color: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.dialog__input:focus-visible { outline: none; border-color: var(--accent); }
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-block-start: 2px;
+}
+
+/* Destructive confirmations say so, rather than looking like every other
+   primary button in the app. */
+.btn--danger {
+  background: var(--warn);
+  color: #fff;
+  border-color: transparent;
+}
+.btn--danger:hover:not(:disabled) { filter: brightness(1.1); border-color: transparent; }

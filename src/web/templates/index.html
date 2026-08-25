@@ -3,9 +3,15 @@
 {% block content %}
 {% include "partials/topbar.html" %}
 
-<div class="workspace">
+{# The bars between the panels are grid items of their own, so a drag only ever
+   changes track widths — no panel is positioned against another. #}
+<div class="workspace" id="workspace">
   {% include "partials/sources.html" %}
+  <div class="resizer" data-resizer="sources" role="separator" aria-orientation="vertical"
+       tabindex="0" aria-label="Resize sources panel"></div>
   {% include "partials/chat.html" %}
+  <div class="resizer" data-resizer="chat" role="separator" aria-orientation="vertical"
+       tabindex="0" aria-label="Resize studio panel"></div>
   {% include "partials/studio.html" %}
 </div>
 
