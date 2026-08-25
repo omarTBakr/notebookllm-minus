@@ -39,7 +39,6 @@ are picked from whatever Ollama has installed rather than pinned in code.
   - [Chat: users, sessions and answers](#chat-users-sessions-and-answers)
 - [Error handling](#error-handling)
 - [Logging](#logging)
-- [Known limitations](#known-limitations)
 
 ## Current features
 
@@ -50,8 +49,10 @@ are picked from whatever Ollama has installed rather than pinned in code.
   upserted on the way through, so uploading to a new `project_id` creates it.
 - **Document processing** (`/process/{project_id}`): fetches one asset by `asset_id`, or
   every asset in the project when `asset_id` is omitted, writes each one's bytes to a
-  temporary file so LangChain's loaders can read it, splits the text into overlapping chunks
-  with `RecursiveCharacterTextSplitter`, and persists them to the `data_chunks` collection.
+  temporary file so LangChain's loaders can read it, splits the text into overlapping chunks,
+  and persists them. Extraction and splitting run on a worker thread, so a large PDF no longer
+  holds the event loop while it parses — one 200-page upload used to freeze every other
+  request behind it.
 - **Idempotent ingestion**: an asset that already has chunks is skipped, so `/process` can be
   re-run over a project to pick up only what is new. `reset: true` re-ingests instead —
   scoped to the assets named in the request, never the whole project.
@@ -83,6 +84,34 @@ are picked from whatever Ollama has installed rather than pinned in code.
   embedding model re-indexes its documents automatically.
 - **Per-chat tuning** in the sidebar — temperature, output length, and an advanced panel for
   chunk size and overlap.
+- **Chunking with a size guard.** `NLTKTextSplitter` cuts on sentence boundaries; a
+  `RecursiveCharacterTextSplitter` behind it re-splits anything still over the limit. The
+  guard is not decorative — a sentence splitter never cuts *within* a sentence, and PDF text
+  often carries no sentence punctuation at all, which turns a whole document into one chunk.
+  Chunks already within the limit pass through untouched. See `TextProcessingController`.
+- **Duplicate uploads refused.** A document is identified by the sha256 of its bytes, scoped
+  to one notebook, so re-uploading the same file returns a 409 naming what you already have —
+  before anything is chunked or embedded. Renaming it does not get it past the check; the
+  same file in a *different* notebook is still allowed.
+- **Deleting a source** removes it and everything derived from it — the asset, its chunks and
+  its vectors — derived-first, so a partial failure leaves the source still visibly listed
+  rather than answering from vectors that outlived it. Emptying a notebook clears its
+  grounded flag.
+- **Indexing progress** under each uploading document: indeterminate while the file is read
+  and split, a real percentage once embedding starts, gone when it finishes. Polled from
+  `GET /chat/chats/{chat_id}/indexing`, which only answers mid-upload because ingest no
+  longer blocks the event loop.
+- **Panels you can arrange.** Sources, Chat and Studio resize by dragging the seam between
+  them; drag one past its minimum and it folds to a labelled rail while its neighbour takes
+  the width back. Each can be dismissed and restored from the top bar, and the layout is
+  remembered across reloads.
+- **Dialogs that belong to the app.** Renaming and deleting ask in the app's own modal rather
+  than through `window.confirm`/`prompt`, which render as "127.0.0.1 says…" — unstyled,
+  untranslatable browser chrome naming the host instead of the notebook.
+- **Text sanitised at extraction.** PDFs with damaged font encodings decode glyphs to NUL
+  bytes, which PostgreSQL refuses in both `text` and `jsonb`; one bad glyph used to fail a
+  whole document's insert. Stripped once at extraction, and scrubbed again at the Postgres
+  boundary because a batched INSERT fails whole.
 - **Artifacts drawer** listing every document a user has uploaded, across chats.
 - **Named profiles** in a top-left picker — no login, just "who am I".
 
@@ -101,7 +130,8 @@ are picked from whatever Ollama has installed rather than pinned in code.
 - Python 3.12
 - FastAPI + Uvicorn
 - pydantic-settings for configuration
-- LangChain (`langchain-community`, `langchain-text-splitters`) for loading/splitting
+- LangChain (`langchain-community`, `langchain-text-splitters`) for loading/splitting,
+  with `nltk` behind the sentence splitter (its punkt model is fetched on first use)
 - `pypdf` for PDF parsing
 - MongoDB via `motor` (async driver), with `mongo-express` in the Compose file for a look
   inside
@@ -132,7 +162,8 @@ flowchart TB
 
     subgraph controllers["Controllers — the actual work"]
         C1["ChatController<br/>retrieve → prompt → stream"]
-        C2["ProcessController<br/>load → split"]
+        C2["ProcessController<br/>load documents"]
+        C5["TextProcessingController<br/>sanitise → split → size guard"]
         C3["NLPController<br/>embed → upsert → search"]
         C4["ModelController<br/>probe installed models"]
     end
@@ -215,7 +246,9 @@ ingestion path unchanged.
 ```mermaid
 flowchart LR
     A["POST /chat/chats/{id}/documents"] --> B["validate<br/>type + size"]
-    B --> C["store bytes<br/>assets"]
+    B --> B2{"sha256 already<br/>in this notebook?"}
+    B2 -->|yes| B3["409 duplicate"]
+    B2 -->|no| C["store bytes<br/>assets"]
     C --> D["load + split<br/>data_chunks"]
     D --> E["embed batch<br/>embedding model"]
     E --> F["upsert<br/>collection project_{chat_id}"]
@@ -232,7 +265,7 @@ Three collections, and one identifier distinction worth internalising early:
 | Collection    | Document    | Key fields                                                        |
 | ------------- | ----------- | ----------------------------------------------------------------- |
 | `projects`    | `Project`   | `project_id` (string, from the URL), `assets_ids`, `chunks_ids`    |
-| `assets`      | `Asset`     | `asset_id` (uuid4 string), `asset_type`, `project_id`, `file_bytes` |
+| `assets`      | `Asset`     | `asset_id` (uuid4 string), `asset_type`, `project_id`, `file_bytes`, `content_hash` |
 | `data_chunks` | `DataChunk` | `project_id` (**ObjectId** — the project's `_id`), `asset_id`, `chunk_order`, `chunk_content` |
 
 The same pydantic documents back both stores. On Postgres they are tables of the same names —
@@ -386,16 +419,31 @@ embedding model is chosen, and a single shared table would mean one fixed width 
 chat, or a column no HNSW index can cover. Alembic creates the extension; the repository
 creates the tables.
 
-**A database that predates Alembic** has the tables but no `alembic_version`, so
-`upgrade head` will try to create them again and fail. Either throw it away
-(`docker compose down -v`, or `DROP DATABASE`), or adopt it in place:
+**A database that predates Alembic** is adopted in place, with nothing to run by hand.
+`0001` creates every table and index with `IF NOT EXISTS`, so it succeeds against a database
+that already has them and simply records the revision. What `IF NOT EXISTS` cannot do is
+reconcile a table that exists with the *wrong shape* — it skips the whole table, columns and
+all — which is what `0002` exists for.
 
-```bash
-uv run alembic -c factories/db/postgres/alembic.ini stamp head
-```
+The history so far:
 
-then apply by hand what `0001` has and the old DDL did not — `sessions.title`, and the
-`NOT NULL DEFAULT`s on the columns behind non-optional model fields.
+| revision | what it does |
+| --- | --- |
+| `0001_initial_schema` | every table and index, idempotently, plus the `vector` extension |
+| `0002_reconcile_sessions` | adds `sessions.title` and tightens the timestamps. `0001` was written to create them but skipped the table on databases that already had it, and every read of a user's sessions then failed with `UndefinedColumnError` — taking notebook creation down with it |
+| `0003_asset_content_hash` | adds `assets.content_hash`, backfills it, and indexes `(project_id, content_hash)` for the duplicate check |
+
+The lesson `0002` encodes is worth carrying: because `0001` is idempotent it will never
+retrofit a column onto a table that already exists, so anything column-level needs its own
+migration. When something fails with `UndefinedColumnError`, that is why.
+
+**Duplicate detection is enforced by the upload route, not by a unique constraint.** `0003`
+adds a plain index; the partial unique index on `(project_id, content_hash)` is left for a
+later migration, because it cannot be built against a database that already holds duplicates
+and choosing which of someone's documents to delete is not a migration's decision. To add it:
+remove the redundant copies (`DELETE /chat/chats/{chat_id}/assets/{asset_id}` does it
+cleanly), confirm `SELECT project_id, content_hash FROM assets GROUP BY 1,2 HAVING count(*) > 1`
+comes back empty, then write `0004`.
 
 ## Providers
 
@@ -471,7 +519,8 @@ src/
 │   ├── DataController.py       # upload validation (type, size)
 │   ├── ModelController.py      # what Ollama has, and what each model can do
 │   ├── FileController.py       # disk storage — dormant, see note below
-│   └── ProcessController.py    # loading + chunking documents
+│   ├── ProcessController.py    # loading documents off disk/bytes
+│   └── TextProcessingController.py  # sanitising, splitting, the size guard
 ├── middleware/
 │   └── request_logging.py      # request id + per-request access logging
 ├── exceptions.py               # domain errors + the status code each maps to
@@ -799,8 +848,8 @@ distinguishes two sources in the same project. `metadata.source` is the document
 the loaders stamp it with a temporary file path, which `ProcessController.process_bytes`
 overwrites on the way out.
 
-The response still echoes every chunk's full text, for every asset — see
-[Known limitations](#known-limitations).
+The response echoes every chunk's full text, for every asset. For a real document that
+payload is large and redundant — the chunks are already persisted by the time it is built.
 
 ### `GET /nlp/health`
 Live readiness probe. Calls all three backends rather than echoing configuration, so it
@@ -920,7 +969,11 @@ the top-left menu lists every profile so you can switch between them. Profiles c
 | `GET` | `/chat/sessions/{session_id}/chats` | List chats |
 | `GET` | `/chat/chats/{chat_id}` | One chat + `grounded` + models in use |
 | `GET` | `/chat/chats/{chat_id}/messages` | Full history |
-| `POST` | `/chat/chats/{chat_id}/documents` | Upload → chunk → index, one call |
+| `POST` | `/chat/chats/{chat_id}/documents` | Upload → chunk → index, one call. `409` if the notebook already holds these bytes |
+| `GET` | `/chat/chats/{chat_id}/indexing` | Progress of the in-flight upload (`stage`, `done`/`total`, `percent`) |
+| `GET` | `/chat/chats/{chat_id}/assets` | The notebook's sources |
+| `PATCH` | `/chat/chats/{chat_id}/assets/{asset_id}` | Rename a source |
+| `DELETE` | `/chat/chats/{chat_id}/assets/{asset_id}` | Delete a source, its chunks and its vectors |
 | `PATCH` | `/chat/chats/{chat_id}/models` | Switch this chat's models |
 | `PATCH` | `/chat/chats/{chat_id}/settings` | Temperature, output length, splitter, web grounding |
 | `GET` | `/chat/users/{user_id}/assets` | Every document this user uploaded |
@@ -1110,42 +1163,3 @@ record of each one — the same rule the models and controllers follow.
 At INFO a request logs only what its outcome was. `LOG_LEVEL = "DEBUG"` adds the inbound
 `-> METHOD /path` line (with client and query string) plus each layer's parameters — useful
 when a request hangs, since a hung request has no completion line at INFO.
-
-## Known limitations
-
-- The whole upload is buffered in memory and stored inside a single MongoDB document, which
-  caps a source at well under the 16 MB BSON limit. GridFS or object storage is the way out.
-- The providers are built at startup but nothing calls them: `/process` still ends at
-  chunking. Until the pipeline is wired up, a valid API key buys you a client that is only
-  ever opened and closed.
-- Embedded Qdrant holds an exclusive lock on `VECTOR_DB_PATH`, so two processes against the
-  same directory — `--reload` double-starts included — will collide. Point `VECTOR_DB_URL` at
-  a server if you need more than one.
-- Provider calls have no timeout, retry or backoff beyond each SDK's own defaults, and no
-  rate limiting. A slow vendor holds the request open for as long as it likes.
-- Chunks are persisted to MongoDB, but `/process` still returns every chunk's full text in
-  the response as well. For a real document that payload is large and redundant.
-- The skip check matches on `asset_id`, so chunks written **before that field existed** are
-  invisible to it — a project ingested by an older build will be chunked a second time.
-  One `reset: true` pass over such a project clears the legacy rows and rebuilds them.
-- `reset` deletes then re-inserts without a transaction (standalone MongoDB has none), so a
-  failure mid-insert leaves that asset with fewer chunks than it started with.
-- Nothing dedupes uploads: the same file uploaded twice becomes two assets with different
-  `asset_id`s, and both get chunked. Skipping is per-asset, not per-document-content.
-- `ChunkModel.get_project_chunks()` still sorts by `chunk_order` alone, so a project holding
-  two documents comes back interleaved. Now that chunks carry `asset_id`, that read wants to
-  sort on `(asset_id, chunk_order)` — or filter by asset — before retrieval is built on it.
-- Both routes overwrite the project's `name` and `description` with placeholders derived
-  from the current file on every upload and process call. In whole-project mode the name
-  comes from whichever asset happens to be first.
-- Answering is not yet implemented — which is, for now, the "minus". Ingestion, embedding,
-  and retrieval all work; nothing yet turns retrieved passages into a written answer.
-- Indexing is synchronous: `POST /nlp/index/push` embeds every chunk before responding, so a
-  large project holds the request open for as long as that takes. A background job with a
-  status endpoint is the way out.
-- The index does not track the chunks it was built from. Re-running `/process` leaves stale
-  vectors behind until the next push, and deleting an asset never removes its vectors.
-  `GET /nlp/index/info` exposes the gap (`chunks_in_db` vs `points_count`) but nothing
-  reconciles it automatically.
-- Embedded Qdrant holds an exclusive lock on `VECTOR_DB_PATH`, so two processes against the
-  same directory collide — `uvicorn --reload` included. Use `VECTOR_DB_URL` for a server.
