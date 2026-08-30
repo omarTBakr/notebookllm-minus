@@ -82,6 +82,10 @@ class MongoProvider(DbProvider):
         await chunk_repo.create_index([("project_id", 1), ("created_at", -1)])
         await chunk_repo.create_index([("project_id", 1), ("asset_id", 1)])
         await chunk_repo.create_index([("project_id", 1), ("asset_id", 1), ("chunk_order", 1)])
+        # Deliberately not led by project_id: a citation resolves a search hit
+        # back to its page by (asset_id, chunk_order), and the hit carries no
+        # project id to lead with. Mirrors idx_chunks_asset_order on Postgres.
+        await chunk_repo.create_index([("asset_id", 1), ("chunk_order", 1)])
 
         asset_repo = MongoAssetRepository(self.db)
         await asset_repo.create_index([("project_id", 1), ("created_at", -1)])

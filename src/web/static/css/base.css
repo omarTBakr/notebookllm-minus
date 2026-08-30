@@ -241,3 +241,8 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 }
 
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+/* A ghost button that is about to destroy something. Used for "Delete profile"
+   in the profile menu, where it sits beside two harmless actions. */
+.btn--warn { color: var(--warn); }
+.btn--warn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--warn); }

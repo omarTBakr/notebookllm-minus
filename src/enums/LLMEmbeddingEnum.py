@@ -12,7 +12,7 @@ class LLMEmbeddingProvider(str, Enum):
     OPENAI = "openai"
     GOOGLE = "google"
     COHERE = "cohere"
-    OLLAMA = "ollama"  # local models; no API key, needs OLLAMA_BASE_URL
+    OLLAMA = "ollama"  # local models; no API key, needs OLLAMA_HOST/PORT
 
 
 class EmbeddingInputType(str, Enum):

@@ -133,3 +133,15 @@ class MongoChatRepository(ChatRepository, BaseModel):
             what=f"chat {chat_id!r}",
         )
         self.logger.info("Renamed chat %r to %r", chat_id, title)
+
+    async def delete_chat(self, chat_id: str) -> bool:
+        """Remove one chat. The caller clears what hangs off it first."""
+        try:
+            result = await self.collection.delete_one({"chat_id": chat_id})
+        except PyMongoError as exc:
+            raise DbError(f"Could not delete chat {chat_id!r}") from exc
+
+        if result.deleted_count:
+            self.logger.info("Deleted chat %r", chat_id)
+
+        return result.deleted_count > 0

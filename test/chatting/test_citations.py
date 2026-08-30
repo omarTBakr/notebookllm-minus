@@ -62,3 +62,63 @@ def test_a_zero_score_is_reported_as_zero_not_dropped():
     [cite] = ChatController.to_citations([hit(score=0.0)], {})
 
     assert cite["score"] == 0.0
+
+
+# --- the page a citation points at --------------------------------------------
+#
+# `pages` maps (asset_id, chunk_order) to the fields routes/chat/_pages.py
+# resolved from the chunk row. Three different things are called a page number
+# in this codebase and only one of them is safe to show, so these pin down
+# which is which. See routes/chat/_pages.py.
+
+
+def test_page_number_is_one_based():
+    """chunk_metadata["page"] is 0-based; a citation's page_number is not."""
+    pages = {("a1", 3): {"page_number": 11, "page_label": "11"}}
+
+    [cite] = ChatController.to_citations([hit()], {}, pages)
+
+    assert cite["page_number"] == 11
+
+
+def test_a_roman_label_is_kept_as_written_beside_a_physical_page():
+    """Front matter is the case that punishes parsing the label.
+
+    A page labelled "iii" is physically page 3. The viewer needs the 3; the
+    reader needs the "iii". Anything that derives one from the other by
+    parsing opens the book at the wrong place.
+    """
+    pages = {("a1", 3): {"page_number": 3, "page_label": "iii"}}
+
+    [cite] = ChatController.to_citations([hit()], {}, pages)
+
+    assert cite["page_label"] == "iii"
+    assert cite["page_number"] == 3
+
+
+def test_a_chunk_with_no_page_carries_none():
+    """A .txt note has no pages, and that is not an error."""
+    [cite] = ChatController.to_citations([hit()], {}, {})
+
+    assert cite["page_number"] is None
+    assert cite["page_label"] is None
+
+
+def test_pages_may_be_omitted_entirely():
+    """The argument is optional, mirroring `names`."""
+    [cite] = ChatController.to_citations([hit()])
+
+    assert cite["page_number"] is None
+
+
+def test_chunk_order_zero_resolves():
+    """0 is the first chunk of every document, and it is falsy.
+
+    A lookup keyed on a truthiness check would drop the page for exactly the
+    passage most likely to be cited — the opening of a document.
+    """
+    pages = {("a1", 0): {"page_number": 1, "page_label": "1"}}
+
+    [cite] = ChatController.to_citations([hit(order=0)], {}, pages)
+
+    assert cite["page_number"] == 1

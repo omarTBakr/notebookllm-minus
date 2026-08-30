@@ -1,3 +1,4 @@
+from . import metrics
 from .config import get_settings, Settings
 from .model_ids import CLOUD, LOCAL, SOURCES, host_for, qualify, split_source
 from .logging_config import (
@@ -8,6 +9,7 @@ from .logging_config import (
 )
 
 __all__ = [
+    "metrics",
     "get_settings",
     "Settings",
     "CLOUD",

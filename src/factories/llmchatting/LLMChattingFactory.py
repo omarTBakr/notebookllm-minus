@@ -80,7 +80,7 @@ class LLMChattingFactory:
 
         if chosen is LLMChattingProvider.OLLAMA:
             # Local: a host to reach, no key to check.
-            kwargs["base_url"] = self.settings.OLLAMA_BASE_URL
+            kwargs["base_url"] = self.settings.ollama_base_url
             kwargs["thinking"] = _thinking_flag(self.settings.GENERATION_THINKING)
         else:
             api_key = getattr(self.settings, self._API_KEY_FIELDS[chosen])

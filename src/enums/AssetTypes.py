@@ -2,17 +2,18 @@ from enum import Enum
 
 
 class AssetType(str, Enum):
-    TEXT  = "text"
-    AUDIO = "audio"
-    IMAGE = "image"
-    PDF   = "pdf"
-    DOCX  = "docx"
-    XLSX  = "xlsx"
-    CSV   = "csv"
-    HTML  = "html"
-    JSON  = "json"
-    XML   = "xml"
-    OTHER = "other"
+    TEXT     = "text"
+    MARKDOWN = "markdown"
+    AUDIO    = "audio"
+    IMAGE    = "image"
+    PDF      = "pdf"
+    DOCX     = "docx"
+    XLSX     = "xlsx"
+    CSV      = "csv"
+    HTML     = "html"
+    JSON     = "json"
+    XML      = "xml"
+    OTHER    = "other"
 
     # Maps every known MIME type to the matching enum member.
     # Defined at class level so it is built once and shared.
@@ -32,6 +33,8 @@ AssetType._mime_map_ = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       AssetType.XLSX,
     "text/csv":                 AssetType.CSV,
     "text/plain":               AssetType.TEXT,
+    "text/markdown":            AssetType.MARKDOWN,
+    "text/x-markdown":          AssetType.MARKDOWN,
     "text/html":                AssetType.HTML,
     "application/json":         AssetType.JSON,
     "application/xml":          AssetType.XML,

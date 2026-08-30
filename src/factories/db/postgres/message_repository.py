@@ -1,6 +1,6 @@
 from typing import AsyncIterator
 
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from exceptions import DbError
@@ -64,3 +64,15 @@ class PostgresMessageRepository(PostgresBaseRepository, MessageRepository):
             ]
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to get recent history: {exc}") from exc
+
+    async def delete_messages_for_chat(self, chat_id: str) -> int:
+        """Drop a chat's whole transcript."""
+        try:
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    delete(MessageRow).where(MessageRow.chat_id == chat_id)
+                )
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to delete messages for chat: {exc}") from exc
+
+        return result.rowcount

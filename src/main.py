@@ -100,7 +100,50 @@ app = FastAPI(title="NotebookLLM-minus", lifespan=lifespan)
 
 # /static is excluded by prefix: a page load fetches many assets and each one
 # would otherwise get its own INFO line, burying the requests that matter.
-app.add_middleware(RequestLoggingMiddleware, exclude_paths=("/static",))
+# The metrics path joins it — Prometheus scrapes every few seconds, and a log
+# line per scrape would bury the same requests just as thoroughly.
+app.add_middleware(
+    RequestLoggingMiddleware,
+    exclude_paths=("/static", SETTINGS.METRICS_PATH),
+)
+
+# --- metrics ------------------------------------------------------------------
+# Mounted before the routers so the instrumentator sees every route, and
+# excluded from its own metrics so a scrape does not count as traffic.
+#
+# should_exclude_streaming_duration matters here more than anywhere: the
+# answer endpoint is an SSE stream held open for the length of the reply, and
+# timing it end to end would put minute-long observations in the same
+# histogram as a 5 ms asset listing, dragging every percentile with it. Time
+# to first token is tracked separately in utils/metrics.
+if SETTINGS.METRICS_ENABLED:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    from utils.metrics import HTTP_BUCKETS
+
+    # No registry= : the instrumentator drops its in-progress gauge when given
+    # an explicit registry, and utils.metrics now uses the default one anyway.
+    Instrumentator(
+        # 409 duplicate uploads must be visible as themselves, not folded into
+        # a "4xx" bucket with every bad request.
+        should_group_status_codes=False,
+        # An unmatched URL — a scanner probing /wp-admin.php — collapses to
+        # handler="none" instead of minting a series per path. This is the
+        # largest cardinality risk in the whole setup.
+        should_group_untemplated=True,
+        should_instrument_requests_inprogress=True,
+        inprogress_labels=True,
+        should_exclude_streaming_duration=True,
+        excluded_handlers=[SETTINGS.METRICS_PATH, "/static.*"],
+    ).instrument(
+        app,
+        latency_lowr_buckets=HTTP_BUCKETS,
+    ).expose(
+        app,
+        endpoint=SETTINGS.METRICS_PATH,
+        include_in_schema=False,
+    )
+    logger.info("Metrics exposed at %s", SETTINGS.METRICS_PATH)
 
 
 @app.exception_handler(NotebookLLMError)

@@ -13,18 +13,21 @@ dependencies = [
     "jinja2>=3.1",              # FastAPI's Jinja2Templates, for web/templates/
     "httpx>=0.27",              # direct: ModelController / NLPController probes
     "aiofiles>=25.1.0",
-
+    # --- observability ---
+    # Metrics are scraped from /metrics; the instrumentator supplies the HTTP
+    # RED signals, prometheus-client the app-specific collectors in
+    # utils/metrics.py.
+    "prometheus-client>=0.21",
+    "prometheus-fastapi-instrumentator>=7.0",
     # --- config and validation ---
     "pydantic>=2.7",            # imported directly by every model and schema
     "pydantic-settings>=2.14.2",
-
     # --- document store: mongo ---
     "motor>=3.7.1",
     # bson.ObjectId and pymongo are imported directly — and not only by the
     # Mongo backend: the shared schemas type their ids as ObjectId, so the
     # Postgres backend needs this too. Too load-bearing to leave to motor.
     "pymongo>=4.9",
-
     # --- document store: postgres ---
     # The [asyncio] extra is what pulls greenlet in unconditionally. Plain
     # "sqlalchemy" only requires it on a list of known platform_machines, so a
@@ -33,10 +36,8 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.51",
     "asyncpg>=0.31.0",
     "alembic>=1.19.1",
-
     # --- vector store: qdrant (pairs with mongo) ---
     "qdrant-client>=1.12.0",
-
     # --- ingestion ---
     "langchain-community>=0.4.2",
     "langchain-core>=0.4.0",
@@ -45,13 +46,14 @@ dependencies = [
     # NLTKTextSplitter's sentence tokenizer. langchain-text-splitters imports
     # it lazily and does not depend on it, so it has to be named here.
     "nltk>=3.9",
-
     # --- llm providers ---
     "anthropic>=0.40.0",
     "cohere>=5.13.0",
     "google-genai>=1.0.0",
     "ollama>=0.4.0",
     "openai>=1.60.0",
+    "pdfplumber>=0.11.10",
+    "pymupdf>=1.28.2",
 ]
 
 # Removed: "dotenv", which is a stub package whose only content is a dependency

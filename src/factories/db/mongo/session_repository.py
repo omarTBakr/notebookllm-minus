@@ -62,3 +62,15 @@ class MongoSessionRepository(SessionRepository, BaseModel):
 
         except PyMongoError as exc:
             raise DbError(f"Could not read sessions for user {user_id!r}") from exc
+
+    async def delete_sessions_for_user(self, user_id: str) -> int:
+        """Drop every session belonging to a user."""
+        try:
+            result = await self.collection.delete_many({"user_id": user_id})
+        except PyMongoError as exc:
+            raise DbError(f"Could not delete sessions for user {user_id!r}") from exc
+
+        self.logger.info(
+            "Deleted %d session(s) for user %r", result.deleted_count, user_id
+        )
+        return result.deleted_count

@@ -1,0 +1,63 @@
+# What Prometheus scrapes. Mounted read-only into the container — without this
+# file it starts happily and collects nothing but its own metrics, which is the
+# state the stack was in before.
+#
+# Every target below is addressed by its compose service name on the `backend`
+# network, not by a published port, so scraping does not depend on anything
+# being exposed to the host.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: notebookllm-minus
+
+scrape_configs:
+  # Prometheus itself. Cheap, and the first thing to check when a panel is
+  # empty — if this target is down, nothing else is trustworthy.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The application. Everything defined in src/utils/metrics.py plus the HTTP
+  # RED signals from the instrumentator.
+  - job_name: notebookllm
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["fastapi:8000"]
+
+  - job_name: postgres
+    # 9187 is postgres_exporter's own default. The previous compose published
+    # it on 9100, which collides with node-exporter.
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # Qdrant serves Prometheus metrics itself; no exporter needed. Only runs on
+  # the mongo backend (compose profile "mongo"), so expect this target down
+  # when using postgres.
+  - job_name: qdrant
+    static_configs:
+      - targets: ["qdrant:6333"]
+
+      
+
+  # Host CPU, memory, disk and network. node_exporter runs on the *host* as a
+  # systemd --user service, not as a container: this stack is on Docker
+  # Desktop, whose VM refuses the `/` slave-propagation mount node-exporter
+  # needs — and would report the VM rather than the machine even if it did not.
+  # host.docker.internal resolves to the host from Desktop's containers.
+  - job_name: node
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+
+  # cadvisor and gpu jobs are absent on purpose. Their exporters are not
+  # in docker-compose.yml: this stack runs on Docker Desktop, whose daemon is
+  # inside a VM, so a host monitor there would report the VM rather than the
+  # machine — or, in node-exporter's case, refuse to start at all. See the
+  # comment block in docker-compose.yml.
+
+  # Deliberately NOT scraped: /nlp/health. It performs a real embedding
+  # inference on every call, so a 15s scrape would fire a GPU inference four
+  # times a minute forever, pinning the embedding model in 8 GB of VRAM and
+  # evicting the chat model. It stays an on-demand tool. Liveness comes from
+  # the notebookllm job being up at all.

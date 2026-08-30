@@ -73,6 +73,15 @@
   background: var(--accent); cursor: pointer;
 }
 
+.modal input[type="color"] {
+  width: 40px; height: 28px; padding: 0; border: 1px solid var(--border);
+  border-radius: 6px; background: none; cursor: pointer;
+}
+/* The browser's own swatch fills the box; only the outer chrome is styleable. */
+.modal input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.modal input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 4px; }
+.modal input[type="color"]::-moz-color-swatch { border: 0; border-radius: 4px; }
+
 .advanced { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; background: var(--surface-2); }
 .advanced > summary { cursor: pointer; font-size: 0.82rem; color: var(--text-muted); }
 .advanced[open] > summary { margin-block-end: 10px; }

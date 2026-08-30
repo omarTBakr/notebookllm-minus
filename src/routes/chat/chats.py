@@ -100,6 +100,7 @@ async def get_chat(chat_id: str, http_request: Request):
                 chat.overlap_size if chat.overlap_size is not None else CHAT_CHUNK_OVERLAP
             ),
             "web_search": chat.web_search,
+            "highlight_color": chat.highlight_color,
             "excluded_assets": chat.excluded_assets,
             "created_at": chat.created_at.isoformat(),
         },

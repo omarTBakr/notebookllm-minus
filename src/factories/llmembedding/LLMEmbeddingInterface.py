@@ -8,6 +8,11 @@ from abc import ABC, abstractmethod
 from time import perf_counter
 
 from enums import EmbeddingInputType
+from utils.metrics import (
+    EMBEDDING_REQUESTS,
+    EMBEDDING_SECONDS,
+    EMBEDDING_TEXTS,
+)
 from exceptions import EmbeddingError
 from utils import get_logger
 
@@ -71,11 +76,26 @@ class LLMEmbeddingInterface(ABC):
 
         started = perf_counter()
 
-        # No try/except: providers raise EmbeddingError and stay quiet so the
-        # handler in main.py is the single record of the failure.
-        vectors = self._validate(texts, await self._embed(texts, resolved_type))
+        # No try/except for *logging*: providers raise EmbeddingError and stay
+        # quiet so the handler in main.py is the single record of the failure.
+        # The metric does need the failure path, though — an error rate that
+        # only counts successes is not an error rate — so this re-raises
+        # untouched after incrementing.
+        provider = type(self).__name__
+
+        try:
+            vectors = self._validate(texts, await self._embed(texts, resolved_type))
+        except Exception:
+            EMBEDDING_REQUESTS.labels(provider, self.model_id, "error").inc()
+            raise
 
         elapsed_ms = (perf_counter() - started) * 1000
+
+        # Recorded from the measurement the log line below already took, not a
+        # second clock around the same call.
+        EMBEDDING_REQUESTS.labels(provider, self.model_id, "ok").inc()
+        EMBEDDING_SECONDS.labels(provider, self.model_id).observe(elapsed_ms / 1000)
+        EMBEDDING_TEXTS.observe(len(vectors))
 
         self.logger.info(
             "Embedded %d texts into %d-dim vectors in %.0f ms (provider=%s, model=%s)",

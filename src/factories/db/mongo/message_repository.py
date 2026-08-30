@@ -82,3 +82,15 @@ class MongoMessageRepository(MessageRepository, BaseModel):
         documents.reverse()
 
         return [{"role": d["role"], "content": d["content"]} for d in documents]
+
+    async def delete_messages_for_chat(self, chat_id: str) -> int:
+        """Drop a chat's whole transcript."""
+        try:
+            result = await self.collection.delete_many({"chat_id": chat_id})
+        except PyMongoError as exc:
+            raise DbError(f"Could not delete messages for chat {chat_id!r}") from exc
+
+        self.logger.info(
+            "Deleted %d message(s) for chat %r", result.deleted_count, chat_id
+        )
+        return result.deleted_count

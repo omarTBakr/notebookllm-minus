@@ -113,6 +113,32 @@ class PostgresChunkRepository(PostgresBaseRepository, ChunkRepository):
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to check asset chunks: {exc}") from exc
 
+    async def get_chunks_by_orders(
+        self, asset_id: str, chunk_orders: list[int]
+    ) -> dict[int, DataChunk]:
+        # An empty IN () is a syntax error on some drivers and a full scan on
+        # others. Answering without a round trip is both safer and cheaper.
+        if not chunk_orders:
+            return {}
+
+        try:
+            async with self.session_factory() as db:
+                rows = await db.scalars(
+                    select(ChunkRow).where(
+                        ChunkRow.asset_id == asset_id,
+                        # Deduplicated: two citations in one reply can name the
+                        # same passage, and replay collects orders across every
+                        # message in the notebook.
+                        ChunkRow.chunk_order.in_(sorted(set(chunk_orders))),
+                    )
+                )
+                return {
+                    row.chunk_order: self._record_to_model(row, DataChunk)
+                    for row in rows
+                }
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to fetch chunks by order: {exc}") from exc
+
     async def delete_chunks_for_project(self, project_id: str) -> None:
         try:
             async with self.session_factory.begin() as db:

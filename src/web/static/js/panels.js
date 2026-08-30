@@ -147,6 +147,25 @@ function apply() {
   applyTracks();
 }
 
+/** Make sure one panel is actually on screen, unfolding or unhiding it.
+ *
+ *  Used when something outside the panel needs it visible — clicking a
+ *  citation opens the cited document in the sources panel, which is useless
+ *  if that panel is folded to a tab or hidden altogether.
+ *
+ *  A no-op when the panel is already open, so it never disturbs a layout the
+ *  user is happy with, and the width is left exactly as they last set it.
+ */
+export function reveal(id) {
+  if (!(id in layout)) return;
+  if (!layout[id].hidden && !layout[id].tabbed) return;
+
+  layout[id].hidden = false;
+  layout[id].tabbed = false;
+  apply();
+  save();
+}
+
 // --- persistence --------------------------------------------------------------
 
 function save() {

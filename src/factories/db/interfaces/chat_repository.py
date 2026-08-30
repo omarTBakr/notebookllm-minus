@@ -35,6 +35,16 @@ class ChatRepository(ABC):
         pass
 
     @abstractmethod
+    async def delete_chat(self, chat_id: str) -> bool:
+        """Remove one chat row. True if a row went, False if there was none.
+
+        The chat only. Its messages, project, assets, chunks and vectors are
+        the caller's to clear — a chat_id *is* a project_id, so what hangs off
+        it reaches further than this repository can see.
+        """
+        pass
+
+    @abstractmethod
     async def iter_user_chats(self, user_id: str) -> AsyncIterator[Chat]:
         pass
 

@@ -229,3 +229,32 @@ async def test_deleting_an_unknown_asset_404s(client, seed):
     response = await client.delete("/chat/chats/c1/assets/no-such-asset")
 
     assert response.status_code == 404
+
+
+# --- markdown --------------------------------------------------------------
+
+
+async def test_uploading_a_markdown_file_creates_an_asset(client, seed, fake_db):
+    body = b"# Guide\n\n" + b"word " * 60
+    response = await client.post(
+        "/chat/chats/c1/documents",
+        files={"file": ("guide.md", body, "text/markdown")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["chunks_created"] >= 1
+
+
+async def test_a_markdown_document_is_chunked_on_its_headings(client, seed, fake_db):
+    # Comfortably past CHAT_CHUNK_SIZE (1000) so it actually has to split
+    # rather than fitting both sections in one chunk.
+    body = ("# One\n\n" + "word " * 300 + "\n\n# Two\n\n" + "word " * 300).encode()
+
+    await client.post(
+        "/chat/chats/c1/documents",
+        files={"file": ("two-sections.md", body, "text/markdown")},
+    )
+
+    contents = [c.chunk_content for c in fake_db.chunks().items]
+    assert any(text.startswith("# One") for text in contents)
+    assert any(text.startswith("# Two") for text in contents)

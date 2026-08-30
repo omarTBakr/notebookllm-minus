@@ -1,0 +1,13 @@
+# Provisioned at startup, so the data source exists before anyone opens Grafana.
+# The URL is the compose service name: inside this container `localhost` is
+# Grafana itself, which is the usual reason a hand-added source fails to test.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

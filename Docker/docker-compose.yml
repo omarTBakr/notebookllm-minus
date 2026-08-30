@@ -1,36 +1,77 @@
-services:
-  mongo:
-    image: mongo:8.2 # Stable long-term version (8.x line)
-    restart: always
-    ports:
-      - "27017:27017" # Exposes MongoDB to your FastAPI app running locally
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-    volumes:
-      - mongodb:/data/db # Safeguards your database data so nothing is lost on restart
-    networks:
-      - backend
+# The full stack: the app, its stores, and the observability side.
+#
+# Run from this directory (`cd Docker && docker compose up -d`). The build
+# context is the repository root because the application lives in src/ and the
+# lockfile with it — hence `context: ..` and a dockerfile path that starts with
+# Docker/.
+#
+# Secrets come from ./.env (compose substitution, gitignored) and the per-service
+# files under ./env/. Nothing is hardcoded here.
+#
+# Two databases are declared but only one is used at a time: DOCUMENT_DB_BACKEND
+# in src/.env picks between them. pgvector holds documents *and* vectors; mongo
+# pairs with qdrant. Start only the profile you need — see `profiles:` below.
 
-  mongo-express:
-    image: mongo-express:latest
-    restart: always
+services:
+
+  # --- the application --------------------------------------------------------
+
+  fastapi:
+    build:
+      context: ..
+      # Relative to the context (the repo root), so it must include Docker/.
+      # The previous value resolved to <root>/notebookllm-minus/Dockerfile,
+      # which does not exist.
+      dockerfile: Docker/notebookllm-minus/Dockerfile
+    image: notebookllm-minus
+    container_name: fastapi-app
+    restart: unless-stopped
     ports:
-      - "8080:8080"
-    environment:
-      # These tell Express exactly how to log into your Mongo container
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/ 
-    depends_on:
-      - mongo # Ensures Mongo starts up before Express tries to connect to it
+      - "8000:8000"
+    env_file:
+      # Singular. `env_files:` is not a compose key and was silently ignored.
+      - ./env/.env.app
     networks:
       - backend
+    extra_hosts:
+      # Ollama runs on the host, not in this stack. On Linux `host.docker.internal`
+      # is not automatic — this maps it to the docker bridge gateway so
+      # OLLAMA_HOST=host.docker.internal can reach out of the container.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      pgvector:
+        condition: service_healthy
+    # No healthcheck block: the image defines its own, and depends_on's
+    # service_healthy honours it. Repeating it here was the same probe twice,
+    # in two files that could drift.
+
+  # --- reverse proxy ----------------------------------------------------------
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      # 8080 on the host, not 80: this machine already runs Apache (httpd) on
+      # 80. Inside the container nginx still listens on 80, which is what
+      # nginx.conf and the other services expect.
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - backend
+    depends_on:
+      fastapi:
+        condition: service_healthy
+
+  # --- document + vector store (postgres backend) -----------------------------
 
   pgvector:
+    # Pinned to the version actually in use. `latest` on a database is a way to
+    # discover a breaking change during an outage.
     image: pgvector/pgvector:0.8.6-pg18-trixie
     container_name: pgvector-db
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASS}
@@ -41,11 +82,138 @@ services:
       - pgvector:/var/lib/postgresql
     networks:
       - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_MAIN_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-# Declares the persistent storage bucket
+  # --- document + vector store (mongo backend) --------------------------------
+  # Both under a profile, so `docker compose up` does not start a database the
+  # app is not configured to use. Bring them up with `--profile mongo`.
+
+  mongo:
+    image: mongo:8.2
+    container_name: mongo-db
+    profiles: ["mongo"]
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb:/data/db
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: qdrant-db
+    profiles: ["mongo"]
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant:/qdrant/storage
+    networks:
+      - backend
+
+  # --- observability ----------------------------------------------------------
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      # Without this mount Prometheus starts with its built-in defaults and
+      # scrapes nothing — which is what the previous file did.
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    networks:
+      - backend
+    depends_on:
+      - fastapi
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./env/.env.grafana
+    volumes:
+      - grafana:/var/lib/grafana
+      # Provisioned at startup: the Prometheus data source and the dashboard,
+      # so neither has to be added by hand. The dashboards directory is watched,
+      # so editing the JSON on disk updates Grafana without a restart.
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - backend
+    depends_on:
+      - prometheus
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASS}@pgvector:5432/${POSTGRES_MAIN_DB}?sslmode=disable"
+    # postmaster is off by default and the dashboard's "Start Time" panel needs
+    # it. Not enabling --collector.stat_bgwriter: it queries the pre-PG17
+    # pg_stat_bgwriter columns, and this is PostgreSQL 18, where the checkpoint
+    # counters moved to pg_stat_checkpointer. The flag would emit nothing, so
+    # the dashboard's bgwriter and checkpoint panels stay empty either way.
+    command:
+      - "--collector.postmaster"
+    ports:
+      # 9187, its actual default. The previous file put this on 9100 and
+      # collided with node-exporter, so neither could start.
+      - "9187:9187"
+    networks:
+      - backend
+    depends_on:
+      pgvector:
+        condition: service_healthy
+
+  # --- host-level exporters: deliberately absent -------------------------------
+  #
+  # node-exporter, cAdvisor and an NVIDIA exporter were here. They are removed
+  # because this stack runs on Docker Desktop, whose daemon lives inside a VM:
+  #
+  #   * node-exporter bind-mounts / with slave propagation to read host state.
+  #     Desktop's VM root is neither shared nor slave, so the daemon refuses it
+  #     outright — "path / is mounted on / but it is not a shared or slave
+  #     mount". That error is what led here.
+  #   * cAdvisor starts, but reports the VM's cgroups, not the machine's.
+  #   * an NVIDIA exporter cannot see the GPU at all: Desktop's VM has no
+  #     passthrough, so the scrape target would sit DOWN forever.
+  #
+  # A host monitor reporting a VM's numbers is worse than no host monitor: the
+  # panels look populated and are quietly wrong. Application metrics,
+  # postgres-exporter, Prometheus and Grafana all work here unaffected.
+  #
+  # To get them back, move this stack to the system daemon
+  # (`docker context use default`) and restore these services — the mount flags
+  # they used were correct, only the daemon was wrong.
+
 volumes:
-  mongodb:
   pgvector:
+  mongodb:
+  qdrant:
+  prometheus:
+  grafana:
 
 networks:
   backend:

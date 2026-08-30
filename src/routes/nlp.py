@@ -5,8 +5,8 @@ from fastapi.responses import JSONResponse
 
 from controllers import NLPController
 from enums import EmbeddingInputType, ProcessStatus
-from exceptions import ProjectNotFoundError
-from models import ChunkModel, ProjectModel
+from exceptions import ChatNotFoundError, ProjectNotFoundError
+from models import ChatModel, ChunkModel, ProjectModel
 from utils import get_logger, get_settings
 
 from .schemas import PushRequest, SearchRequest
@@ -16,10 +16,37 @@ logger = get_logger(__name__)
 nlp_router = APIRouter(prefix="/nlp", tags=["nlp"])
 
 
-def _controller(request: Request) -> NLPController:
-    """Build the controller from the clients the lifespan already opened."""
+async def _controller(request: Request, project_id: str | None = None) -> NLPController:
+    """Build the controller, using the *project's own* embedding model.
+
+    A chat_id is a project_id in this application, and a chat may name an
+    embedding model different from the one in .env — the UI's model picker
+    writes it. Its vectors were then written at that model's width.
+
+    Building this from ``app.embedding_client`` regardless, as it used to,
+    embedded the query with the default model and searched a collection built
+    with another: at best a silent quality loss, at worst
+    ``different vector dimensions 4096 and 768`` from pgvector, which is what
+    /nlp/index/search returned for every chat using the picker.
+
+    Falls back to the app default when the project is not a chat — /process
+    and /data create projects that never had one.
+    """
+    embedding_client = request.app.embedding_client
+
+    if project_id is not None:
+        try:
+            chat = await ChatModel(request.app.db).get_chat(project_id)
+        except ChatNotFoundError:
+            chat = None
+
+        if chat is not None:
+            embedding_client = request.app.providers.embedding(
+                chat.embedding_model, chat.embedding_dimensions
+            )
+
     return NLPController(
-        embedding_client=request.app.embedding_client,
+        embedding_client=embedding_client,
         vectordb_client=request.app.db.vectors(),
     )
 
@@ -64,7 +91,7 @@ async def push_index(project_id: str, request: PushRequest, http_request: Reques
             f"{scope} has no chunks to index — run /process/{project_id} first"
         )
 
-    controller = _controller(http_request)
+    controller = await _controller(http_request, project_id)
     result = await controller.index_chunks(
         chunk_model=chunk_model,
         project_object_id=project.id,
@@ -105,7 +132,7 @@ async def index_info(project_id: str, http_request: Request):
     project = await project_model.get_project(project_id)
 
     chunk_model = ChunkModel(http_request.app.db)
-    controller = _controller(http_request)
+    controller = await _controller(http_request, project_id)
 
     index = await controller.get_index_info(project_id)
 
@@ -148,7 +175,7 @@ async def search_index(project_id: str, request: SearchRequest, http_request: Re
     project_model = ProjectModel(http_request.app.db)
     await project_model.get_project(project_id)
 
-    controller = _controller(http_request)
+    controller = await _controller(http_request, project_id)
     hits = await controller.search(project_id, request.text, request.limit)
 
     return JSONResponse(

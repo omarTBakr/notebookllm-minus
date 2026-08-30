@@ -33,6 +33,8 @@
 <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M15 18l-6-6 6-6"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5L20 20"/></symbol>
 <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h13M12 6l6 6-6 6"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="7" width="10" height="10" rx="1.5"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 4v11M8 11l4 4 4-4M5 19h14"/></symbol>
 <symbol id="i-more" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/></symbol>
 <symbol id="i-tune" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/></symbol>
 <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M21 12h-2.5M5.5 12H3M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8M18.4 18.4l-1.8-1.8M7.4 7.4L5.6 5.6"/></symbol>

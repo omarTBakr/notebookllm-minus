@@ -75,7 +75,7 @@
 /* Hidden until the row is hovered or the button itself is focused: a delete
    control on every row at rest turns a list of documents into a list of
    things to be careful around. Keyboard users still reach it via Tab. */
-.source__delete {
+.source__delete, .source__download {
   flex: none;
   display: grid;
   place-items: center;
@@ -89,9 +89,11 @@
   cursor: pointer;
   opacity: 0;
 }
-.source:hover .source__delete,
-.source__delete:focus-visible { opacity: 1; }
+.source:hover .source__delete, .source:hover .source__download,
+.source__delete:focus-visible, .source__download:focus-visible { opacity: 1; }
+/* --warn on delete only: it is the one destructive action in this row. */
 .source__delete:hover { color: var(--warn); background: var(--surface); }
+.source__download:hover { color: var(--accent); background: var(--surface); }
 
 .source__check { flex: none; accent-color: var(--accent); cursor: pointer; margin: 0; }
 .source:has(.source__check:not(:checked)) { opacity: 0.5; }
@@ -225,7 +227,68 @@
   overflow-wrap: anywhere;
 }
 
+/* multiply, not opacity: keeps the text legible under the highlight instead
+   of washing it out — same reasoning as .preview__highlight below. Colour
+   itself comes from the chat's highlight_color, set inline in JS. */
+.preview__mark { border-radius: 2px; mix-blend-mode: multiply; }
+.preview__body .md .cite-highlight { border-radius: 4px; mix-blend-mode: multiply; }
+
+/* A rendered markdown source is prose, not a code listing — override the
+   plain-text preview's monospace/pre-wrap defaults back to normal reading
+   text; .md itself (chat.css) already resets white-space and block spacing. */
+.preview__text.md { font-family: inherit; font-size: 0.83rem; }
+
 .preview__pdf { display: block; width: 100%; height: 100%; border: 0; }
+
+/* The pdf.js canvas view — only shown when a citation click named a
+   passage to highlight; a plain browse keeps the native <embed> above,
+   with its own zoom/search/scroll. */
+.preview__pdfpage { display: flex; flex-direction: column; height: 100%; }
+
+.preview__pdfnav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px;
+  border-block-end: 1px solid var(--border);
+}
+.preview__pdfnav .btn { width: 26px; height: 26px; padding: 0; line-height: 1; }
+.preview__pdfpagenum {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 5em;
+  text-align: center;
+}
+
+.preview__pdfcanvaswrap {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+}
+/* Highlight boxes anchor here, not canvasWrap — canvasWrap centers and pads
+   its content, which a rect's left/top must not inherit. line-height: 0
+   removes the few stray pixels of inline gap a bare <canvas> otherwise
+   leaves beneath itself. */
+.preview__pdfcanvasinner { position: relative; line-height: 0; }
+/* No width/height rule here on purpose — the canvas's own width/height
+   attributes (set in JS, in step with the highlight boxes' scale) are what
+   size it. A CSS override would scale the pixels without moving the boxes
+   the same amount. */
+.preview__pdfcanvasinner canvas { display: block; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+
+/* multiply, not opacity: the classic highlighter look keeps black text
+   legible under it, where a semi-transparent box would wash it out. */
+.preview__highlight {
+  position: absolute;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  border-radius: 2px;
+}
 
 .preview__status {
   margin: 0;

@@ -12,6 +12,12 @@ from time import perf_counter
 
 from enums import ChatRole
 from utils import get_logger
+from utils.metrics import (
+    GENERATION_REQUESTS,
+    GENERATION_SECONDS,
+    GENERATION_TOKENS,
+    GENERATION_TTFT_SECONDS,
+)
 
 
 class LLMChattingInterface(ABC):
@@ -162,19 +168,37 @@ class LLMChattingInterface(ABC):
         chars = 0
         chunks = 0
         thinking_chars = 0
+        provider = type(self).__name__
+        first_piece_at = None
 
-        async for piece in self._stream_text(
-            messages, resolved_max_tokens, resolved_temperature
-        ):
-            if piece["kind"] == "thinking":
-                thinking_chars += len(piece["text"])
-            else:
-                chars += len(piece["text"])
-                chunks += 1
+        try:
+            async for piece in self._stream_text(
+                messages, resolved_max_tokens, resolved_temperature
+            ):
+                # Whatever arrives first, reasoning or answer — it is the point
+                # at which the user stops looking at an empty panel, which is
+                # what this metric is for.
+                if first_piece_at is None:
+                    first_piece_at = perf_counter()
+                    GENERATION_TTFT_SECONDS.labels(provider, self.model_id).observe(
+                        first_piece_at - started
+                    )
 
-            yield piece
+                if piece["kind"] == "thinking":
+                    thinking_chars += len(piece["text"])
+                else:
+                    chars += len(piece["text"])
+                    chunks += 1
+
+                yield piece
+        except Exception:
+            GENERATION_REQUESTS.labels(provider, self.model_id, "error").inc()
+            raise
 
         elapsed_ms = (perf_counter() - started) * 1000
+
+        GENERATION_REQUESTS.labels(provider, self.model_id, "ok").inc()
+        GENERATION_SECONDS.labels(provider, self.model_id).observe(elapsed_ms / 1000)
 
         # chunk count is the tell for whether this actually streamed: a
         # fallback provider reports exactly 1.
@@ -230,6 +254,14 @@ class LLMChattingInterface(ABC):
         """
         if input_tokens is None and output_tokens is None:
             return
+
+        # The log line below is DEBUG, so at the default LOG_LEVEL=INFO this
+        # data never left the process. The counters are unconditional.
+        provider = type(self).__name__
+        if input_tokens is not None:
+            GENERATION_TOKENS.labels(provider, self.model_id, "input").inc(input_tokens)
+        if output_tokens is not None:
+            GENERATION_TOKENS.labels(provider, self.model_id, "output").inc(output_tokens)
 
         self.logger.debug(
             "Token usage (provider=%s, model=%s, input=%s, output=%s)",

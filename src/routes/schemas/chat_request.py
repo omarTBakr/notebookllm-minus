@@ -117,6 +117,12 @@ class ChatSettingsRequest(BaseModel):
 
     web_search: bool | None = None
 
+    # A citation's highlight color for this notebook. Six-digit hex only —
+    # the three-digit shorthand and named colors are rejected here rather
+    # than normalised, so what is stored is always what a CSS/canvas color
+    # value needs with no further parsing at render time.
+    highlight_color: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+
     @model_validator(mode="after")
     def overlap_fits_chunk(self):
         # Same rule ProcessRequest enforces: the splitter rejects the

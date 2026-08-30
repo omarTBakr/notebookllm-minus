@@ -135,4 +135,4 @@ def test_factory_rejects_a_backend_with_no_key(settings):
 def test_factory_builds_ollama_without_a_key(settings):
     client = LLMChattingFactory(settings).create(provider="ollama")
 
-    assert client.base_url == settings.OLLAMA_BASE_URL
+    assert client.base_url == settings.ollama_base_url

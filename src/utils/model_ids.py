@@ -49,7 +49,7 @@ def host_for(settings, source: str) -> str:
     from exceptions import LLMProviderError
 
     if source != CLOUD:
-        return settings.OLLAMA_BASE_URL
+        return settings.ollama_base_url
 
     host = settings.OLLAMA_CLOUD_BASE_URL
 

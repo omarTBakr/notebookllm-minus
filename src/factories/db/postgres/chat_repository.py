@@ -1,6 +1,6 @@
 from typing import AsyncIterator
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -24,6 +24,7 @@ SETTABLE_FIELDS = frozenset(
         "chunk_size",
         "overlap_size",
         "web_search",
+        "highlight_color",
         "excluded_assets",
         "has_documents",
     }
@@ -169,3 +170,15 @@ class PostgresChatRepository(PostgresBaseRepository, ChatRepository):
                     yield self._record_to_model(row, Chat)
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to iterate session chats: {exc}") from exc
+
+    async def delete_chat(self, chat_id: str) -> bool:
+        """Remove one chat row. The caller clears what hangs off it first."""
+        try:
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    delete(ChatRow).where(ChatRow.chat_id == chat_id)
+                )
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to delete chat: {exc}") from exc
+
+        return result.rowcount > 0

@@ -29,7 +29,7 @@ RAISE_APP_EXCEPTIONS = os.environ.get('TEST_RAISE') == '1'
 _ENV = {
     "APPLICATION_NAME": "notebookllm-minus-test",
     "APP_VERSION": "0.0.0-test",
-    "ALLOWED_TYPES": '["application/pdf", "text/plain"]',
+    "ALLOWED_TYPES": '["application/pdf", "text/plain", "text/markdown"]',
     "MAX_FILE_CHUNK_SIZE": "512000",
     "MAX_FILE_SIZE": "10485760",
     "GENERATION_BACKEND": "ollama",
@@ -37,7 +37,10 @@ _ENV = {
     "GENERATION_MODEL_ID": "test-chat",
     "EMBEDDING_MODEL_ID": "test-embed",
     "EMBEDDING_MODEL_SIZE": "8",
-    "OLLAMA_BASE_URL": "http://ollama.invalid:11434",
+    # An unreachable host on purpose: any test that actually dials out is a
+    # test that forgot to fake its client.
+    "OLLAMA_HOST": "ollama.invalid",
+    "OLLAMA_PORT": "11434",
     "OLLAMA_CLOUD_BASE_URL": "http://ollama-cloud.invalid",
     "DOCUMENT_DB_BACKEND": "mongo",
     # Keep the logging config from installing a rotating file handler that

@@ -9,6 +9,9 @@ from factories.llmembedding import LLMEmbeddingInterface
 from factories.db.interfaces import VectorRepository
 from models import ChunkModel
 
+from time import perf_counter
+
+from utils.metrics import INGEST_CHUNKS, VECTOR_UPSERT_SECONDS
 from .BaseController import BaseController
 
 # Qdrant collection names are far more restricted than a URL path segment, and
@@ -57,7 +60,7 @@ class NLPController(BaseController):
         project_id: str,
         asset_id: str | None = None,
         reset: bool = False,
-        batch_size: int = 64,
+        batch_size: int | None = None,
         on_progress: Callable[[int, int], None] | None = None,
     ) -> dict:
         """Embed a project's chunks and upsert them into the vector store.
@@ -70,6 +73,10 @@ class NLPController(BaseController):
         ``_id``, which QdrantProvider hashes deterministically, so re-running
         this overwrites the same points instead of duplicating them.
         """
+        # None rather than a literal default, so the .env value applies unless
+        # a caller deliberately overrides it.
+        batch_size = batch_size or self.settings.CHUNKING_BATCH_SIZE
+
         collection = self.collection_name(project_id)
 
         # The vector width comes from the client, not from Settings: the client
@@ -141,6 +148,12 @@ class NLPController(BaseController):
             if on_progress:
                 on_progress(total, expected)
 
+        # Chunk count only. The "indexing" *duration* is observed by
+        # routes/chat/_helpers when it closes the stage — recording it here as
+        # well put two observations in the histogram for one upload, which
+        # halves the apparent mean and doubles the rate.
+        INGEST_CHUNKS.observe(total)
+
         self.logger.info(
             "Indexed %d chunk(s) for project %r in %d batch(es)", total, project_id, batches
         )
@@ -173,12 +186,22 @@ class NLPController(BaseController):
             for chunk in batch
         ]
 
+        # Only the write. The embed above is measured one layer down in
+        # LLMEmbeddingInterface, and folding it in here would report ~95% of
+        # the ingest time as "vector upsert latency" — true of the clock, and
+        # badly wrong about where the time went.
+        _upsert_started = perf_counter()
+
         await self.vectordb_client.insert_many(
             collection_name=collection,
             texts=texts,
             vectors=vectors,
             metadata=metadata,
             record_ids=[self._point_key(chunk) for chunk in batch],
+        )
+
+        VECTOR_UPSERT_SECONDS.labels(type(self.vectordb_client).__name__).observe(
+            perf_counter() - _upsert_started
         )
 
     @staticmethod
@@ -229,12 +252,31 @@ class NLPController(BaseController):
         # using the document form for a question quietly degrades recall.
         vectors = await self.embedding_client.embed([text], EmbeddingInputType.QUERY)
 
-        return await self.vectordb_client.search_by_vector(
+        hits = await self.vectordb_client.search_by_vector(
             collection_name=collection,
             vector=vectors[0],
             limit=limit,
             asset_ids=asset_ids,
         )
+
+        # Without a floor an unrelated question still returns `limit` passages,
+        # and the RAG prompt presents whatever it is given as source material —
+        # so the model answers confidently from the five least-bad chunks in the
+        # corpus. Dropping them lets the ungrounded path take over instead,
+        # which is the honest answer.
+        floor = self.settings.RETRIEVAL_MIN_SCORE
+        if floor:
+            kept = [h for h in hits if h.get("score") is not None and h["score"] >= floor]
+            if len(kept) != len(hits):
+                self.logger.info(
+                    "Retrieval floor dropped %d of %d passage(s) below %.3f",
+                    len(hits) - len(kept),
+                    len(hits),
+                    floor,
+                )
+            return kept
+
+        return hits
 
     async def get_index_info(self, project_id: str) -> dict:
         """What the vector store holds for this project."""

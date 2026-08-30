@@ -78,3 +78,15 @@ class MongoUserRepository(UserRepository, BaseModel):
             raise UserNotFoundError(f"User {user_id!r} not found")
 
         return User(**document)
+
+    async def delete_user(self, user_id: str) -> bool:
+        """Remove one user. The caller clears what hangs off them first."""
+        try:
+            result = await self.collection.delete_one({"user_id": user_id})
+        except PyMongoError as exc:
+            raise DbError(f"Could not delete user {user_id!r}") from exc
+
+        if result.deleted_count:
+            self.logger.info("Deleted user %r", user_id)
+
+        return result.deleted_count > 0

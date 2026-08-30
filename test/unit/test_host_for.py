@@ -7,7 +7,7 @@ from utils import CLOUD, LOCAL, host_for
 
 
 def test_local_resolves_to_the_local_host(settings):
-    assert host_for(settings, LOCAL) == settings.OLLAMA_BASE_URL
+    assert host_for(settings, LOCAL) == settings.ollama_base_url
 
 
 def test_cloud_resolves_to_the_cloud_host(settings):
@@ -37,4 +37,4 @@ def test_that_error_maps_to_a_gateway_status(settings):
 
 
 def test_an_unknown_source_is_treated_as_local(settings):
-    assert host_for(settings, "whatever") == settings.OLLAMA_BASE_URL
+    assert host_for(settings, "whatever") == settings.ollama_base_url

@@ -4,12 +4,15 @@ The one piece the project was missing: retrieval already worked and the chat
 client was already built, but nothing fed the passages to the model.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from enums import ChatRole
 from factories.llmchatting import LLMChattingInterface
 from templates import TemplateParser
 
+from time import perf_counter
+
+from utils.metrics import ANSWERS, RETRIEVAL_HITS, RETRIEVAL_SECONDS
 from .BaseController import BaseController
 from .NLPController import NLPController
 
@@ -88,7 +91,11 @@ class ChatController(BaseController):
         return parser.get("rag", "system_prompt"), user_prompt
 
     @staticmethod
-    def to_citations(hits: list[dict], names: dict[str, str] | None = None) -> list[dict]:
+    def to_citations(
+        hits: list[dict],
+        names: dict[str, str] | None = None,
+        pages: dict[tuple[str, int], dict] | None = None,
+    ) -> list[dict]:
         """The parts of a hit worth showing and storing next to an answer.
 
         ``names`` maps asset_id to the source's current name. The vector
@@ -96,13 +103,27 @@ class ChatController(BaseController):
         the moment someone renames a source, so the live name wins when the
         caller supplies one. A plain dict rather than a model keeps this class
         free of MongoDB, as promised above.
+
+        ``pages`` maps (asset_id, chunk_order) to the page fields, resolved by
+        routes/chat/_pages.py. Passed in already-resolved for the same reason:
+        this class does not get to open a database.
+
+        Kept deliberately small. What this returns is not only sent to the
+        browser, it is written into messages.citations and replayed on every
+        history load, for the life of the notebook. Highlight geometry and
+        chunk text are fetched on demand from the locate endpoint instead —
+        putting them here would freeze a copy per answer that a re-ingest
+        could not correct.
         """
         citations = []
         names = names or {}
+        pages = pages or {}
 
         for number, hit in enumerate(hits, start=1):
             metadata = hit.get("metadata") or {}
             asset_id = metadata.get("asset_id")
+            chunk_order = metadata.get("chunk_order")
+            located = pages.get((asset_id, chunk_order)) or {}
 
             citations.append(
                 {
@@ -111,7 +132,14 @@ class ChatController(BaseController):
                     # since been deleted — a stale name beats "unknown".
                     "source": names.get(asset_id) or metadata.get("source") or "unknown",
                     "asset_id": asset_id,
-                    "chunk_order": metadata.get("chunk_order"),
+                    # Kept because it is how the locate endpoint finds the
+                    # passage again, not because anything displays it.
+                    "chunk_order": chunk_order,
+                    # 1-based, for the viewer. Never the 0-based `page` from
+                    # chunk metadata — see routes/chat/_pages.py.
+                    "page_number": located.get("page_number"),
+                    # A display string, which may be "iv". Never parsed.
+                    "page_label": located.get("page_label"),
                     # `is not None`, not truthiness: 0.0 is a real score — an
                     # orthogonal match — and reporting it as "no score"
                     # loses the one number that says the hit was poor.
@@ -136,6 +164,7 @@ class ChatController(BaseController):
         max_tokens: int | None = None,
         asset_ids: list[str] | None = None,
         source_names: dict[str, str] | None = None,
+        page_lookup: Callable[[list[dict]], Awaitable[dict]] | None = None,
     ) -> AsyncIterator[dict]:
         """Yield the answer as a sequence of events.
 
@@ -143,6 +172,11 @@ class ChatController(BaseController):
         then ``thinking`` and ``delta`` pieces as they come, then ``done``.
         The caller assembles the deltas — and only the deltas — to persist the
         finished answer; the scratchpad is shown live and not stored.
+
+        ``page_lookup`` takes the hits and returns the page map that turns
+        citations into links. An opaque awaitable rather than a repository:
+        this class still never opens a database, so the whole answering path
+        stays testable without one.
         """
         hits: list[dict] = []
 
@@ -150,11 +184,26 @@ class ChatController(BaseController):
         # switched off, so there is nothing to retrieve and the answer should
         # be ungrounded rather than searching all of them.
         if asset_ids != [] and await self.is_grounded(chat_id):
+            _search_started = perf_counter()
             hits = await self.nlp.search(chat_id, question, limit=top_k, asset_ids=asset_ids)
+            RETRIEVAL_SECONDS.observe(perf_counter() - _search_started)
+            RETRIEVAL_HITS.observe(len(hits))
 
         system_prompt, user_prompt = self.build_prompt(question, hits, lang)
 
-        citations = self.to_citations(hits, source_names)
+        # One round trip before the first frame, and the meta frame is what the
+        # UI paints sources from — so it is deliberately kept to a single
+        # indexed lookup. A failure here costs the page links, nothing else:
+        # an unlinked citation is still a citation, and losing the answer over
+        # it would be a far worse trade.
+        pages = None
+        if hits and page_lookup is not None:
+            try:
+                pages = await page_lookup(hits)
+            except Exception as exc:
+                self.logger.warning("Could not resolve citation pages: %s", exc)
+
+        citations = self.to_citations(hits, source_names, pages)
 
         self.logger.info(
             "Answering chat %r (grounded=%s, hits=%d, lang=%s, history=%d, sources=%s)",
@@ -165,6 +214,10 @@ class ChatController(BaseController):
             len(history or []),
             "all" if asset_ids is None else len(asset_ids),
         )
+
+        # Counted here rather than at the end: the stream can be abandoned
+        # mid-answer, and an answer that started grounded still was.
+        ANSWERS.labels(str(bool(hits)).lower()).inc()
 
         yield {"type": "meta", "grounded": bool(hits), "citations": citations}
 

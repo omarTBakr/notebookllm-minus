@@ -49,7 +49,7 @@ class ProviderCache:
         settings = self.settings.model_copy(
             update={
                 "GENERATION_MODEL_ID": tag,
-                "OLLAMA_BASE_URL": host_for(self.settings, source),
+                "OLLAMA_BASE_URL_OVERRIDE": host_for(self.settings, source),
             }
         )
 
@@ -85,7 +85,7 @@ class ProviderCache:
             update={
                 "EMBEDDING_MODEL_ID": tag,
                 "EMBEDDING_MODEL_SIZE": size,
-                "OLLAMA_BASE_URL": host_for(self.settings, source),
+                "OLLAMA_BASE_URL_OVERRIDE": host_for(self.settings, source),
             }
         )
 

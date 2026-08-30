@@ -9,6 +9,12 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 20px 26px;
+  /* The answer's whole subtree is rebuilt on every animation frame while it
+     streams. Scroll anchoring picks a node to hold still, then adjusts
+     scrollTop after the script has run — against a DOM that no longer
+     contains the node it chose. The result was a transcript that drifted
+     upward and appeared to stick until generation stopped. */
+  overflow-anchor: none;
 }
 
 /* --- the notebook's identity, above the first message --- */
@@ -84,6 +90,16 @@
   border-radius: 8px; border: 1px solid var(--border);
 }
 .sources-block__num { color: var(--accent); font-weight: 600; }
+/* A button, because it opens a panel rather than navigating. Reset to look
+   like the text beside it, so a citation with a page reads the same as one
+   without until you hover it. text-align matters in RTL. */
+.sources-block__link {
+  background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: start;
+  cursor: pointer; border-block-end: 1px dashed var(--border);
+}
+.sources-block__link:hover { color: var(--accent); border-block-end-color: var(--accent); }
+.sources-block__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .sources-block__score { margin-inline-start: auto; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 .msg__actions { display: flex; gap: 4px; margin-block-start: 2px; }
@@ -107,6 +123,26 @@
 .md pre code { background: none; padding: 0; font-size: 0.85em; }
 .md blockquote { margin: 0 0 0.65em; padding-inline-start: 10px; border-inline-start: 3px solid var(--border); color: var(--text-muted); }
 .md a { color: var(--accent); }
+
+/* Tables. The wrapper is the scroller, not the table: .msg is capped at
+   760px, and a wide table has to scroll inside the message rather than
+   stretch it and push the whole transcript sideways. */
+.md__table-wrap { overflow-x: auto; margin: 0 0 0.65em; }
+.md table {
+  border-collapse: collapse;
+  /* Not width:100% — a two-column table should not stretch across the
+     message. min-width lets a wide one grow into the scroller instead. */
+  min-width: 100%;
+  font-size: 0.92em;
+}
+.md th, .md td {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: start;
+  vertical-align: top;
+}
+.md th { background: var(--surface-2); font-weight: 600; white-space: nowrap; }
+.md tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
 .msg--user .msg__body code { background: rgba(255,255,255,0.18); color: inherit; }
 
 /* --- composer --- */
@@ -150,6 +186,10 @@
 .composer__send:disabled { opacity: 0.4; cursor: not-allowed; }
 /* The arrow points the way the text runs. */
 :root[dir="rtl"] .composer__send { transform: scaleX(-1); }
+/* Stop, mid-answer. A square is not directional, so it must not be mirrored
+   in RTL the way the send arrow is. */
+.composer__send--stop { background: var(--warn); }
+:root[dir="rtl"] .composer__send--stop { transform: none; }
 
 /* Once the first question is asked the notebook's identity has served its
    purpose and the transcript takes the space. */

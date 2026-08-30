@@ -48,6 +48,10 @@ export const api = {
   getUser: (userId) => request(`/chat/users/${userId}`),
   renameUser: (userId, label) => request(`/chat/users/${userId}`, patch({ label })),
 
+  // Cascades server-side: sessions, notebooks, documents, chunks and vectors
+  // all go with the profile.
+  deleteUser: (userId) => request(`/chat/users/${userId}`, { method: "DELETE" }),
+
   // --- notebooks (a notebook is a chat; sessions never surface) ---
   listNotebooks: (userId) => request(`/chat/users/${userId}/chats`),
   createNotebook: (userId, title, lang) =>
@@ -62,6 +66,17 @@ export const api = {
   // PDF, and only the text branch actually fetches.
   sourceContentUrl: (chatId, assetId) =>
     `/chat/chats/${chatId}/assets/${assetId}/content`,
+
+  // Same route, ?download=1: the server switches Content-Disposition to
+  // attachment with the source's real name, instead of inline with its id.
+  sourceDownloadUrl: (chatId, assetId) =>
+    `/chat/chats/${chatId}/assets/${assetId}/content?download=1`,
+
+  // Where a chunk sits in its source, and the rectangles to highlight if any
+  // were captured at ingest. Fetched on a citation click, not carried on the
+  // citation itself — see routes/chat/_pages.py.
+  locateChunk: (chatId, assetId, chunkOrder) =>
+    request(`/chat/chats/${chatId}/assets/${assetId}/chunks/${chunkOrder}/locate`),
 
   renameSource: (chatId, assetId, name) =>
     request(`/chat/chats/${chatId}/assets/${assetId}`, patch({ name })),
@@ -92,11 +107,16 @@ export const api = {
 
   // Streams the answer. fetch rather than EventSource because the question
   // belongs in a POST body and EventSource can only issue GETs.
-  async *streamMessage(chatId, text) {
+  async *streamMessage(chatId, text, { signal } = {}) {
+    // signal is what actually closes the connection when the reader presses
+    // Stop. Breaking out of the for-await would end this generator but leave
+    // the reader — and the socket — open, so the model would keep generating
+    // into a response nobody is reading.
     const response = await fetch(`/chat/chats/${chatId}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
+      signal,
     });
 
     if (!response.ok) throw new Error(await detailOf(response));

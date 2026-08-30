@@ -1,16 +1,19 @@
 """Asset and document routes for a chat (notebook)."""
 
 import hashlib
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from controllers import DataController, ProcessController
+from controllers.TextProcessingController import normalize_text, strip_nulls
 from enums import AssetType
 from exceptions import AssetNotFoundError, DuplicateAssetError, InvalidInputError
 from models import Asset, AssetModel, ChatModel, ChunkModel, DataChunk, Project, ProjectModel, UserModel
 
 from ..schemas import RenameAssetRequest, SelectSourcesRequest
+from ._pages import located_from_metadata
 from ._helpers import (
     _new_id,
     _nlp_controller,
@@ -22,6 +25,7 @@ from ._helpers import (
     indexing_status,
 )
 from utils import get_settings
+from utils.metrics import INGEST_DOCUMENTS
 
 assets_router = APIRouter()
 
@@ -170,26 +174,150 @@ async def delete_asset(chat_id: str, asset_id: str, http_request: Request):
 
 
 @assets_router.get("/chats/{chat_id}/assets/{asset_id}/content")
-async def asset_content(chat_id: str, asset_id: str, http_request: Request):
-    """The source's own bytes, for previewing it in the UI.
+async def asset_content(
+    chat_id: str, asset_id: str, http_request: Request, download: bool = False
+):
+    """The source's own bytes.
 
     ``get_asset`` is the one read that does not project ``file_bytes`` away,
     which is exactly why it is used here and nowhere near the listings.
+
+    ``download=true`` is the only thing that changes: everything else —
+    lookup, ownership check, ETag — is identical whether the browser is about
+    to render this inline or save it, so it is one route with one branch
+    rather than two copies of the same logic.
     """
     db = http_request.app.db
 
     await ChatModel(db).get_chat(chat_id)
     asset = await AssetModel(db).get_asset(asset_id)
 
+    if asset.project_id != chat_id:
+        # Belongs to another notebook. Until this check existed, naming any
+        # valid chat alongside any asset id returned that asset's bytes —
+        # chat_id was validated and then thrown away. Reported as missing
+        # rather than forbidden, so the reply does not confirm it exists
+        # somewhere else. delete_asset has always done this.
+        raise AssetNotFoundError(f"Asset {asset_id!r} is not in this notebook")
+
+    if download:
+        # RFC 5987 (filename*=), not a bare filename="...": this corpus
+        # includes Arabic filenames, which plain quoting cannot carry
+        # correctly in every browser. attachment, and the source's own name —
+        # the citation/preview path below keeps asset_id, since that one must
+        # never change what the browser's PDF viewer shows in its own tab.
+        disposition = f"attachment; filename*=UTF-8''{quote(asset.name)}"
+    else:
+        # Inline, and named by id: a browser asked to render a PDF wants both.
+        disposition = f'inline; filename="{asset.asset_id}"'
+
+    # The bytes are a 25 MB read out of Postgres for a large PDF, and opening
+    # a citation re-requests the same file every time. content_hash is already
+    # stored, so it is a free ETag: the second open costs a 304 instead.
+    etag = f'"{asset.content_hash}"' if asset.content_hash else None
+    headers = {"Content-Disposition": disposition}
+
+    if etag:
+        headers["ETag"] = etag
+        # private: this is a user's own document, never a shared cache's.
+        headers["Cache-Control"] = "private, max-age=300"
+
+        if http_request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers=headers)
+
+    content = asset.file_bytes
+
+    if asset.asset_type != AssetType.PDF and not download:
+        # The inline preview shows the *sanitised* text — NFKC-normalised,
+        # NUL-stripped, whitespace-collapsed — which is what was actually
+        # split and embedded, not the raw upload. That match matters now
+        # that citation highlighting exists: a chunk's start_index is an
+        # offset into the sanitised text, so highlighting the raw bytes
+        # instead would be off by however much sanitising shifted things —
+        # invisible for plain ASCII, real the moment a document carries a
+        # bidi control or an Arabic presentation form. download=true still
+        # gets the untouched original; a download must return exactly what
+        # was uploaded, not the version the pipeline reshaped internally.
+        try:
+            content = normalize_text(strip_nulls(content.decode("utf-8"))).encode("utf-8")
+        except UnicodeDecodeError:
+            # Ingest itself assumes UTF-8 (TextLoader, no encoding override),
+            # so a stored TEXT/MARKDOWN asset should already be decodable —
+            # this is a defensive fallback, not the expected path. Falling
+            # back to the raw bytes keeps the preview working; it just will
+            # not line up with a citation's highlight for this one asset.
+            pass
+
     return Response(
-        content=asset.file_bytes,
+        content=content,
         media_type=(
             "application/pdf"
             if asset.asset_type == AssetType.PDF
             else "text/plain; charset=utf-8"
         ),
-        # Inline, and named: a browser asked to render a PDF wants both.
-        headers={"Content-Disposition": f'inline; filename="{asset.asset_id}"'},
+        headers=headers,
+    )
+
+
+@assets_router.get("/chats/{chat_id}/assets/{asset_id}/chunks/{chunk_order}/locate")
+async def locate_chunk(
+    chat_id: str, asset_id: str, chunk_order: int, http_request: Request
+):
+    """Where one chunk sits in its source: page, and a highlight if one exists.
+
+    Fetched on click, not embedded in the citation — a citation is persisted
+    into every future reload of the conversation, and highlight rectangles
+    (dozens of floats per chunk) belong to the chunk row, which a re-ingest
+    can correct, not frozen into a message that cannot.
+
+    ``highlight`` is ``null`` for any chunk ingested before PDF_LOADER=pymupdf
+    captured word boxes. ``text_range`` is its equivalent for a TEXT/MARKDOWN
+    source that never had a page at all: ``[start, end)`` into that asset's
+    own *sanitised* text — the same text ``asset_content`` serves inline, and
+    the same one ``start_index`` was measured against, so slicing it at these
+    two numbers reproduces the cited passage exactly. ``text`` (the chunk's
+    own content) is returned regardless, as a fallback for a chunk with
+    neither — one predating this feature, on either kind of source.
+    """
+    db = http_request.app.db
+
+    await ChatModel(db).get_chat(chat_id)
+    asset = await AssetModel(db).get_asset(asset_id)
+
+    if asset.project_id != chat_id:
+        # Same reasoning as asset_content: reported as missing, not
+        # forbidden, so the reply never confirms the asset exists elsewhere.
+        raise AssetNotFoundError(f"Asset {asset_id!r} is not in this notebook")
+
+    chunks = await ChunkModel(db).get_chunks_by_orders(asset_id, [chunk_order])
+    chunk = chunks.get(chunk_order)
+
+    if chunk is None:
+        raise AssetNotFoundError(
+            f"Chunk {chunk_order} of asset {asset_id!r} was not found"
+        )
+
+    metadata = chunk.chunk_metadata or {}
+    located = located_from_metadata(metadata) or {}
+
+    text_range = None
+    if asset.asset_type in (AssetType.TEXT, AssetType.MARKDOWN):
+        start = metadata.get("start_index")
+        # `>= 0`, not truthiness: 0 is the first chunk of the document, and
+        # enforce_size's rebase (TextProcessingController) marks "could not
+        # be located" with -1, which must not be read as a real offset.
+        if isinstance(start, int) and start >= 0:
+            text_range = [start, start + len(chunk.chunk_content)]
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "page_number": located.get("page_number"),
+            "page_label": located.get("page_label"),
+            "highlight": metadata.get("highlight"),
+            "text_range": text_range,
+            "text": chunk.chunk_content,
+        },
     )
 
 
@@ -311,6 +439,8 @@ async def attach_document(chat_id: str, file: UploadFile, http_request: Request)
             result["chunks_indexed"],
         )
 
+        INGEST_DOCUMENTS.labels("ok").inc()
+
         return JSONResponse(
             status_code=200,
             content={
@@ -324,10 +454,21 @@ async def attach_document(chat_id: str, file: UploadFile, http_request: Request)
             },
         )
 
+    except DuplicateAssetError:
+        # Not a failure — the dedupe check doing its job. Counted separately so
+        # a wall of duplicates does not read as an error rate.
+        INGEST_DOCUMENTS.labels("duplicate").inc()
+        raise
+
+    except Exception:
+        INGEST_DOCUMENTS.labels("failed").inc()
+        raise
+
     finally:
         # However this ends — success, a bad PDF, a dead embedding model —
         # the bar must stop. A stale entry would leave the UI polling a
-        # request that is no longer running.
+        # request that is no longer running. First, so a metric call can never
+        # be the reason the bar sticks.
         indexing_finish(chat_id)
 
 

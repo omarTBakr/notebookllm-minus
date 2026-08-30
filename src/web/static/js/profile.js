@@ -1,7 +1,7 @@
 // The avatar menu: which profile you are, and every profile on this install.
 // No authentication — a picker, not a login.
 
-import { promptDialog } from "./dialog.js";
+import { confirmDialog, promptDialog } from "./dialog.js";
 import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { toast } from "./soon.js";
@@ -133,6 +133,38 @@ async function renameCurrent() {
   }
 }
 
+/** Delete this profile and everything under it, then land somewhere valid. */
+async function deleteCurrent() {
+  if (!state.userId) return;
+
+  const name = state.userLabel || state.userId.slice(0, 8);
+  const ok = await confirmDialog({
+    title: t("deleteProfile"),
+    message: t("confirmDeleteProfile").replace("{name}", name),
+    confirm: t("deleteProfile"),
+    danger: true,
+  });
+  if (!ok) return;
+
+  try {
+    await api.deleteUser(state.userId);
+  } catch (error) {
+    toast(error.message);
+    return;
+  }
+
+  // The stored id now points at nothing, which is the one state initProfile is
+  // written to recover from — so drop it and let it choose or mint the next
+  // profile rather than deciding here.
+  forgetUser();
+  state.userId = null;
+  state.userLabel = null;
+
+  closeMenu();
+  toast(t("profileDeleted").replace("{name}", name));
+  onSwitch();
+}
+
 export function bindProfile() {
   $("btn-profile").addEventListener("click", (event) => {
     event.stopPropagation();
@@ -143,6 +175,7 @@ export function bindProfile() {
   });
 
   $("btn-rename-profile").addEventListener("click", renameCurrent);
+  $("btn-delete-profile").addEventListener("click", deleteCurrent);
 
   $("btn-new-profile").addEventListener("click", async () => {
     try {

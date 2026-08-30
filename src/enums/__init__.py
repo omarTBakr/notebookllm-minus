@@ -2,7 +2,7 @@ from .responses import FileStatus
 from .process import ProcessStatus
 from .Datbase import DatabaseCollection
 from .AssetTypes import AssetType
-from .FileExtensions import FileExtension
+from .FileExtensions import FileExtension, PdfLoader
 from .lang import Language
 from .logs import LogFormat, LogLevel
 from .LLMChattingEnum import ChatRole, LLMChattingProvider, ThinkingLevel
@@ -17,6 +17,7 @@ __all__ = [
     "DistanceMethod",
     "EmbeddingInputType",
     "FileExtension",
+    "PdfLoader",
     "FileStatus",
     "Language",
     "LLMChattingProvider",

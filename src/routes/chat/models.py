@@ -139,6 +139,7 @@ async def set_chat_settings(chat_id: str, request: ChatSettingsRequest, http_req
                 chat.overlap_size if chat.overlap_size is not None else CHAT_CHUNK_OVERLAP
             ),
             "web_search": chat.web_search,
+            "highlight_color": chat.highlight_color,
             "applied": sorted(changes),
         },
     )

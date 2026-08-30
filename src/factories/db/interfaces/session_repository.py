@@ -13,5 +13,10 @@ class SessionRepository(ABC):
         pass
 
     @abstractmethod
+    async def delete_sessions_for_user(self, user_id: str) -> int:
+        """Drop every session belonging to a user. Returns how many went."""
+        pass
+
+    @abstractmethod
     async def iter_user_sessions(self, user_id: str) -> AsyncIterator[Session]:
         pass

@@ -1,5 +1,9 @@
-// The settings dialog: models, temperature, output length, splitter, language.
-// Everything except the language is per notebook.
+// Two dialogs, both painted and saved from here.
+//
+// Chat settings (chat-settings-modal): models, temperature, output length,
+// splitter, highlight color — everything that belongs to one notebook.
+// Appearance (settings-modal): theme and language — everything that belongs
+// to the interface instead, and needs no notebook to be open at all.
 
 import { api } from "./api.js";
 import { applyLang, t } from "./i18n.js";
@@ -14,7 +18,7 @@ export function bindLangChange(handler) {
   onLangChange = handler;
 }
 
-const CONTROLS = ["temperature", "max-tokens", "chunk-size", "overlap-size"];
+const CONTROLS = ["temperature", "max-tokens", "chunk-size", "overlap-size", "highlight-color"];
 const PICKERS = ["model-chat", "model-embed"];
 
 function setDisabled(disabled) {
@@ -234,6 +238,8 @@ export function showFor(notebook) {
   slider("chunk-size", "chunk-value", notebook.chunk_size ?? 500);
   slider("overlap-size", "overlap-value", notebook.overlap_size ?? 50);
 
+  $("highlight-color").value = notebook.highlight_color ?? "#ffff00";
+
   $("web-search").checked = Boolean(notebook.web_search);
 
   setDisabled(false);
@@ -298,15 +304,34 @@ function bindSlider(id, valueId, key, format = (v) => v) {
   });
 }
 
-// --- the dialog ---------------------------------------------------------------
+/** Same debounce-then-PATCH shape as a slider, for a plain string value.
+ *  <input type="color"> fires "input" continuously while dragging inside the
+ *  native picker, exactly like a range does — the debounce matters here too. */
+function bindColor(id, key) {
+  const input = $(id);
+  const save = debounce((value) => saveSettings({ [key]: value }));
 
-export function openSettings() {
+  input.addEventListener("input", () => save(input.value));
+}
+
+// --- the dialogs ----------------------------------------------------------------
+
+/** Theme + language. Needs no notebook — both already paint themselves
+ *  (bindTheme/applyLang) independently of anything here. */
+export function openAppearance() {
   $("settings-modal").hidden = false;
+}
+
+/** Models, generation knobs, splitter, highlight color — one notebook's. */
+export function openChatSettings() {
+  $("chat-settings-modal").hidden = false;
   showFor(state.notebook);
 }
 
-function closeSettings() {
-  $("settings-modal").hidden = true;
+/** Whichever modal a click landed inside. Generic because there are now two:
+ *  a backdrop or close button says nothing about which one it belongs to. */
+function closeModal(el) {
+  el.closest(".modal").hidden = true;
 }
 
 /** The footer echo of the two models this notebook actually uses.
@@ -359,16 +384,17 @@ export async function showBackend() {
 }
 
 export function bindSettings() {
-  $("btn-settings").addEventListener("click", openSettings);
+  $("btn-settings").addEventListener("click", openAppearance);
+  $("btn-chat-settings").addEventListener("click", openChatSettings);
 
   document.querySelectorAll("[data-close-modal]").forEach((el) =>
-    el.addEventListener("click", closeSettings)
+    el.addEventListener("click", () => closeModal(el))
   );
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
 
-    // An open list swallows the first Escape; the modal only closes once
+    // An open list swallows the first Escape; a modal only closes once
     // there is nothing nested left to dismiss.
     if (openPicker) {
       event.stopPropagation();
@@ -376,7 +402,10 @@ export function bindSettings() {
       return;
     }
 
-    closeSettings();
+    // Whichever of the two happens to be open — at most one is, since
+    // nothing offers a way to open the second from within the first.
+    const open = document.querySelector(".modal:not([hidden])");
+    if (open) open.hidden = true;
   });
 
   PICKERS.forEach((id) => {
@@ -395,6 +424,7 @@ export function bindSettings() {
   bindSlider("max-tokens", "tokens-value", "max_tokens");
   bindSlider("chunk-size", "chunk-value", "chunk_size");
   bindSlider("overlap-size", "overlap-value", "overlap_size");
+  bindColor("highlight-color", "highlight_color");
 
   document.querySelectorAll(".btn--lang").forEach((btn) => {
     btn.addEventListener("click", () => {

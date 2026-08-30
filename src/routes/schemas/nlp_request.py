@@ -14,7 +14,8 @@ class PushRequest(BaseModel):
 
     # Chunks per embed + upsert round trip. Capped because the whole batch is
     # held in memory as text *and* as float vectors at the same time.
-    batch_size: int = Field(64, gt=0, le=512)
+    # Unset falls through to CHUNKING_BATCH_SIZE in .env.
+    batch_size: int | None = Field(None, gt=0, le=512)
 
 
 class SearchRequest(BaseModel):

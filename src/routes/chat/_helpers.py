@@ -10,7 +10,10 @@ import json
 from controllers import ChatController, NLPController
 from fastapi import Request
 
+from time import perf_counter
+
 from utils import get_logger
+from utils.metrics import INGEST_STAGE_SECONDS
 
 logger = get_logger("routes.chat")
 
@@ -20,7 +23,11 @@ logger = get_logger("routes.chat")
 # the number of texts sent to the embedding model, so halving it halves both.
 # A 222-page book went from ~1700 chunks to ~850 on this change alone.
 CHAT_CHUNK_SIZE = 1000
-CHAT_CHUNK_OVERLAP = 50
+# 200, not 50. The overlap is what carries a sentence spanning a chunk
+# boundary into both chunks; at 50 it was smaller than most sentences, so a
+# fact split across the seam belonged to neither chunk and could not be
+# retrieved. 20% is the usual ratio and costs proportionally more chunks.
+CHAT_CHUNK_OVERLAP = 200
 
 
 # --- indexing progress --------------------------------------------------------
@@ -38,17 +45,46 @@ _INDEXING: dict[str, dict] = {}
 
 
 def indexing_start(chat_id: str, filename: str) -> None:
-    _INDEXING[chat_id] = {"filename": filename, "stage": "extracting", "done": 0, "total": 0}
+    _INDEXING[chat_id] = {
+        "filename": filename,
+        "stage": "extracting",
+        "done": 0,
+        "total": 0,
+        # When the current stage began. Every transition closes the previous
+        # stage's timer, so the histogram gets its duration without the route
+        # having to wrap each step in its own measurement.
+        "_since": perf_counter(),
+    }
 
 
 def indexing_stage(chat_id: str, stage: str, done: int = 0, total: int = 0) -> None:
     entry = _INDEXING.get(chat_id)
-    if entry is not None:
-        entry.update(stage=stage, done=done, total=total)
+    if entry is None:
+        return
+
+    # A real transition closes the outgoing stage. Progress updates *within*
+    # the indexing stage call this repeatedly with the same name, and those
+    # must not each record a duration.
+    if stage != entry["stage"]:
+        _close_stage(entry)
+
+    entry.update(stage=stage, done=done, total=total)
+
+
+def _close_stage(entry: dict) -> None:
+    """Record how long the stage that is ending took."""
+    started = entry.get("_since")
+    if started is not None:
+        INGEST_STAGE_SECONDS.labels(entry["stage"]).observe(perf_counter() - started)
+    entry["_since"] = perf_counter()
 
 
 def indexing_finish(chat_id: str) -> None:
-    _INDEXING.pop(chat_id, None)
+    entry = _INDEXING.pop(chat_id, None)
+    # The last stage has no transition after it, so it is closed here — on the
+    # failure path too, which is what makes a stalled stage visible.
+    if entry is not None:
+        _close_stage(entry)
 
 
 def indexing_status(chat_id: str) -> dict | None:

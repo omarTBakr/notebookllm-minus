@@ -81,3 +81,69 @@ async def test_asking_an_unknown_chat_404s(client, seed):
 
 async def test_an_empty_question_is_rejected(client, seed):
     assert (await client.post("/chat/chats/c1/message", json={"text": ""})).status_code == 422
+
+
+# --- pages on replayed citations ----------------------------------------------
+
+
+def _chunk(order, page, asset_id="a1"):
+    from bson.objectid import ObjectId
+    from models.db_schema import DataChunk
+
+    return DataChunk(
+        project_id=ObjectId(),
+        asset_id=asset_id,
+        chunk_order=order,
+        chunk_content="text",
+        chunk_metadata={"page": page},
+    )
+
+
+async def _stored(fake_db, citation):
+    await fake_db.messages().create_message(
+        Message(
+            message_id="m1", chat_id="c1", role=ChatRole.ASSISTANT, content="a",
+            citations=[citation],
+        )
+    )
+
+
+async def test_an_old_citation_gets_its_page_filled_in(client, seed, fake_db):
+    """The whole promise of shipping this without a re-index.
+
+    Answers written before citations carried a page have none stored; the
+    chunk they name still knows which page it came from.
+    """
+    fake_db.chunks().items.append(_chunk(order=0, page=10))
+    await _stored(fake_db, {"num": 1, "asset_id": "a1", "source": "note1.txt",
+                            "chunk_order": 0, "score": 0.9})
+
+    body = (await client.get("/chat/chats/c1/messages")).json()
+
+    assert body["messages"][0]["citations"][0]["page_number"] == 11
+
+
+async def test_a_stored_page_is_never_overwritten(client, seed, fake_db):
+    """Unlike a rename, a page is not retroactively true.
+
+    Re-processing a document remaps chunk_order onto different pages. Filling
+    in a citation that already has one would silently move it to a page the
+    answer never read.
+    """
+    fake_db.chunks().items.append(_chunk(order=0, page=99))
+    await _stored(fake_db, {"num": 1, "asset_id": "a1", "source": "note1.txt",
+                            "chunk_order": 0, "score": 0.9,
+                            "page_number": 7, "page_label": "7"})
+
+    body = (await client.get("/chat/chats/c1/messages")).json()
+
+    assert body["messages"][0]["citations"][0]["page_number"] == 7
+
+
+async def test_a_citation_with_no_matching_chunk_replays_without_a_page(client, seed, fake_db):
+    await _stored(fake_db, {"num": 1, "asset_id": "gone", "source": "deleted.txt",
+                            "chunk_order": 3, "score": 0.9})
+
+    body = (await client.get("/chat/chats/c1/messages")).json()
+
+    assert body["messages"][0]["citations"][0].get("page_number") is None

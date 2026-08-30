@@ -1,6 +1,13 @@
 // Bootstrap: load the logo, wire the panels together, open a notebook.
 
-import { ask, loadHistory } from "./chat.js";
+import {
+  ask,
+  bindAnswerActions,
+  bindCitationClick,
+  bindTranscript,
+  loadHistory,
+  stopAnswer,
+} from "./chat.js";
 import { applyLang, t } from "./i18n.js";
 import {
   bindNotebookOpen,
@@ -21,11 +28,18 @@ import {
   showBackend,
   showFor,
 } from "./settings.js";
-import { bindPanels, repaint as repaintPanels } from "./panels.js";
-import { bindSources, bindSourcesChanged, load as loadSources } from "./sources.js";
+import { bindPanels, repaint as repaintPanels, reveal as revealPanel } from "./panels.js";
+import {
+  bindRevealPanel,
+  bindSources,
+  bindSourcesChanged,
+  load as loadSources,
+  openAt as openSourceAt,
+  saveAnswer as saveAnswerToSources,
+} from "./sources.js";
 import { bindStudio, repaint as repaintStudio } from "./studio.js";
 import { bindTheme } from "./theme.js";
-import { bindAutoCopy } from "./clipboard.js";
+import { bindAutoCopy, copyText } from "./clipboard.js";
 import { bindComingSoon, toast } from "./soon.js";
 import { rememberNotebook, rememberUser, state, storedLang } from "./state.js";
 import { $ } from "./dom.js";
@@ -103,11 +117,32 @@ function autoGrow(box) {
   box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
 }
 
+/** The send button doubles as Stop while an answer is streaming.
+ *
+ * One button rather than two: the only thing worth doing mid-answer is
+ * stopping it, and a second control would sit disabled the rest of the time.
+ */
+function paintSendButton(streaming) {
+  const btn = $("btn-send");
+
+  btn.classList.toggle("composer__send--stop", streaming);
+  btn.setAttribute("aria-label", streaming ? t("stop") : "send");
+  btn.title = streaming ? t("stop") : "";
+  btn.querySelector("use").setAttribute("href", streaming ? "#i-stop" : "#i-send");
+}
+
 async function send() {
   const box = $("question");
-  const text = box.value.trim();
 
-  if (!text || state.streaming) return;
+  // Mid-answer the same button means Stop. Checked before the empty-text
+  // guard below, which would otherwise swallow the click.
+  if (state.streaming) {
+    stopAnswer();
+    return;
+  }
+
+  const text = box.value.trim();
+  if (!text) return;
 
   if (!state.notebook) {
     toast(t("noNotebookYet"));
@@ -116,14 +151,20 @@ async function send() {
 
   box.value = "";
   autoGrow(box);
-  $("btn-send").disabled = true;
+
+  // Deliberately *not* disabled: it is the Stop button now, and disabling it
+  // would leave no way to interrupt a long answer. Passed explicitly because
+  // ask() has not run yet, so state.streaming is still false here.
+  paintSendButton(true);
 
   // The hero only makes sense above an empty transcript.
   paintHero();
 
   await ask(state.notebook.chat_id, text, {
     onDone: async () => {
-      $("btn-send").disabled = false;
+      // Back to an arrow before the three awaits below, or the button would
+      // sit showing Stop for the length of them.
+      paintSendButton(false);
       // The first question renames the notebook server-side.
       state.notebook = await api.getNotebook(state.notebook.chat_id);
       paintTitle();
@@ -161,10 +202,22 @@ async function main() {
   bindSources();
   bindStudio();
   bindAutoCopy();
+  bindTranscript();
 
   bindNotebookOpen((chatId) => openNotebook(chatId).catch((e) => toast(e.message)));
   bindProfileSwitch(() => enterProfile().catch((e) => toast(e.message)));
   bindSourcesChanged(() => paintMeta());
+  // Clicking a citation opens that document at the cited page. Wired here so
+  // chat.js and sources.js never import each other.
+  bindCitationClick((assetId, pageNumber, chunkOrder) =>
+    openSourceAt(assetId, pageNumber, chunkOrder).catch((e) => toast(e.message)),
+  );
+  bindRevealPanel(revealPanel);
+  // The answer's own markdown, handed to whichever module owns the action.
+  bindAnswerActions({
+    copy: (markdown) => copyText(markdown),
+    save: (markdown) => saveAnswerToSources(markdown).catch((err) => toast(err.message)),
+  });
   bindLangChange(() => {
     // Labels changed, so anything rendered from them has to be redrawn.
     // applyLang only repaints [data-i18n] elements, and the model pickers are

@@ -55,6 +55,9 @@ class FakeUserRepository(_Store):
     async def rename(self, user_id, label):
         self._patch(user_id, label=label)
 
+    async def delete_user(self, user_id):
+        return self.items.pop(user_id, None) is not None
+
     async def count_users(self):
         return len(self.items)
 
@@ -72,6 +75,12 @@ class FakeSessionRepository(_Store):
 
     async def get_session(self, session_id):
         return self._get(session_id)
+
+    async def delete_sessions_for_user(self, user_id):
+        gone = [k for k, x in self.items.items() if x.user_id == user_id]
+        for k in gone:
+            del self.items[k]
+        return len(gone)
 
     async def iter_user_sessions(self, user_id):
         for s in list(self.items.values()):
@@ -104,6 +113,9 @@ class FakeChatRepository(_Store):
     async def set_settings(self, chat_id, changes):
         self._patch(chat_id, **changes)
 
+    async def delete_chat(self, chat_id):
+        return self.items.pop(chat_id, None) is not None
+
     async def iter_user_chats(self, user_id):
         for c in list(self.items.values()):
             if c.user_id == user_id:
@@ -127,6 +139,11 @@ class FakeMessageRepository:
         for m in [m for m in self.items if m.chat_id == chat_id]:
             yield m
 
+    async def delete_messages_for_chat(self, chat_id):
+        before = len(self.items)
+        self.items = [m for m in self.items if m.chat_id != chat_id]
+        return before - len(self.items)
+
     async def get_recent_history(self, chat_id, limit):
         turns = [m for m in self.items if m.chat_id == chat_id]
         return [{"role": m.role.value, "content": m.content} for m in turns[-limit:]]
@@ -149,6 +166,10 @@ class FakeProjectRepository(_Store):
 
     async def rename(self, project_id, name):
         self._patch(project_id, name=name)
+
+    async def delete_project(self, project_id):
+        if self.items.pop(project_id, None) is None:
+            raise ProjectNotFoundError(f"{project_id!r} not found")
 
     async def add_asset_id(self, project_id, asset_object_id):
         self._get(project_id).assets_ids.append(asset_object_id)
@@ -234,8 +255,22 @@ class FakeChunkRepository:
             and (asset_id is None or c.asset_id == asset_id)
         )
 
-    async def has_asset_chunks(self, asset_id):
-        return any(c.asset_id == asset_id for c in self.items)
+    async def has_asset_chunks(self, project_id, asset_id):
+        # project_id mirrors the interface and both real backends. The fake
+        # took only asset_id, so a call with both raised TypeError — the same
+        # drift count_project_chunks had above.
+        return any(
+            c.asset_id == asset_id and str(c.project_id) == str(project_id)
+            for c in self.items
+        )
+
+    async def get_chunks_by_orders(self, asset_id, chunk_orders):
+        wanted = set(chunk_orders)
+        return {
+            c.chunk_order: c
+            for c in self.items
+            if c.asset_id == asset_id and c.chunk_order in wanted
+        }
 
     async def delete_chunks_for_project(self, project_id):
         before = len(self.items)
@@ -280,7 +315,12 @@ class FakeVectorRepository:
         return not existed or reset
 
     async def delete_collection(self, collection_name):
-        return self.collections.pop(collection_name, None) is not None
+        # The points go with it. The real backends drop the table (Postgres) or
+        # the collection (Qdrant), so a fake that kept them would let a test
+        # pass while vectors outlived whatever owned them.
+        existed = self.collections.pop(collection_name, None) is not None
+        self.points.pop(collection_name, None)
+        return existed
 
     async def insert_many(self, collection_name, texts, vectors, metadata=None,
                           record_ids=None, batch_size=64):

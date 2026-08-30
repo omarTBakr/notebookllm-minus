@@ -57,6 +57,12 @@ class Chat(BaseModel):
     # Stored and surfaced now; no retrieval backend behind it yet.
     web_search: bool = False
 
+    # The color a citation's cited passage is highlighted in, in this
+    # notebook. A real default rather than None: unlike temperature or
+    # max_tokens there is no .env-wide fallback to inherit, so every chat
+    # needs one from the moment it is created.
+    highlight_color: str = Field("#FFFF00", pattern=r"^#[0-9A-Fa-f]{6}$")
+
     # Sources switched *off* for this notebook, by asset_id.
     #
     # Excluded rather than included on purpose: the default is empty, which

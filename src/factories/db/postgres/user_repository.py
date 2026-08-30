@@ -1,6 +1,6 @@
 from typing import AsyncIterator
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -76,3 +76,15 @@ class PostgresUserRepository(PostgresBaseRepository, UserRepository):
                     yield self._record_to_model(row, User)
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to iterate users: {exc}") from exc
+
+    async def delete_user(self, user_id: str) -> bool:
+        """Remove one user row. The caller clears what hangs off them first."""
+        try:
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    delete(UserRow).where(UserRow.user_id == user_id)
+                )
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to delete user: {exc}") from exc
+
+        return result.rowcount > 0

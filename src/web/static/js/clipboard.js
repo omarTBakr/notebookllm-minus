@@ -24,6 +24,40 @@ let copied = "";
 // the first instead of stacking beside it.
 let note = null;
 
+/** Put *text* on the clipboard and confirm it. Returns whether it worked.
+ *
+ * The one place a write happens, so select-to-copy and the answer's Copy
+ * button share the single-toast behaviour rather than stacking two.
+ *
+ * `loud` is the difference between the two callers: a deliberate button press
+ * has to say when it fails, whereas highlighting text must not produce an
+ * error nobody asked for.
+ */
+export async function copyText(text, { loud = true } = {}) {
+  const value = (text ?? "").trim();
+  if (!value) return false;
+
+  // Undefined on an insecure origin — the app served over plain http:// on a
+  // LAN address, which is a normal way to run this. Worth saying out loud,
+  // because nothing about the click explains why it did nothing.
+  if (!navigator.clipboard?.writeText) {
+    if (loud) toast(t("copyUnavailable"));
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(value);
+    copied = value;
+    note?.remove();
+    // Short — this fires often, and it is a confirmation, not a message.
+    note = toast(t("copied"), 1100);
+    return true;
+  } catch (error) {
+    if (loud) toast(error.message);
+    return false;
+  }
+}
+
 async function copySelection() {
   const text = (window.getSelection()?.toString() ?? "").trim();
 
@@ -32,16 +66,8 @@ async function copySelection() {
   // quietly replace your clipboard.
   if (text.length < MIN_LENGTH || text === copied) return;
 
-  try {
-    await navigator.clipboard.writeText(text);
-    copied = text;
-    note?.remove();
-    // Short — this fires often, and it is a confirmation, not a message.
-    note = toast(t("copied"), 1100);
-  } catch {
-    // Denied permission, or an insecure origin. Highlighting text must not
-    // produce an error nobody asked for and nobody can act on.
-  }
+  // Quiet: this is a side effect of highlighting, not something asked for.
+  await copyText(text, { loud: false });
 }
 
 export function bindAutoCopy() {

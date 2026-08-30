@@ -1,6 +1,6 @@
 from typing import AsyncIterator
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -66,3 +66,15 @@ class PostgresSessionRepository(PostgresBaseRepository, SessionRepository):
                     yield self._record_to_model(row, Session)
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to iterate user sessions: {exc}") from exc
+
+    async def delete_sessions_for_user(self, user_id: str) -> int:
+        """Drop every session belonging to a user."""
+        try:
+            async with self.session_factory.begin() as db:
+                result = await db.execute(
+                    delete(SessionRow).where(SessionRow.user_id == user_id)
+                )
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to delete sessions for user: {exc}") from exc
+
+        return result.rowcount

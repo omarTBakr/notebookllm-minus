@@ -74,6 +74,16 @@ are picked from whatever Ollama has installed rather than pinned in code.
 - **Grounded chat** (`/chat`): users → sessions → chats → messages in MongoDB, with answers
   streamed token by token over SSE. A chat holding documents answers from them **with
   citations**; a chat without them is an ordinary assistant. Same endpoint, same code path.
+  A citation names the source's real **page**, not an internal chunk index, and clicking it
+  opens that document at the cited page — and, by default, **highlights the exact cited
+  passage** in a built-in PDF.js viewer, in a colour set per notebook from Chat settings
+  (yellow by default). Needs `PDF_LOADER=pymupdf` (the default, see below) at ingest time —
+  a document uploaded under `pypdf` still opens at the right page, just without the
+  highlight, since only pymupdf exposes the word coordinates it is drawn from.
+- **Stop generating**, mid-answer — the send button doubles as Stop while a reply is
+  streaming. The partial answer is kept, not discarded.
+- **Answer actions**: copy the raw markdown, save the answer back into Sources as a new
+  document (chunked and indexed like any upload), or download it as a `.md` file.
 - **Reasoning shown live**: models that think (`gemma4`) stream their scratchpad into a panel
   that collapses the moment the answer starts. The reasoning is displayed, not stored.
 - **Prompts in English and Arabic** under `templates/locales/<lang>/`, one file per feature.
@@ -112,24 +122,33 @@ are picked from whatever Ollama has installed rather than pinned in code.
   bytes, which PostgreSQL refuses in both `text` and `jsonb`; one bad glyph used to fail a
   whole document's insert. Stripped once at extraction, and scrubbed again at the Postgres
   boundary because a batched INSERT fails whole.
+- **Prometheus metrics** at `/metrics`, covering the HTTP RED signals plus the parts that
+  actually cost time here: per-stage ingest duration, embedding latency and batch size,
+  generation time-to-first-token and token counts, retrieval latency and hit counts, and
+  whether an answer was grounded. Labels are deliberately bounded — `provider`, `model`,
+  `stage` — and never carry a `chat_id` or `asset_id`, since each distinct value would be a
+  new time series forever. Defined in one place, `utils/metrics.py`.
 - **Artifacts drawer** listing every document a user has uploaded, across chats.
-- **Named profiles** in a top-left picker — no login, just "who am I".
+- **Named profiles** in a top-left picker — no login, just "who am I". Deleting one takes
+  everything with it: sessions, notebooks, messages, documents, chunks and vector
+  collections. Nothing in either store cascades on its own, so the route walks the tree
+  itself, derived-first at every level.
 
 ### Not yet implemented
 
-- Highlighting the exact sentence a citation came from — chunks carry `asset_id` and
-  `chunk_order`, so the anchor exists; nothing renders it yet.
 - **Grounding with web search.** The toggle exists, is stored per chat and is shown in the
   UI marked *soon*, but no search backend is wired behind it; answers today are grounded only
   in uploaded documents.
-- Anything past `.pdf` and `.txt`, though `AssetType` and `FileExtension` already enumerate
-  the formats to come.
+- Anything past `.pdf`, `.txt` and `.md`, though `AssetType` and `FileExtension` already
+  enumerate the formats to come.
 
 ## Tech stack
 
 - Python 3.12
 - FastAPI + Uvicorn
 - pydantic-settings for configuration
+- `prometheus-client` + `prometheus-fastapi-instrumentator` for the metrics endpoint, with
+  Prometheus, Grafana, cAdvisor and postgres_exporter in the Compose file
 - LangChain (`langchain-community`, `langchain-text-splitters`) for loading/splitting,
   with `nltk` behind the sentence splitter (its punkt model is fetched on first use)
 - `pypdf` for PDF parsing
@@ -481,7 +500,7 @@ otherwise name the collection, not the misconfigured setting).
 **Keys are checked at startup, not on first use.** A blank key for the selected backend
 raises `UnsupportedProviderError` during the lifespan, so the app refuses to start rather
 than failing on the first question a user asks. Ollama is exempt — it runs locally and
-authenticates by host (`OLLAMA_BASE_URL`).
+authenticates by host (`OLLAMA_HOST` / `OLLAMA_PORT`).
 
 **Qdrant runs embedded by default**: `VECTOR_DB_PATH` is a local directory and no server is
 needed. Set `VECTOR_DB_URL` to point at a server or Cloud cluster instead; the two are
@@ -642,7 +661,7 @@ Point `VECTOR_DB_URL` at a Qdrant server if you want reload.
 APPLICATION_NAME = 'NotebookLLM-minus'
 APP_VERSION = "0.1"
 
-ALLOWED_TYPES = ["application/pdf", "text/plain"]
+ALLOWED_TYPES = ["application/pdf", "text/plain", "text/markdown"]
 MAX_FILE_SIZE = 10485760          # 10 MB — rejected at upload
 MAX_ASSET_SIZE_BYTES = 10485760   # hard ceiling on the bytes stored per asset
 MAX_FILE_CHUNK_SIZE = 1024        # streaming read chunk size in bytes
@@ -667,6 +686,11 @@ GENERATION_DEFAULT_MAX_TOKENS = 4096   # reasoning spends this budget too — se
 GENERATION_THINKING = "true"           # true|false|low|medium|high
 DEFAULT_LANG        = "en"             # en | ar
 CHAT_HISTORY_LIMIT  = 10               # prior turns sent as context
+CHUNKING_BATCH_SIZE = 512              # chunks embedded per request to the model
+
+# --- metrics ---
+METRICS_ENABLED = true                 # mount /metrics for Prometheus
+METRICS_PATH    = "/metrics"
 RETRIEVAL_TOP_K     = 5                # chunks retrieved per grounded answer
 ```
 
@@ -679,6 +703,29 @@ left the reply cramped. 4096 leaves room for both.
 must stay comfortably under MongoDB's 16 MB per-document limit, since the bytes live inside
 the asset document.
 
+**`PDF_LOADER`** (`pypdf` | `pdfplumber` | `pymupdf`, default `pymupdf`) decides which
+library reads a PDF. It is not only a text-quality knob: only `pymupdf` captures the word
+coordinates a citation's highlight is drawn from (`PdfLayoutController`), so `pypdf` and
+`pdfplumber` never produce one, regardless of anything else — a document uploaded under
+either still opens at the right page, it just has no highlight to show. `pdfplumber` orders
+characters by x-position, which reverses right-to-left text outright; keep it only for
+Latin-heavy PDFs with tables pypdf flattens. See `PDF_LOADER` in `utils/config.py` for the
+full measurements behind this.
+
+The cost is real: pymupdf's own word-by-word parsing (not embedding — that runs after, and
+is untouched by which embedding model you pick) is measured at ~19x slower than plain
+`pypdf` text extraction. Pages don't depend on one another, so `PdfLayoutController.
+extract_pages` splits the document across a process pool rather than walking it serially —
+~520s serial dropped to ~79s at 24 workers on the machine this was built on, short of a 24x
+speedup because a handful of dense pages set a floor no amount of splitting moves. The pool
+is sized from how many CPUs the *process* can actually use, not the host's total: it checks
+both a cgroup CPU quota (Docker's `--cpus` / compose's `deploy.resources.limits.cpus`) and
+the sched affinity mask (`--cpuset-cpus`) and takes the smaller, because a quota alone is
+invisible to the affinity check and would otherwise spawn one worker per host core to fight
+over a fraction of that budget each. A container capped to 1-2 CPUs sees close to the full
+serial cost regardless. Set `PDF_LOADER=pypdf` to trade the highlight away for the original,
+much faster extraction.
+
 Supply the API key for whichever backends you selected — only those are checked, and the
 check happens at startup:
 
@@ -688,7 +735,8 @@ OPENAI_API_KEY    = ""
 GOOGLE_API_KEY    = ""
 COHERE_API_KEY    = ""
 # OPENAI_API_BASE_URL = ""                   # for OpenAI-compatible endpoints
-OLLAMA_BASE_URL = "http://localhost:11434"   # ollama takes no key, just a host
+OLLAMA_HOST = "localhost"   # ollama takes no key, just a host
+OLLAMA_PORT = 11434
 ```
 
 `EMBEDDING_MODEL_SIZE` **must match the model** — it is baked into the Qdrant collection at
@@ -962,6 +1010,7 @@ the top-left menu lists every profile so you can switch between them. Profiles c
 | `POST` | `/chat/users` | Mint a profile (auto-named `User N` if unnamed) |
 | `GET` | `/chat/users` | List every profile on this install |
 | `PATCH` | `/chat/users/{user_id}` | Rename a profile |
+| `DELETE` | `/chat/users/{user_id}` | Delete a profile **and everything under it** — sessions, notebooks, messages, documents, chunks and vector collections |
 | `GET` | `/chat/users/{user_id}` | Confirm a returning user (404 → start fresh) |
 | `POST` | `/chat/users/{user_id}/sessions` | New session |
 | `GET` | `/chat/users/{user_id}/sessions` | List sessions |
@@ -989,7 +1038,7 @@ curl -N -X POST localhost:8000/chat/chats/$CHAT/message \
 ```
 
 ```
-data: {"type":"meta","grounded":true,"citations":[{"num":1,"source":"cv.txt","chunk_order":0,"score":0.71}]}
+data: {"type":"meta","grounded":true,"citations":[{"num":1,"source":"cv.pdf","asset_id":"a0b1...","chunk_order":0,"page_number":2,"page_label":"2","score":0.71}]}
 data: {"type":"thinking","text":"Analyse the request: the user wants an assessment…"}
 data: {"type":"delta","text":"The CV presents a strong profile"}
 data: {"type":"done"}

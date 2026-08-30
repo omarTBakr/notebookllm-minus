@@ -159,6 +159,34 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
 
         return found is not None
 
+    async def get_chunks_by_orders(
+        self, asset_id: str, chunk_orders: list[int]
+    ) -> dict[int, DataChunk]:
+        """The named chunks of one asset, keyed by chunk_order.
+
+        Turns a search hit back into a place in the document: the vector
+        payload carries ``(asset_id, chunk_order)``, the page number and the
+        highlight geometry live here.
+        """
+        if not chunk_orders:
+            return {}
+
+        try:
+            cursor = self.collection.find(
+                {
+                    "asset_id": asset_id,
+                    "chunk_order": {"$in": sorted(set(chunk_orders))},
+                }
+            )
+            return {
+                document["chunk_order"]: DataChunk(**document)
+                async for document in cursor
+            }
+        except PyMongoError as exc:
+            raise DbError(
+                f"Could not read chunks by order for asset {asset_id!r}"
+            ) from exc
+
     async def delete_chunks_for_asset(
         self, project_id: ObjectId, asset_id: str
     ) -> list[ObjectId]:

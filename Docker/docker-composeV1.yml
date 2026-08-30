@@ -1,0 +1,53 @@
+services:
+  mongo:
+    image: mongo:8.2 # Stable long-term version (8.x line)
+    restart: always
+    ports:
+      - "27017:27017" # Exposes MongoDB to your FastAPI app running locally
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongodb:/data/db # Safeguards your database data so nothing is lost on restart
+    networks:
+      - backend
+
+  mongo-express:
+    image: mongo-express:latest
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # These tell Express exactly how to log into your Mongo container
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/ 
+    depends_on:
+      - mongo # Ensures Mongo starts up before Express tries to connect to it
+    networks:
+      - backend
+
+  pgvector:
+    image: pgvector/pgvector:0.8.6-pg18-trixie
+    container_name: pgvector-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASS}
+      POSTGRES_DB: ${POSTGRES_MAIN_DB}
+    ports:
+      - "5400:5432"
+    volumes:
+      - pgvector:/var/lib/postgresql
+    networks:
+      - backend
+
+# Declares the persistent storage bucket
+volumes:
+  mongodb:
+  pgvector:
+
+networks:
+  backend:
+
+

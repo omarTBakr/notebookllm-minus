@@ -14,7 +14,7 @@ def cache(settings):
 def test_a_local_id_builds_a_client_on_the_local_host(cache, settings):
     client = cache.chatting("local/llama3.1:8b")
 
-    assert client.base_url == settings.OLLAMA_BASE_URL
+    assert client.base_url == settings.ollama_base_url
     assert client.model_id == "llama3.1:8b"
 
 
@@ -29,7 +29,7 @@ def test_a_bare_tag_is_treated_as_local(cache, settings):
     """Chats saved before there were two hosts store an unqualified tag."""
     client = cache.chatting("gemma4:e4b")
 
-    assert client.base_url == settings.OLLAMA_BASE_URL
+    assert client.base_url == settings.ollama_base_url
     assert client.model_id == "gemma4:e4b"
 
 

@@ -1,3 +1,4 @@
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -13,36 +14,35 @@ from enums import (
     LLMEmbeddingProvider,
     LogFormat,
     LogLevel,
+    PdfLoader,
     ThinkingLevel,
 )
 
 SRC_DIR = Path(__file__).parent.parent
 
-# Fields whose value must name a member of some enum. Annotating them with the
-# enum is what validates them: pydantic reports the whole allowed set on a bad
-# value, so none of these needs a hand-written validator any more. The two
-# normalizers below only fix case and whitespace before that check runs.
-_LOWERCASE_CHOICES = (
-    "DOCUMENT_DB_BACKEND",
-    "GENERATION_BACKEND",
-    "EMBEDDING_BACKEND",
-    "VECTOR_DB_DISTANCE_METHOD",
-    "DEFAULT_LANG",
-    "GENERATION_THINKING",
-    "LOG_FORMAT",
-)
+# LOG_LEVEL is the one enum-typed field whose canonical spelling is upper
+# case (it mirrors `logging`'s own level names), so it gets its own
+# validator below instead of joining this set.
+_UPPERCASE_FIELDS = (LogLevel,)
 
-# GENERATION_THINKING is a yes/no that also takes three levels, and .env files
-# spell yes/no every which way. Mapped onto the enum rather than rejected.
-_THINKING_ALIASES = {
-    "1": ThinkingLevel.TRUE,
-    "yes": ThinkingLevel.TRUE,
-    "on": ThinkingLevel.TRUE,
-    "0": ThinkingLevel.FALSE,
-    "no": ThinkingLevel.FALSE,
-    "off": ThinkingLevel.FALSE,
-    "": ThinkingLevel.FALSE,
-}
+
+def _enum_choice_fields(annotations: dict, *, exclude: tuple = ()) -> tuple[str, ...]:
+    """Names of the fields, from a class body's raw annotations, whose type
+    is a `str` `Enum` — every field pydantic will reject on a spelling
+    difference rather than a wrong value.
+
+    Derived instead of listed by hand: the alternative is a tuple of field
+    names that silently goes stale the moment someone adds or renames an
+    enum-typed setting, since nothing would force it to be updated alongside
+    the field itself.
+    """
+    return tuple(
+        name
+        for name, annotation in annotations.items()
+        if isinstance(annotation, type)
+        and issubclass(annotation, Enum)
+        and annotation not in exclude
+    )
 
 
 class Settings(BaseSettings):
@@ -68,13 +68,21 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = 10485760       # hard ceiling on a single upload (bytes)
     MAX_FILE_CHUNK_SIZE: int            # streaming read size while uploading
 
+    # --- indexing ------------------------------------------------------------
+    # How many chunks are embedded per request to the model. One batch is one
+    # round trip; peak memory is one batch of text plus one batch of vectors.
+    CHUNKING_BATCH_SIZE: int = 512
+
     # --- document database ---------------------------------------------------
     # Which provider backs the main data store. Postgres also holds the vectors;
     # Mongo pairs with Qdrant. See the README's "Database backends".
     DOCUMENT_DB_BACKEND: DbBackend = DbBackend.MONGO
 
     # mongo — only read when DOCUMENT_DB_BACKEND is "mongo"
-    MONGO_URI: str = "mongodb://localhost:27017"
+    MONGO_HOST: str = "localhost"
+    MONGO_PORT: int = 27017
+    MONGO_USER: str = "root"
+    MONGO_PASSWORD: str = "example"
     MONGO_DB_NAME: str = "notebookllm"
 
     # postgres — only read when DOCUMENT_DB_BACKEND is "postgres". The DSN is
@@ -87,7 +95,8 @@ class Settings(BaseSettings):
 
     # --- vector database -----------------------------------------------------
     # VECTOR_DB_PATH: str = "assets/qdrant_db"  # embedded mode; relative resolves against src/
-    VECTOR_DB_URL: str | None = None   # set to use a server instead of VECTOR_DB_PATH
+    VECTOR_DB_HOST: str | None = None   # set to use a server instead of VECTOR_DB_PATH
+    VECTOR_DB_PORT: int | None = None
     VECTOR_DB_API_KEY: str | None = None
     # Fixed when a collection is created; changing it means rebuilding.
     VECTOR_DB_DISTANCE_METHOD: DistanceMethod = DistanceMethod.COSINE
@@ -104,11 +113,18 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str | None = None
     COHERE_API_KEY: str | None = None
     # Ollama is local and takes no key — a reachable host is the whole config.
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_HOST: str = "localhost"
+    OLLAMA_PORT: int = 11434
     # A second Ollama, reached over the network rather than on this machine —
     # the "web" models in the picker. Optional: unset means local-only, which
     # is the ordinary setup and behaves exactly as before.
     OLLAMA_CLOUD_BASE_URL: str | None = None
+
+    # Not a .env knob — never documented in .env.example. ProviderCache sets
+    # this via model_copy() to hand a per-model client a resolved host (local
+    # port vs. the cloud URL) without either factory learning there are two
+    # hosts at all. See ollama_base_url below and factories/provider_cache.py.
+    OLLAMA_BASE_URL_OVERRIDE: str | None = None
 
     # --- generation ----------------------------------------------------------
     GENERATION_MODEL_ID: str
@@ -129,6 +145,44 @@ class Settings(BaseSettings):
     DEFAULT_LANG: Language = Language.EN  # prompt locale when a chat names none
     CHAT_HISTORY_LIMIT: int = 10          # prior turns sent as context
     RETRIEVAL_TOP_K: int = 5              # chunks retrieved per grounded answer
+    # Passages scoring below this are dropped before they reach the prompt.
+    # Scores are similarities on both backends (higher is better), so 0.0 is
+    # "keep everything" and is the default: a floor that is too high silently
+    # ungrounds answers, which is worse than a weak citation. Raise it once
+    # you have looked at real scores for your corpus and model.
+    RETRIEVAL_MIN_SCORE: float = 0.0
+
+    # Which library extracts text from PDFs. Measured on the 274-page Arabic
+    # guide (25 MB), whole document, after NFKC normalisation:
+    #
+    #   pypdf        29s    8-9/14 real words   90,874 lost glyphs
+    #   pdfplumber   52s    0/14   real words   92,514 lost glyphs
+    #   pymupdf     543s   11/14   real words        0 lost glyphs
+    #
+    # pdfplumber emits right-to-left text in *visual* order — the characters
+    # come out reversed, so not one real Arabic word survives and retrieval on
+    # an Arabic corpus collapses to nothing. It is kept here only because it
+    # is markedly better at Latin tables, which the other two flatten.
+    #
+    # pymupdf is the default: it is the only extractor that loses no glyphs at
+    # all, it recovers words the other two drop, and — the reason this class
+    # of setting exists at all — it is the only one that captures the word
+    # coordinates a citation's highlight is drawn from (PdfLayoutController).
+    # Neither pypdf nor pdfplumber can produce a highlight regardless of this
+    # setting; there is no faster way to get one.
+    #
+    # The cost is real and does not move with the embedding model: it is
+    # entirely in pymupdf's own word-by-word PDF parsing (PdfLayoutController),
+    # which runs to completion *before* embedding starts and does not touch
+    # it — switching EMBEDDING_MODEL_ID to something smaller changes how long
+    # embedding takes, not this. Parallelised across a process pool (pages
+    # don't depend on one another), which brought the document above from
+    # ~520s serial to ~79s on a 24-core machine — real, but short of a 24x
+    # speedup; a handful of dense pages set a floor no amount of splitting
+    # moves. Fewer cores buys less of a discount, and a container capped to
+    # 1-2 CPUs sees close to the full serial cost. Set to PYPDF to trade the
+    # highlight away for the old, faster extraction.
+    PDF_LOADER: PdfLoader = PdfLoader.PYMUPDF
 
     # --- logging -------------------------------------------------------------
     LOG_LEVEL: LogLevel = LogLevel.INFO
@@ -140,11 +194,22 @@ class Settings(BaseSettings):
     LOG_MAX_BYTES: int = 10485760  # 10 MB per file before rotating
     LOG_BACKUP_COUNT: int = 5
 
+    # --- metrics -------------------------------------------------------------
+    # Prometheus scrapes METRICS_PATH. Off switches the endpoint off entirely;
+    # the collectors stay defined but nothing is exposed.
+    METRICS_ENABLED: bool = True
+    METRICS_PATH: str = "/metrics"
+
     # --- normalizers ---------------------------------------------------------
     # `mode="before"` so they run ahead of the enum check: a .env saying
     # "Ollama" or " postgres " is a spelling difference, not a wrong value.
+    #
+    # Computed from the field annotations captured above in this same class
+    # body — `__annotations__` is a real, already-populated dict at this point
+    # in the class's execution, not a hardcoded guess at which fields matter.
+    _LOWERCASE_FIELDS = _enum_choice_fields(__annotations__, exclude=_UPPERCASE_FIELDS)
 
-    @field_validator(*_LOWERCASE_CHOICES, mode="before")
+    @field_validator(*_LOWERCASE_FIELDS, mode="before")
     @classmethod
     def _lowercase(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
@@ -159,7 +224,11 @@ class Settings(BaseSettings):
     @field_validator("GENERATION_THINKING", mode="before")
     @classmethod
     def _resolve_thinking_alias(cls, value: object) -> object:
-        return _THINKING_ALIASES.get(value, value) if isinstance(value, str) else value
+        # The alias table lives on the enum itself (enums/LLMChattingEnum.py),
+        # next to the members it resolves onto — not here, where it would be
+        # the one piece of Settings that knows something about ThinkingLevel
+        # rather than the other way around.
+        return ThinkingLevel.from_alias(value)
 
     # --- derived paths and DSNs ----------------------------------------------
 
@@ -207,6 +276,34 @@ class Settings(BaseSettings):
     def postgres_async_url(self) -> str:
         """The one the app connects with: SQLAlchemy over asyncpg."""
         return self._postgres_url("postgresql+asyncpg")
+
+    @property
+    def mongo_uri(self) -> str:
+        """The DSN for MongoDB."""
+        user = quote_plus(self.MONGO_USER)
+        password = quote_plus(self.MONGO_PASSWORD)
+        return f"mongodb://{user}:{password}@{self.MONGO_HOST}:{self.MONGO_PORT}"
+
+    @property
+    def vector_db_url(self) -> str | None:
+        """The URL for the vector database (Qdrant)."""
+        if self.VECTOR_DB_HOST and self.VECTOR_DB_PORT:
+            return f"http://{self.VECTOR_DB_HOST}:{self.VECTOR_DB_PORT}"
+        return None
+
+    @property
+    def ollama_base_url(self) -> str:
+        """The URL a client should actually connect to.
+
+        The override wins when set — that is the whole mechanism
+        ProviderCache uses to point one model's client at the cloud host
+        while every other setting still comes from this same object. Absent
+        an override, it is the local host built from OLLAMA_HOST/PORT.
+        """
+        if self.OLLAMA_BASE_URL_OVERRIDE:
+            return self.OLLAMA_BASE_URL_OVERRIDE
+        return f"http://{self.OLLAMA_HOST}:{self.OLLAMA_PORT}"
+
 
 
 @lru_cache

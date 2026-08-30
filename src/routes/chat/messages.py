@@ -1,5 +1,7 @@
 """Message listing and the streaming answer endpoint."""
 
+import asyncio
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -9,6 +11,7 @@ from models import AssetModel, ChatModel, Message, MessageModel
 
 from ..schemas import MessageRequest
 from ._helpers import _new_id, _chat_controller, _sse, logger
+from ._pages import keys_from_hits, resolve_pages
 
 messages_router = APIRouter()
 
@@ -28,21 +31,54 @@ async def list_messages(chat_id: str, http_request: Request):
         async for asset in AssetModel(db).iter_assets_for_projects([chat_id])
     }
 
-    def renamed(citations: list[dict]) -> list[dict]:
-        return [
-            {**cite, "source": source_names.get(cite.get("asset_id")) or cite.get("source")}
-            for cite in citations
-        ]
+    stored = [m async for m in MessageModel(db).iter_chat_messages(chat_id)]
+
+    # Answers written before citations carried a page have none stored. Fill
+    # those in from the chunks they name, so an existing notebook gets clickable
+    # citations without being re-indexed.
+    #
+    # Only where absent, and that asymmetry with the rename above is the point:
+    # a rename is retroactively true of an old answer, but re-processing a
+    # document remaps chunk_order onto different pages, so back-filling a
+    # message that already has a page would silently move the citation to a
+    # page that answer never read.
+    missing = [
+        (cite.get("asset_id"), cite.get("chunk_order"))
+        for message in stored
+        for cite in message.citations
+        if cite.get("page_number") is None
+        and cite.get("asset_id") is not None
+        and cite.get("chunk_order") is not None
+    ]
+    pages = await resolve_pages(db, missing)
+
+    def resolved(citations: list[dict]) -> list[dict]:
+        out = []
+
+        for cite in citations:
+            fresh = {
+                **cite,
+                "source": source_names.get(cite.get("asset_id")) or cite.get("source"),
+            }
+
+            if fresh.get("page_number") is None:
+                located = pages.get((cite.get("asset_id"), cite.get("chunk_order")))
+                if located:
+                    fresh.update(located)
+
+            out.append(fresh)
+
+        return out
 
     messages = [
         {
             "message_id": m.message_id,
             "role": m.role.value,
             "content": m.content,
-            "citations": renamed(m.citations),
+            "citations": resolved(m.citations),
             "created_at": m.created_at.isoformat(),
         }
-        async for m in MessageModel(db).iter_chat_messages(chat_id)
+        for m in stored
     ]
 
     return JSONResponse(
@@ -123,6 +159,8 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
                 max_tokens=chat.max_tokens,
                 asset_ids=selected_assets,
                 source_names=source_names,
+                # Resolves each hit to a page so the citation can link to it.
+                page_lookup=lambda hits: resolve_pages(db, keys_from_hits(hits)),
             ):
                 if event["type"] == "meta":
                     citations = event["citations"]
@@ -146,15 +184,25 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
         finally:
             # Persist whatever was produced. A half-finished answer is still
             # worth keeping: the user saw it, so it should survive a reload.
+            #
+            # Shielded, because the most common way to reach this block is now
+            # the reader pressing Stop. That aborts the fetch, Starlette
+            # cancels the task pumping this generator, and CancelledError is
+            # thrown in at the yield above. Cancellation stays pending, so a
+            # bare await here is liable to be cancelled again before the insert
+            # lands — the answer the reader chose to keep would be the one most
+            # likely to be lost. shield lets the write finish.
             text = "".join(answer)
             if text:
-                await message_model.create_message(
-                    Message(
-                        message_id=_new_id(),
-                        chat_id=chat_id,
-                        role=ChatRole.ASSISTANT,
-                        content=text,
-                        citations=citations,
+                await asyncio.shield(
+                    message_model.create_message(
+                        Message(
+                            message_id=_new_id(),
+                            chat_id=chat_id,
+                            role=ChatRole.ASSISTANT,
+                            content=text,
+                            citations=citations,
+                        )
                     )
                 )
 

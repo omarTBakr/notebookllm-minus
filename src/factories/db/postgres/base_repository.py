@@ -113,6 +113,9 @@ class ChatRow(Base):
     web_search: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    highlight_color: Mapped[str] = mapped_column(
+        String(7), nullable=False, server_default=text("'#FFFF00'")
+    )
     excluded_assets: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
@@ -223,6 +226,11 @@ Index(
     ChunkRow.asset_id,
     ChunkRow.chunk_order,
 )
+# Without project_id in front: a citation resolves a search hit back to its
+# page by (asset_id, chunk_order), and the hit carries no project row id to
+# lead with. Every index above starts with project_id, so that lookup had
+# nothing to use. See migration 0004.
+Index("idx_chunks_asset_order", ChunkRow.asset_id, ChunkRow.chunk_order)
 
 
 def _as_objectid(value):

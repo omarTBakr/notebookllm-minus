@@ -265,6 +265,19 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete by metadata in {collection_name}: {exc}") from exc
 
+    def _to_similarity(self, distance: float) -> float:
+        """Turn a pgvector distance into a higher-is-better similarity.
+
+        cosine: pgvector gives ``1 - cos_sim`` in [0, 2], so ``1 - d`` recovers
+        the cosine in [-1, 1]. dot: pgvector negates the inner product, so
+        ``-d`` is the product back. euclid: an unbounded distance with no
+        natural similarity, so negate it — the ordering is preserved and larger
+        is still better, which is all a comparison or a floor needs.
+        """
+        if self.distance_method == DistanceMethod.COSINE:
+            return 1.0 - distance
+        return -distance
+
     async def search_by_vector(
         self,
         collection_name: str,
@@ -305,8 +318,14 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
                 return [
                     {
                         "id": row["id"],
-                        # note: pgvector returns distance, not score.
-                        "score": float(row["distance"]),
+                        # A *similarity*, not the raw distance pgvector
+                        # returns, so this field means the same thing on both
+                        # backends: higher is better, 1.0 is a perfect cosine
+                        # match. Qdrant already reports it that way; returning
+                        # a distance here made 0.0 mean "perfect" on one
+                        # backend and "unrelated" on the other, which any
+                        # threshold would then get exactly backwards.
+                        "score": self._to_similarity(float(row["distance"])),
                         "text": row["text"],
                         "metadata": row["metadata"] or {},
                     }
