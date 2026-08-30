@@ -160,4 +160,5 @@ class PostgresProvider(DbProvider):
         return PostgresVectorRepository(
             session_factory=self._sessions(),
             distance_method=self.settings.VECTOR_DB_DISTANCE_METHOD,
+            index_type=self.settings.VECTOR_DB_INDEX_TYPE,
         )

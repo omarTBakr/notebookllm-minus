@@ -1,7 +1,7 @@
 from google import genai  # ty: ignore[unresolved-import]
 from google.genai import types  # ty: ignore[unresolved-import]
 
-from enums import EmbeddingInputType
+from enums import EmbeddingInputType, EMBEDDING_INPUT_TYPE_TO_GOOGLE
 from exceptions import EmbeddingError
 
 from .LLMEmbeddingInterface import LLMEmbeddingInterface
@@ -9,13 +9,6 @@ from .LLMEmbeddingInterface import LLMEmbeddingInterface
 
 class GoogleEmbeddingProvider(LLMEmbeddingInterface):
     """Embeddings via Gemini, through the unified ``google-genai`` SDK."""
-
-    # Gemini's models are asymmetric: the task_type materially changes the
-    # vector, so a query embedded as a document retrieves worse.
-    _TASK_TYPES = {
-        EmbeddingInputType.DOCUMENT: "RETRIEVAL_DOCUMENT",
-        EmbeddingInputType.QUERY: "RETRIEVAL_QUERY",
-    }
 
     def __init__(self, api_key: str, model_id: str, embedding_size: int) -> None:
 
@@ -32,7 +25,7 @@ class GoogleEmbeddingProvider(LLMEmbeddingInterface):
                 model=self.model_id,
                 contents=texts,
                 config=types.EmbedContentConfig(
-                    task_type=self._TASK_TYPES[input_type],
+                    task_type=EMBEDDING_INPUT_TYPE_TO_GOOGLE[input_type],
                     output_dimensionality=self.embedding_size,
                 ),
             )

@@ -7,6 +7,7 @@ implementation, so a second backend never has to fake a feature it lacks.
 
 from abc import ABC, abstractmethod
 
+from enums import IndexType
 
 
 class VectorRepository(ABC):
@@ -37,6 +38,39 @@ class VectorRepository(ABC):
 
     @abstractmethod
     async def delete_collection(self, collection_name: str) -> bool: ...
+
+    @abstractmethod
+    async def create_index(
+        self,
+        collection_name: str,
+        embedding_size: int,
+        index_type: IndexType | None = None,
+        reset: bool = False,
+    ) -> bool:
+        """Build the ANN index for *collection_name*.
+
+        Call once the collection holds its data, or is about to receive a
+        bulk load via insert_many() — collections come back from
+        create_collection() without an index, so an incremental insert never
+        pays graph/cluster-maintenance cost per row, and IVFFlat's cluster
+        count (which pgvector recommends picking from the row count) is only
+        meaningful once there is data to cluster.
+
+        *embedding_size* is only consulted by backends with a hard indexing
+        width ceiling (pgvector's HNSW/IVFFlat top out at 2000 dimensions for
+        the plain `vector` type); backends without one ignore it.
+
+        *index_type* defaults to VECTOR_DB_INDEX_TYPE from Settings when
+        omitted. Not every backend accepts every type — Qdrant only builds
+        HNSW and raises UnsupportedProviderError for anything else.
+
+        *reset* drops and rebuilds an existing index — the only way to change
+        its type or parameters once built.
+
+        Returns True once the index exists (built now, or already there), and
+        False when the backend declined to build one without treating that as
+        an error (e.g. Postgres past its dimension ceiling).
+        """
 
     # --- records -------------------------------------------------------------
 

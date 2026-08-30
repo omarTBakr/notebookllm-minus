@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from enums import (
     DbBackend,
     DistanceMethod,
+    IndexType,
     Language,
     LLMChattingProvider,
     LLMEmbeddingProvider,
@@ -100,6 +101,9 @@ class Settings(BaseSettings):
     VECTOR_DB_API_KEY: str | None = None
     # Fixed when a collection is created; changing it means rebuilding.
     VECTOR_DB_DISTANCE_METHOD: DistanceMethod = DistanceMethod.COSINE
+    # ANN algorithm VectorRepository.create_index() builds by default. IVFFLAT
+    # is pgvector-only; Qdrant rejects it (Qdrant only builds HNSW).
+    VECTOR_DB_INDEX_TYPE: IndexType = IndexType.HNSW
 
     # --- llm providers -------------------------------------------------------
     # Deliberately different types: Anthropic ships no embeddings API, so

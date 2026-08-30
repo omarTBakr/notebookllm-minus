@@ -1,0 +1,5 @@
+-----BEGIN OPENSSH PRIVATE KEY-----
+REPLACE_WITH_YOUR_ACTUAL_PRIVATE_KEY_CONTENTS
+Personal SSH key used to reach the AWS instance. Save the real file as
+private_ssh_aws/omar_key (gitignored) — never commit it.
+-----END OPENSSH PRIVATE KEY-----

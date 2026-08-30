@@ -16,12 +16,11 @@ import unicodedata
 
 from langchain_core.documents import Document  # ty: ignore[unresolved-import]
 from langchain_text_splitters import (  # ty: ignore[unresolved-import]
-    Language,
     NLTKTextSplitter,
     RecursiveCharacterTextSplitter,
 )
 
-from enums import ProcessStatus
+from enums import ProcessStatus, LANGUAGE_SPLITTERS
 from exceptions import ChunkingError
 from .BaseController import BaseController
 
@@ -170,14 +169,6 @@ class TextProcessingController(BaseController):
 
         _PUNKT_READY = True
 
-    # Extensions with their own structure-aware separator list. Anything not
-    # named here falls through to the plain-prose splitter below — in
-    # particular .txt and .pdf, which is unchanged from before this existed.
-    _LANGUAGE_SPLITTERS = {
-        ".md": Language.MARKDOWN,
-        ".markdown": Language.MARKDOWN,
-    }
-
     def get_splitter(self, extension: str | None = None) -> RecursiveCharacterTextSplitter:
         """The primary splitter: paragraph first, then line, sentence, word.
 
@@ -205,7 +196,7 @@ class TextProcessingController(BaseController):
         — so the no-whitespace-PDF case `enforce_size` guards against is
         exactly as covered for a markdown file that turns out to have none.
         """
-        language = self._LANGUAGE_SPLITTERS.get((extension or "").lower())
+        language = LANGUAGE_SPLITTERS.get((extension or "").lower())
 
         # Where this chunk starts in the page it came from — a PDF highlight
         # is computed from this offset, so it has to survive from here all

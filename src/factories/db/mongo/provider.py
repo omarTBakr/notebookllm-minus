@@ -6,7 +6,7 @@ The vector repository is backed by Qdrant (embedded or server).
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from enums import DistanceMethod
+from enums import DistanceMethod, IndexType
 from exceptions import DbConnectionError
 from utils import get_logger
 from utils.config import Settings
@@ -42,9 +42,10 @@ class MongoProvider(DbProvider):
 
         self._vector_repo = QdrantVectorRepository(
             path=getattr(settings, "VECTOR_DB_PATH", None),
-            url=getattr(settings, "VECTOR_DB_URL", None),
+            url=settings.vector_db_url,
             api_key=getattr(settings, "VECTOR_DB_API_KEY", None),
             distance_method=DistanceMethod(settings.VECTOR_DB_DISTANCE_METHOD),
+            index_type=IndexType(settings.VECTOR_DB_INDEX_TYPE),
         )
 
     # --- lifecycle -----------------------------------------------------------

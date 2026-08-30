@@ -1,7 +1,7 @@
 from google import genai  # ty: ignore[unresolved-import]
 from google.genai import types  # ty: ignore[unresolved-import]
 
-from enums import ChatRole
+from enums import CHAT_ROLE_TO_GOOGLE
 from exceptions import LLMProviderError
 
 from .LLMChattingInterface import LLMChattingInterface
@@ -9,12 +9,6 @@ from .LLMChattingInterface import LLMChattingInterface
 
 class GoogleChatProvider(LLMChattingInterface):
     """Text generation via Gemini, through the unified ``google-genai`` SDK."""
-
-    # Gemini calls the assistant "model"; the user role keeps its name.
-    _ROLE_MAP = {
-        ChatRole.USER.value: "user",
-        ChatRole.ASSISTANT.value: "model",
-    }
 
     def __init__(self, api_key: str, model_id: str, **kwargs) -> None:
 
@@ -32,7 +26,7 @@ class GoogleChatProvider(LLMChattingInterface):
 
         contents = [
             types.Content(
-                role=self._ROLE_MAP[message["role"]],
+                role=CHAT_ROLE_TO_GOOGLE[message["role"]],
                 parts=[types.Part.from_text(text=message["content"])],
             )
             for message in messages

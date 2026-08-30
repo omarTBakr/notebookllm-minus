@@ -1,4 +1,4 @@
-from enums import LLMChattingProvider
+from enums import LLMChattingProvider, CHAT_PROVIDER_API_KEY_FIELDS
 from exceptions import UnsupportedProviderError
 from utils import Settings, get_logger
 
@@ -33,15 +33,6 @@ class LLMChattingFactory:
     Holds the whole mapping from backend name to class and API key, so the rest
     of the application never names a vendor.
     """
-
-    # provider -> the Settings attribute holding its key. Ollama is absent on
-    # purpose: it runs locally and authenticates by host, not by key.
-    _API_KEY_FIELDS = {
-        LLMChattingProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
-        LLMChattingProvider.OPENAI: "OPENAI_API_KEY",
-        LLMChattingProvider.GOOGLE: "GOOGLE_API_KEY",
-        LLMChattingProvider.COHERE: "COHERE_API_KEY",
-    }
 
     _PROVIDERS = {
         LLMChattingProvider.ANTHROPIC: AnthropicChatProvider,
@@ -83,11 +74,11 @@ class LLMChattingFactory:
             kwargs["base_url"] = self.settings.ollama_base_url
             kwargs["thinking"] = _thinking_flag(self.settings.GENERATION_THINKING)
         else:
-            api_key = getattr(self.settings, self._API_KEY_FIELDS[chosen])
+            api_key = getattr(self.settings, CHAT_PROVIDER_API_KEY_FIELDS[chosen])
             if not api_key:
                 # Fail here, at startup, rather than on the first user request.
                 raise UnsupportedProviderError(
-                    f"{self._API_KEY_FIELDS[chosen]} is not set, so the "
+                    f"{CHAT_PROVIDER_API_KEY_FIELDS[chosen]} is not set, so the "
                     f"{chosen.value!r} chatting provider cannot be built"
                 )
             kwargs["api_key"] = api_key

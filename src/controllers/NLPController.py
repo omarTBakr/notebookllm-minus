@@ -148,6 +148,14 @@ class NLPController(BaseController):
             if on_progress:
                 on_progress(total, expected)
 
+        # Built once, after every chunk is in, not per collection-create:
+        # both pgvector's IVFFlat and Qdrant's HNSW build noticeably faster,
+        # and pick better parameters, once there is data to build from rather
+        # than being maintained incrementally on every insert.
+        await self.vectordb_client.create_index(
+            collection_name=collection, embedding_size=vector_size
+        )
+
         # Chunk count only. The "indexing" *duration* is observed by
         # routes/chat/_helpers when it closes the stage — recording it here as
         # well put two observations in the histogram for one upload, which

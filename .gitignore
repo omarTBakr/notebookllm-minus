@@ -19,3 +19,6 @@ skills/
 # Embedded vector store (VECTOR_DB_PATH)
 qdrant_db/
 skills/
+
+# AWS SSH private keys — see private_ssh_aws.example/ for the expected layout
+private_ssh_aws/

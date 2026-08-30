@@ -9,23 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from utils import get_logger
 
 from exceptions import DbError
-from enums import DistanceMethod
+from enums import DistanceMethod, DISTANCE_METHOD_TO_PGVECTOR, IndexType
 from .base_repository import PostgresBaseRepository
 from ..interfaces.vector_repository import VectorRepository
 
 # The identifier quoter for Postgres. Table names below are built from
 # collection names, so they go through this rather than into an f-string raw.
 _PREPARER = postgresql.dialect().identifier_preparer
-
-# pgvector operator and index opclass per distance metric.
-#   cosine: <=> / vector_cosine_ops
-#   dot:    <#> / vector_ip_ops      (inner product; pgvector negates it)
-#   euclid: <-> / vector_l2_ops
-_DISTANCE_SQL = {
-    DistanceMethod.COSINE: ("<=>", "vector_cosine_ops"),
-    DistanceMethod.DOT: ("<#>", "vector_ip_ops"),
-    DistanceMethod.EUCLID: ("<->", "vector_l2_ops"),
-}
 
 
 class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
@@ -46,9 +36,11 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
         self,
         session_factory: async_sessionmaker[AsyncSession],
         distance_method: str = "cosine",
+        index_type: str = "hnsw",
     ) -> None:
         super().__init__(session_factory)
         self.distance_method = DistanceMethod(distance_method)
+        self.index_type = IndexType(index_type)
         self.logger = get_logger(type(self).__module__)
 
     def _table_name(self, collection_name: str) -> str:
@@ -133,7 +125,6 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
             raise DbError(f"embedding_size must be positive, got {embedding_size}")
 
         table = self._quoted_table(collection_name)
-        _, opclass = _DISTANCE_SQL[self.distance_method]
 
         try:
             if await self.collection_exists(collection_name):
@@ -143,6 +134,11 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
                     await db.execute(text(f"DROP TABLE IF EXISTS {table}"))
 
             async with self.session_factory.begin() as db:
+                # No index here — see create_index(). Building HNSW or
+                # IVFFlat incrementally as insert_many() streams rows in is
+                # far slower than inserting first and indexing once, and
+                # IVFFlat's cluster count is only meaningful once there is
+                # data to cluster.
                 await db.execute(
                     text(
                         f"""
@@ -156,33 +152,65 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
                     )
                 )
 
-                # pgvector will not build an HNSW index past this width. The
-                # column itself is fine, and search still works — it just does
-                # an exact scan instead of an approximate one. Refusing to
-                # create the collection at all would mean a 4096-dimension
-                # embedding model simply could not be used.
-                if embedding_size <= self.MAX_INDEXABLE_DIMENSIONS:
-                    index = _PREPARER.quote(f"idx_{self._table_name(collection_name)}_embedding")
+            return True
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to create collection {collection_name}: {exc}") from exc
+
+    async def create_index(
+        self,
+        collection_name: str,
+        embedding_size: int,
+        index_type: IndexType | None = None,
+        reset: bool = False,
+    ) -> bool:
+        # pgvector will not build an HNSW or IVFFlat index past this width.
+        # The column itself is fine, and search still works — it just does an
+        # exact scan instead of an approximate one. Refusing to index at all
+        # would mean a 4096-dimension embedding model simply could not be used.
+        if embedding_size > self.MAX_INDEXABLE_DIMENSIONS:
+            self.logger.warning(
+                "Collection %r has %d dimensions, above pgvector's indexing "
+                "limit of %d — left without an index, so searches will be "
+                "exact scans. Use a narrower embedding model if that gets slow.",
+                collection_name,
+                embedding_size,
+                self.MAX_INDEXABLE_DIMENSIONS,
+            )
+            return False
+
+        chosen = IndexType(index_type) if index_type is not None else self.index_type
+        table = self._quoted_table(collection_name)
+        index = _PREPARER.quote(f"idx_{self._table_name(collection_name)}_embedding")
+        _, opclass = DISTANCE_METHOD_TO_PGVECTOR[self.distance_method]
+
+        try:
+            async with self.session_factory.begin() as db:
+                if reset:
+                    await db.execute(text(f"DROP INDEX IF EXISTS {index}"))
+
+                if chosen is IndexType.HNSW:
                     await db.execute(
                         text(
-                            f"CREATE INDEX {index} ON {table} "
+                            f"CREATE INDEX IF NOT EXISTS {index} ON {table} "
                             f"USING hnsw (embedding {opclass})"
                         )
                     )
                 else:
-                    self.logger.warning(
-                        "Collection %r has %d dimensions, above pgvector's HNSW "
-                        "limit of %d — created without an index, so searches "
-                        "will be exact scans. Use a narrower embedding model if "
-                        "that gets slow.",
-                        collection_name,
-                        embedding_size,
-                        self.MAX_INDEXABLE_DIMENSIONS,
+                    # IVFFlat's cluster count should scale with row count —
+                    # pgvector's own rule of thumb: rows/1000 up to 1M rows,
+                    # sqrt(rows) beyond that. An empty table still gets a
+                    # valid (if not yet useful) index rather than failing.
+                    count = await db.scalar(text(f"SELECT COUNT(*) FROM {table}")) or 0
+                    lists = max(1, int(count ** 0.5) if count > 1_000_000 else count // 1000)
+                    await db.execute(
+                        text(
+                            f"CREATE INDEX IF NOT EXISTS {index} ON {table} "
+                            f"USING ivfflat (embedding {opclass}) WITH (lists = {lists})"
+                        )
                     )
-
-                return True
+            return True
         except SQLAlchemyError as exc:
-            raise DbError(f"Failed to create collection {collection_name}: {exc}") from exc
+            raise DbError(f"Failed to create index for {collection_name}: {exc}") from exc
 
     async def delete_collection(self, collection_name: str) -> bool:
         existed = await self.collection_exists(collection_name)
@@ -289,7 +317,7 @@ class PostgresVectorRepository(PostgresBaseRepository, VectorRepository):
             return []
 
         table = self._quoted_table(collection_name)
-        operator, _ = _DISTANCE_SQL[self.distance_method]
+        operator, _ = DISTANCE_METHOD_TO_PGVECTOR[self.distance_method]
 
         params = {"vector": self._vector_literal(vector), "limit": limit}
         where = ""

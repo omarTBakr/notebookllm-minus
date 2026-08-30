@@ -1,4 +1,4 @@
-from enums import LLMEmbeddingProvider
+from enums import LLMEmbeddingProvider, EMBEDDING_PROVIDER_API_KEY_FIELDS
 from exceptions import UnsupportedProviderError
 from utils import Settings, get_logger
 
@@ -16,13 +16,6 @@ class LLMEmbeddingFactory:
     GENERATION_BACKEND and EMBEDDING_BACKEND are validated against different
     sets and need not agree.
     """
-
-    # Ollama is absent on purpose: it runs locally and authenticates by host.
-    _API_KEY_FIELDS = {
-        LLMEmbeddingProvider.OPENAI: "OPENAI_API_KEY",
-        LLMEmbeddingProvider.GOOGLE: "GOOGLE_API_KEY",
-        LLMEmbeddingProvider.COHERE: "COHERE_API_KEY",
-    }
 
     _PROVIDERS = {
         LLMEmbeddingProvider.OPENAI: OpenAIEmbeddingProvider,
@@ -61,10 +54,10 @@ class LLMEmbeddingFactory:
             # Local: a host to reach, no key to check.
             kwargs["base_url"] = self.settings.ollama_base_url
         else:
-            api_key = getattr(self.settings, self._API_KEY_FIELDS[chosen])
+            api_key = getattr(self.settings, EMBEDDING_PROVIDER_API_KEY_FIELDS[chosen])
             if not api_key:
                 raise UnsupportedProviderError(
-                    f"{self._API_KEY_FIELDS[chosen]} is not set, so the "
+                    f"{EMBEDDING_PROVIDER_API_KEY_FIELDS[chosen]} is not set, so the "
                     f"{chosen.value!r} embedding provider cannot be built"
                 )
             kwargs["api_key"] = api_key

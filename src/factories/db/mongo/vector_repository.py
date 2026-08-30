@@ -12,8 +12,8 @@ from time import perf_counter
 from qdrant_client import AsyncQdrantClient, models  # ty: ignore[unresolved-import]
 
 from enum import Enum
-from enums import DistanceMethod
-from exceptions import DbConnectionError, DbError
+from enums import DistanceMethod, IndexType
+from exceptions import DbConnectionError, DbError, UnsupportedProviderError
 from utils import get_logger
 
 from ..interfaces.vector_repository import VectorRepository
@@ -38,6 +38,7 @@ class QdrantVectorRepository(VectorRepository):
         url: str | None = None,
         api_key: str | None = None,
         distance_method: DistanceMethod = DistanceMethod.COSINE,
+        index_type: IndexType = IndexType.HNSW,
     ) -> None:
         if url and path:
             raise ValueError(
@@ -51,6 +52,7 @@ class QdrantVectorRepository(VectorRepository):
         self.url = url
         self.api_key = api_key
         self.distance_method = DistanceMethod(distance_method)
+        self.index_type = IndexType(index_type)
         self.client: AsyncQdrantClient | None = None
         self.logger = get_logger(type(self).__module__)
 
@@ -128,6 +130,12 @@ class QdrantVectorRepository(VectorRepository):
                     size=embedding_size,
                     distance=DistanceFunction[self.distance_method.upper()],
                 ),
+                # Indexing starts disabled — building the HNSW graph
+                # incrementally as insert_many() streams rows in is far
+                # slower than inserting first and indexing once via
+                # create_index(). This is Qdrant's own documented bulk-upload
+                # pattern (indexing_threshold=0 means "never auto-index").
+                optimizers_config=models.OptimizersConfigDiff(indexing_threshold=0),
             )
         except Exception as exc:
             raise DbError(f"create_collection({collection_name!r}) failed: {exc}") from exc
@@ -135,6 +143,41 @@ class QdrantVectorRepository(VectorRepository):
             "Created collection %r (size=%d, distance=%s)",
             collection_name, embedding_size, self.distance_method,
         )
+        return True
+
+    # Qdrant's own default indexing_threshold (vector count per segment
+    # before HNSW is built automatically) — restored here once indexing is
+    # deliberately turned back on.
+    _DEFAULT_INDEXING_THRESHOLD = 20000
+
+    async def create_index(
+        self,
+        collection_name: str,
+        embedding_size: int,
+        index_type: IndexType | None = None,
+        reset: bool = False,
+    ) -> bool:
+        chosen = IndexType(index_type) if index_type is not None else self.index_type
+        if chosen is not IndexType.HNSW:
+            raise UnsupportedProviderError(
+                f"Qdrant only builds HNSW indexes, got {chosen.value!r}"
+            )
+
+        client = self._require_client()
+        try:
+            # Restoring the default threshold is enough to (re-)trigger a
+            # build even if indexing was already on — no separate "reset"
+            # path needed, unlike pgvector where DROP/CREATE INDEX are
+            # explicit statements.
+            await client.update_collection(
+                collection_name=collection_name,
+                optimizers_config=models.OptimizersConfigDiff(
+                    indexing_threshold=self._DEFAULT_INDEXING_THRESHOLD
+                ),
+            )
+        except Exception as exc:
+            raise DbError(f"create_index({collection_name!r}) failed: {exc}") from exc
+        self.logger.info("Enabled HNSW indexing for %r", collection_name)
         return True
 
     async def delete_collection(self, collection_name: str) -> bool:

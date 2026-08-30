@@ -1,6 +1,6 @@
 import cohere  # ty: ignore[unresolved-import]
 
-from enums import EmbeddingInputType
+from enums import EmbeddingInputType, EMBEDDING_INPUT_TYPE_TO_COHERE
 from exceptions import EmbeddingError
 
 from ..cohere_support import aclose_cohere_client
@@ -9,12 +9,6 @@ from .LLMEmbeddingInterface import LLMEmbeddingInterface
 
 class CohereEmbeddingProvider(LLMEmbeddingInterface):
     """Embeddings via Cohere's v2 Embed API."""
-
-    # Cohere requires input_type on every call — there is no neutral default.
-    _INPUT_TYPES = {
-        EmbeddingInputType.DOCUMENT: "search_document",
-        EmbeddingInputType.QUERY: "search_query",
-    }
 
     def __init__(self, api_key: str, model_id: str, embedding_size: int) -> None:
 
@@ -30,7 +24,7 @@ class CohereEmbeddingProvider(LLMEmbeddingInterface):
             response = await self.client.embed(
                 model=self.model_id,
                 texts=texts,
-                input_type=self._INPUT_TYPES[input_type],
+                input_type=EMBEDDING_INPUT_TYPE_TO_COHERE[input_type],
                 output_dimension=self.embedding_size,
                 # v2 returns a container keyed by type; ask for floats only so
                 # there is exactly one list to read back.
