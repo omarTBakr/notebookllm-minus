@@ -6,15 +6,19 @@ from .FileExtensions import FileExtension, PdfLoader
 from .lang import Language
 from .logs import LogFormat, LogLevel
 from .LLMChattingEnum import ChatRole, LLMChattingProvider, ThinkingLevel
-from .LLMEmbeddingEnum import EmbeddingInputType, LLMEmbeddingProvider
+from .LLMEmbeddingEnum import EmbeddingInputType, LLMEmbeddingProvider, TruncateMode
 from .db import DistanceMethod, DbBackend, IndexType
 from .ProviderMappings import (
     CHAT_PROVIDER_API_KEY_FIELDS,
+    CHAT_PROVIDER_SETTING_KWARGS,
     CHAT_ROLE_TO_GOOGLE,
     DISTANCE_METHOD_TO_PGVECTOR,
     EMBEDDING_INPUT_TYPE_TO_COHERE,
     EMBEDDING_INPUT_TYPE_TO_GOOGLE,
+    EMBEDDING_INPUT_TYPE_TO_NVIDIA,
+    EMBEDDING_TRUNCATE_TO_NVIDIA,
     EMBEDDING_PROVIDER_API_KEY_FIELDS,
+    EMBEDDING_PROVIDER_SETTING_KWARGS,
     LANGUAGE_SPLITTERS,
 )
 
@@ -22,6 +26,7 @@ __all__ = [
     "AssetType",
     "ChatRole",
     "CHAT_PROVIDER_API_KEY_FIELDS",
+    "CHAT_PROVIDER_SETTING_KWARGS",
     "CHAT_ROLE_TO_GOOGLE",
     "DatabaseCollection",
     "DbBackend",
@@ -30,7 +35,10 @@ __all__ = [
     "EmbeddingInputType",
     "EMBEDDING_INPUT_TYPE_TO_COHERE",
     "EMBEDDING_INPUT_TYPE_TO_GOOGLE",
+    "EMBEDDING_INPUT_TYPE_TO_NVIDIA",
+    "EMBEDDING_TRUNCATE_TO_NVIDIA",
     "EMBEDDING_PROVIDER_API_KEY_FIELDS",
+    "EMBEDDING_PROVIDER_SETTING_KWARGS",
     "FileExtension",
     "PdfLoader",
     "FileStatus",
@@ -43,4 +51,5 @@ __all__ = [
     "LogLevel",
     "ProcessStatus",
     "ThinkingLevel",
+    "TruncateMode",
 ]

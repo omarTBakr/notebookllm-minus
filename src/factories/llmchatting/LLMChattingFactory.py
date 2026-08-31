@@ -1,11 +1,18 @@
-from enums import LLMChattingProvider, CHAT_PROVIDER_API_KEY_FIELDS
+from enums import (
+    LLMChattingProvider,
+    CHAT_PROVIDER_API_KEY_FIELDS,
+    CHAT_PROVIDER_SETTING_KWARGS,
+)
 from exceptions import UnsupportedProviderError
 from utils import Settings, get_logger
+
+from ..setting_kwargs import setting_kwargs
 
 from .AnthropicChatProvider import AnthropicChatProvider
 from .CohereChatProvider import CohereChatProvider
 from .GoogleChatProvider import GoogleChatProvider
 from .LLMChattingInterface import LLMChattingInterface
+from .NvidiaChatProvider import NvidiaChatProvider
 from .OllamaChatProvider import OllamaChatProvider
 from .OpenAIChatProvider import OpenAIChatProvider
 
@@ -39,6 +46,7 @@ class LLMChattingFactory:
         LLMChattingProvider.OPENAI: OpenAIChatProvider,
         LLMChattingProvider.GOOGLE: GoogleChatProvider,
         LLMChattingProvider.COHERE: CohereChatProvider,
+        LLMChattingProvider.NVIDIA: NvidiaChatProvider,
         LLMChattingProvider.OLLAMA: OllamaChatProvider,
     }
 
@@ -82,9 +90,14 @@ class LLMChattingFactory:
                     f"{chosen.value!r} chatting provider cannot be built"
                 )
             kwargs["api_key"] = api_key
-            # Only OpenAI accepts a custom endpoint, and only when configured.
-            if chosen is LLMChattingProvider.OPENAI and self.settings.OPENAI_API_BASE_URL:
-                kwargs["base_url"] = self.settings.OPENAI_API_BASE_URL
+
+        # Whatever else this provider takes from .env — an endpoint, a limit —
+        # named once in CHAT_PROVIDER_SETTING_KWARGS rather than as a branch
+        # per vendor here. An unset or blank field is not passed at all, so
+        # the provider's own signature default stands.
+        kwargs.update(
+            setting_kwargs(self.settings, CHAT_PROVIDER_SETTING_KWARGS.get(chosen, {}))
+        )
 
         self.logger.info(
             "Building chatting provider %r (model=%r)",

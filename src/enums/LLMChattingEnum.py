@@ -9,6 +9,12 @@ class LLMChattingProvider(str, Enum):
     GOOGLE    = "google"
     COHERE    = "cohere"
     OLLAMA    = "ollama"  # local models; no API key, needs OLLAMA_HOST/PORT
+    # NVIDIA NIM speaks the OpenAI wire format, so it is the OpenAI provider
+    # class pointed at integrate.api.nvidia.com with its own key. A separate
+    # member rather than OPENAI + OPENAI_API_BASE_URL: the two are different
+    # accounts with different model catalogues, and a chat should be able to
+    # name one without the other's endpoint being torn out of .env.
+    NVIDIA    = "nvidia"
 
 
 class ThinkingLevel(str, Enum):

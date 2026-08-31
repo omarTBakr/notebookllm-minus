@@ -17,9 +17,15 @@ from enums import (
     LogLevel,
     PdfLoader,
     ThinkingLevel,
+    TruncateMode,
 )
 
 SRC_DIR = Path(__file__).parent.parent
+
+# NVIDIA's hosted NIM endpoint. Here rather than inside NvidiaChatProvider so
+# that pointing the app at a self-hosted NIM is a .env line, and so the URL
+# appears once in the codebase.
+NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 # LOG_LEVEL is the one enum-typed field whose canonical spelling is upper
 # case (it mirrors `logging`'s own level names), so it gets its own
@@ -116,6 +122,24 @@ class Settings(BaseSettings):
     OPENAI_API_BASE_URL: str | None = None  # for OpenAI-compatible endpoints
     GOOGLE_API_KEY: str | None = None
     COHERE_API_KEY: str | None = None
+    # NVIDIA NIM — an OpenAI-compatible endpoint with its own key, kept
+    # separate from OPENAI_API_KEY / OPENAI_API_BASE_URL so both vendors can be
+    # configured at once. One key serves chat and embeddings.
+    NVIDIA_API_KEY: str | None = None
+    # Unlike OPENAI_API_BASE_URL, this has a real default rather than meaning
+    # "the SDK's own": an OpenAI client with an nvapi key and no endpoint would
+    # dial api.openai.com and fail with an authentication error that says
+    # nothing about the mistake. Blank is read as unset (validator below).
+    NVIDIA_API_BASE_URL: str = NVIDIA_DEFAULT_BASE_URL
+    # NVIDIA's per-request input cap. Below CHUNKING_BATCH_SIZE's default of
+    # 512, so NvidiaEmbeddingProvider splits a batch rather than failing one:
+    # 257 inputs answers "input count 257 exceeds maximum allowed batch size".
+    # A setting because it is NVIDIA's number, not ours, and they can raise it.
+    NVIDIA_EMBEDDING_MAX_BATCH: int = 256
+    # What to do with a text longer than the model's context. END means one
+    # over-long chunk costs its own tail rather than failing the whole upload;
+    # NONE is the vendor default and fails the request instead.
+    NVIDIA_EMBEDDING_TRUNCATE: TruncateMode = TruncateMode.END
     # Ollama is local and takes no key — a reachable host is the whole config.
     OLLAMA_HOST: str = "localhost"
     OLLAMA_PORT: int = 11434
@@ -224,6 +248,14 @@ class Settings(BaseSettings):
         # The one option whose canonical spelling is upper case, because that
         # is how `logging` names its levels.
         return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator("NVIDIA_API_BASE_URL", mode="before")
+    @classmethod
+    def _default_nvidia_endpoint(cls, value: object) -> object:
+        # `NVIDIA_API_BASE_URL = ""` in a .env reads as "I am not setting
+        # this", the way every other commented-out or emptied key does — and
+        # for this one field an empty string is not a usable value.
+        return value or NVIDIA_DEFAULT_BASE_URL
 
     @field_validator("GENERATION_THINKING", mode="before")
     @classmethod

@@ -143,7 +143,7 @@ class LLMChattingInterface(ABC):
         **Not every backend truly streams.** Providers that do override
         :meth:`_stream_text`; the rest fall back to generating the full answer
         and yielding it as one piece, so this endpoint works for all of them
-        and only the latency differs. Today Ollama streams and the four hosted
+        and only the latency differs. Today Ollama streams and the hosted
         providers do not.
         """
         messages = self._build_messages(prompt, chat_history)

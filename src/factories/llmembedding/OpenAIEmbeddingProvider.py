@@ -11,7 +11,14 @@ class OpenAIEmbeddingProvider(LLMEmbeddingInterface):
 
     OpenAI's models are symmetric — documents and queries embed the same way —
     so ``input_type`` is accepted for interface parity and ignored.
+
+    ``base_url`` is exposed so any OpenAI-compatible embeddings endpoint works
+    through this same class — see :class:`NvidiaEmbeddingProvider`.
     """
+
+    # Whose endpoint this is, for the error messages only — a subclass
+    # pointed at another vendor says that vendor's name instead.
+    _VENDOR = "OpenAI"
 
     def __init__(
         self,
@@ -39,7 +46,7 @@ class OpenAIEmbeddingProvider(LLMEmbeddingInterface):
             )
 
         except Exception as exc:
-            raise EmbeddingError(f"OpenAI embedding failed: {exc}") from exc
+            raise EmbeddingError(f"{self._VENDOR} embedding failed: {exc}") from exc
 
         # Each item carries its own index; sort by it rather than trusting the
         # response to arrive in request order.

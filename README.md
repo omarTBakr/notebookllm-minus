@@ -65,8 +65,8 @@ are picked from whatever Ollama has installed rather than pinned in code.
   metadata a citation needs.
 - **Live health probe** (`/nlp/health`) that actually calls MongoDB, the embedding model and
   the vector store, rather than reporting what is configured.
-- **Swappable providers** for text generation (Anthropic, OpenAI, Google, Cohere, Ollama),
-  embeddings (OpenAI, Google, Cohere, Ollama) and vector storage (Qdrant) — one abstract
+- **Swappable providers** for text generation (Anthropic, OpenAI, Google, Cohere, NVIDIA,
+  Ollama), embeddings (OpenAI, Google, Cohere, NVIDIA, Ollama) and vector storage (Qdrant) — one abstract
   interface each, one implementation per vendor, and a factory that reads the backend name
   out of `.env`. Built once at startup and hung off the app object. See
   [Providers](#providers).
@@ -188,8 +188,8 @@ flowchart TB
     end
 
     subgraph providers["factories/ — swappable backends"]
-        P1["LLMChattingInterface<br/>anthropic · openai · google<br/>cohere · ollama"]
-        P2["LLMEmbeddingInterface<br/>openai · google<br/>cohere · ollama"]
+        P1["LLMChattingInterface<br/>anthropic · openai · google<br/>cohere · nvidia · ollama"]
+        P2["LLMEmbeddingInterface<br/>openai · google · nvidia<br/>cohere · ollama"]
         P3["VectorDBInterface<br/>qdrant"]
     end
 
@@ -473,9 +473,33 @@ config edit.
 
 | Subsystem | Backends | Interface |
 | --------- | -------- | --------- |
-| `llmchatting`  | `anthropic`, `openai`, `google`, `cohere`, `ollama` | `generate_text(prompt, chat_history, max_tokens, temperature) -> str` |
-| `llmembedding` | `openai`, `google`, `cohere`, `ollama`              | `embed(texts, input_type) -> list[list[float]]` |
+| `llmchatting`  | `anthropic`, `openai`, `google`, `cohere`, `nvidia`, `ollama` | `generate_text(prompt, chat_history, max_tokens, temperature) -> str` |
+| `llmembedding` | `openai`, `google`, `cohere`, `nvidia`, `ollama`    | `embed(texts, input_type) -> list[list[float]]` |
 | `vectordb`     | `qdrant`                                            | `create_collection`, `insert_many`, `search_by_vector`, … |
+
+**`nvidia` is NVIDIA NIM (`integrate.api.nvidia.com`), and it is not a sixth SDK.** Its API
+*is* the OpenAI Chat Completions API, so `NvidiaChatProvider` is `OpenAIChatProvider` under
+another name: one line, a vendor label so its errors do not say "OpenAI", and its endpoint
+supplied from config like every other provider's. It is a separate backend rather than `openai` plus `OPENAI_API_BASE_URL` because
+the two are separate accounts with separate catalogues, and a NIM model id carries its
+publisher (`meta/llama-3.2-11b-vision-instruct`). `NvidiaEmbeddingProvider` is the same
+trick on the embedding side, and it overrides `_embed` for the three ways NVIDIA's endpoint
+differs from OpenAI's: its models are asymmetric (`input_type` is `passage` / `query`), a
+request is capped at `NVIDIA_EMBEDDING_MAX_BATCH` inputs — 256, under `CHUNKING_BATCH_SIZE`'s
+default of 512, so the provider splits the batch itself — and the width is fixed, so
+`dimensions` is never sent and a wrong `EMBEDDING_MODEL_SIZE` is caught by the interface's
+own width check instead of a 400.
+
+Neither class holds a URL, a limit or a wire-format string. The endpoint, the cap and the
+truncation mode are `Settings` fields; the vendor spellings (`passage`, `END`) are lookup
+tables in `enums/ProviderMappings.py`; and which fields reach which constructor is one more
+table, `CHAT_PROVIDER_SETTING_KWARGS` / `EMBEDDING_PROVIDER_SETTING_KWARGS`, that both
+factories walk through `setting_kwargs()`. Giving a provider a new knob is a line in that
+table plus a field on `Settings` — the factories never branch per vendor.
+
+One `NVIDIA_API_KEY` covers both. Note that `GET /v1/models` lists NVIDIA's whole catalogue
+rather than what a given key may call: most ids answer `404 Function ...: Not found for
+account ...`, so check a model with one `curl` before configuring it.
 
 **Anthropic is absent from the embedding list on purpose** — it ships no embeddings API, so
 `EMBEDDING_BACKEND` validates against a different set than `GENERATION_BACKEND`. The two need
@@ -487,7 +511,7 @@ system turn into a separate argument, Google renames `assistant` to `model`, Ope
 and Ollama take it inline. `generate_text()` itself is concrete on the interface: it
 normalizes the messages, logs, times the call, and delegates to the provider's
 `_generate_text()`. Same shape for `embed()` / `_embed()`, which also owns the empty-input
-short circuit and result validation. A provider therefore cannot forget to log, and the five
+short circuit and result validation. A provider therefore cannot forget to log, and all
 of them log identical fields.
 
 **Embeddings are batch-first** (`list[str]` in, vectors out, in input order) because an asset
@@ -551,8 +575,8 @@ src/
 │   ├── ChunkModel.py           # data_chunks: batched insert, paged read, per-asset delete
 │   └── db_schema/              # Project, Asset, DataChunk pydantic documents
 ├── factories/                  # swappable providers, see Providers above
-│   ├── llmchatting/            # LLMChattingInterface + 5 providers + LLMChattingFactory
-│   ├── llmembedding/           # LLMEmbeddingInterface + 4 providers + LLMEmbeddingFactory
+│   ├── llmchatting/            # LLMChattingInterface + 6 providers + LLMChattingFactory
+│   ├── llmembedding/           # LLMEmbeddingInterface + 5 providers + LLMEmbeddingFactory
 │   ├── db/                     # the document + vector store, see Database backends above
 │   │   ├── factory.py          # DOCUMENT_DB_BACKEND -> MongoProvider | PostgresProvider
 │   │   ├── interfaces/         # DbProvider + the 8 repository ABCs both backends implement
@@ -564,6 +588,7 @@ src/
 │   │       ├── vector_repository.py# pgvector; a table per collection, its own DDL
 │   │       ├── alembic.ini         # needs `-c` — it does not live at the repo root
 │   │       └── alembic/versions/   # the schema's history, 0001 onwards
+│   ├── setting_kwargs.py       # {kwarg: settings field} table -> constructor kwargs
 │   └── cohere_support.py       # shared shutdown helper (Cohere's client has no close())
 ├── templates/                  # model-facing prompts (NOT html)
 │   ├── template_parser.py
@@ -670,8 +695,8 @@ MONGO_URI = "mongodb://root:example@localhost:27017"
 MONGO_DB_NAME = "notebookllm_minus"
 
 # --- providers ---
-GENERATION_BACKEND = "anthropic"    # anthropic | openai | google | cohere | ollama
-EMBEDDING_BACKEND  = "openai"       # openai | google | cohere | ollama
+GENERATION_BACKEND = "anthropic"    # anthropic | openai | google | cohere | nvidia | ollama
+EMBEDDING_BACKEND  = "openai"       # openai | google | cohere | nvidia | ollama
 
 GENERATION_MODEL_ID  = "gemma4:e4b"
 EMBEDDING_MODEL_ID   = "qwen3-embedding:8b"
@@ -734,7 +759,9 @@ ANTHROPIC_API_KEY = ""
 OPENAI_API_KEY    = ""
 GOOGLE_API_KEY    = ""
 COHERE_API_KEY    = ""
+NVIDIA_API_KEY    = ""                       # NVIDIA NIM, an OpenAI-compatible endpoint
 # OPENAI_API_BASE_URL = ""                   # for OpenAI-compatible endpoints
+# NVIDIA_API_BASE_URL = ""                   # defaults to integrate.api.nvidia.com/v1
 OLLAMA_HOST = "localhost"   # ollama takes no key, just a host
 OLLAMA_PORT = 11434
 ```
@@ -743,8 +770,9 @@ OLLAMA_PORT = 11434
 creation, so a mismatch means every insert is rejected and changing it later requires
 rebuilding the collection. `.env.example` carries the sizes for each supported model
 (`text-embedding-3-small` 1536, `embed-v4.0` 1536, `gemini-embedding-001` 3072,
-`nomic-embed-text` 768, …). The hosted providers are asked for that width explicitly; Ollama
-cannot be, so the first `embed()` call verifies it and fails with the actual width.
+`nomic-embed-text` 768, `nemotron-3-embed-1b` 2048, …). Most hosted providers are asked for
+that width explicitly; Ollama cannot be, and NVIDIA's width is fixed, so for those the first
+`embed()` call verifies it and fails with the actual width.
 
 Vector storage defaults to an embedded, on-disk Qdrant — nothing extra to run:
 

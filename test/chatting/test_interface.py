@@ -136,3 +136,89 @@ def test_factory_builds_ollama_without_a_key(settings):
     client = LLMChattingFactory(settings).create(provider="ollama")
 
     assert client.base_url == settings.ollama_base_url
+
+
+# --- nvidia, the OpenAI-compatible one ----------------------------------------
+#
+# NVIDIA NIM is the OpenAI provider class pointed at another endpoint, so what
+# is worth testing is the wiring: the right key, the right URL, and no leakage
+# between the two vendors that now share one code path.
+
+
+def _endpoint(client) -> str:
+    return str(client.client.base_url).rstrip("/")
+
+
+def test_factory_builds_nvidia_at_the_configured_endpoint(settings):
+    """The URL comes from Settings, not from the provider class."""
+    client = LLMChattingFactory(
+        settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})
+    ).create(provider="nvidia")
+
+    assert type(client).__name__ == "NvidiaChatProvider"
+    assert client.api_key == "nvapi-test"
+    assert _endpoint(client) == settings.NVIDIA_API_BASE_URL
+
+
+def test_the_shipped_nvidia_endpoint_is_nvidias(settings):
+    """The one place the URL is written down. A .env may override it; with
+    nothing set, the app must still reach NVIDIA rather than api.openai.com."""
+    assert settings.NVIDIA_API_BASE_URL == "https://integrate.api.nvidia.com/v1"
+
+
+def test_a_blank_nvidia_endpoint_falls_back_to_the_default(monkeypatch):
+    """`NVIDIA_API_BASE_URL = ""` reads as unset — an OpenAI client with an
+    nvapi key and no endpoint would dial OpenAI and fail with an
+    authentication error that says nothing about the real mistake."""
+    from utils import get_settings
+
+    monkeypatch.setenv("NVIDIA_API_BASE_URL", "")
+    get_settings.cache_clear()
+
+    assert get_settings().NVIDIA_API_BASE_URL == "https://integrate.api.nvidia.com/v1"
+
+
+def test_nvidia_base_url_can_be_overridden(settings):
+    """A self-hosted NIM, or a gateway in front of one."""
+    client = LLMChattingFactory(
+        settings.model_copy(
+            update={
+                "NVIDIA_API_KEY": "nvapi-test",
+                "NVIDIA_API_BASE_URL": "http://nim.internal:8000/v1",
+            }
+        )
+    ).create(provider="nvidia")
+
+    assert _endpoint(client) == "http://nim.internal:8000/v1"
+
+
+def test_factory_rejects_nvidia_with_no_key(settings):
+    with pytest.raises(UnsupportedProviderError):
+        LLMChattingFactory(settings.model_copy(update={"NVIDIA_API_KEY": ""})).create(
+            provider="nvidia"
+        )
+
+
+def test_nvidias_endpoint_does_not_leak_into_openai(settings):
+    """The two share a class and a base-url table; they must not share a URL."""
+    client = LLMChattingFactory(
+        settings.model_copy(
+            update={
+                "OPENAI_API_KEY": "sk-test",
+                "NVIDIA_API_BASE_URL": "http://nim.internal:8000/v1",
+            }
+        )
+    ).create(provider="openai")
+
+    assert "nvidia" not in _endpoint(client)
+    assert "nim.internal" not in _endpoint(client)
+
+
+def test_nvidia_errors_name_nvidia_not_openai(settings):
+    """`OpenAI generation failed` for a call to NVIDIA sends debugging the
+    wrong way; the vendor label is what makes the message honest."""
+    client = LLMChattingFactory(
+        settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})
+    ).create(provider="nvidia")
+
+    assert client._VENDOR == "NVIDIA"

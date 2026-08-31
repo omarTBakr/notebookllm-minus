@@ -29,13 +29,14 @@ VECTOR_DB_PORT=6333
 VECTOR_DB_DISTANCE_METHOD="cosine"
 
 # --- llm providers -----------------------------------------------------------
-GENERATION_BACKEND="ollama"
+GENERATION_BACKEND="ollama"  # anthropic | openai | google | cohere | nvidia | ollama
 EMBEDDING_BACKEND="ollama"
 
 ANTHROPIC_API_KEY=""
 OPENAI_API_KEY=""
 GOOGLE_API_KEY=""
 COHERE_API_KEY=""
+NVIDIA_API_KEY=""      # NVIDIA NIM; see src/.env.example
 
 OLLAMA_HOST="host.docker.internal"
 OLLAMA_PORT=11434

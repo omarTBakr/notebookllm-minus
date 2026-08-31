@@ -1,10 +1,17 @@
-from enums import LLMEmbeddingProvider, EMBEDDING_PROVIDER_API_KEY_FIELDS
+from enums import (
+    LLMEmbeddingProvider,
+    EMBEDDING_PROVIDER_API_KEY_FIELDS,
+    EMBEDDING_PROVIDER_SETTING_KWARGS,
+)
 from exceptions import UnsupportedProviderError
 from utils import Settings, get_logger
+
+from ..setting_kwargs import setting_kwargs
 
 from .CohereEmbeddingProvider import CohereEmbeddingProvider
 from .GoogleEmbeddingProvider import GoogleEmbeddingProvider
 from .LLMEmbeddingInterface import LLMEmbeddingInterface
+from .NvidiaEmbeddingProvider import NvidiaEmbeddingProvider
 from .OllamaEmbeddingProvider import OllamaEmbeddingProvider
 from .OpenAIEmbeddingProvider import OpenAIEmbeddingProvider
 
@@ -21,6 +28,7 @@ class LLMEmbeddingFactory:
         LLMEmbeddingProvider.OPENAI: OpenAIEmbeddingProvider,
         LLMEmbeddingProvider.GOOGLE: GoogleEmbeddingProvider,
         LLMEmbeddingProvider.COHERE: CohereEmbeddingProvider,
+        LLMEmbeddingProvider.NVIDIA: NvidiaEmbeddingProvider,
         LLMEmbeddingProvider.OLLAMA: OllamaEmbeddingProvider,
     }
 
@@ -61,8 +69,12 @@ class LLMEmbeddingFactory:
                     f"{chosen.value!r} embedding provider cannot be built"
                 )
             kwargs["api_key"] = api_key
-            if chosen is LLMEmbeddingProvider.OPENAI and self.settings.OPENAI_API_BASE_URL:
-                kwargs["base_url"] = self.settings.OPENAI_API_BASE_URL
+
+        # The endpoint, and anything else a provider needs from .env, come
+        # from one table rather than a branch per vendor.
+        kwargs.update(
+            setting_kwargs(self.settings, EMBEDDING_PROVIDER_SETTING_KWARGS.get(chosen, {}))
+        )
 
         self.logger.info(
             "Building embedding provider %r (model=%r, size=%d)",

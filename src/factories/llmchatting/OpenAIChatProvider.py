@@ -10,8 +10,15 @@ class OpenAIChatProvider(LLMChattingInterface):
 
     ``base_url`` is exposed so any OpenAI-compatible endpoint (a local server,
     a gateway, another vendor's compatibility layer) works through this same
-    class with no code change.
+    class with no code change — see :class:`NvidiaChatProvider`, which is
+    this class plus a name.
     """
+
+    # Whose endpoint this is, for the error messages only. A subclass pointed
+    # at another vendor's compatibility layer says that vendor's name instead,
+    # so "OpenAI generation failed" never turns up for a call that never went
+    # anywhere near OpenAI.
+    _VENDOR = "OpenAI"
 
     def __init__(
         self, api_key: str, model_id: str, base_url: str | None = None, **kwargs
@@ -37,7 +44,9 @@ class OpenAIChatProvider(LLMChattingInterface):
             )
 
         except Exception as exc:
-            raise LLMProviderError(f"OpenAI generation failed: {exc}") from exc
+            raise LLMProviderError(
+                f"{self._VENDOR} generation failed: {exc}"
+            ) from exc
 
         usage = getattr(response, "usage", None)
 
@@ -46,7 +55,9 @@ class OpenAIChatProvider(LLMChattingInterface):
         )
 
         if not response.choices:
-            raise LLMProviderError(f"OpenAI returned no choices (model={self.model_id!r})")
+            raise LLMProviderError(
+                f"{self._VENDOR} returned no choices (model={self.model_id!r})"
+            )
 
         choice = response.choices[0]
 
@@ -56,7 +67,7 @@ class OpenAIChatProvider(LLMChattingInterface):
             # Empty content with finish_reason="length" means the answer was
             # cut off before any token landed — worth naming in the message.
             raise LLMProviderError(
-                f"OpenAI returned no text (model={self.model_id!r}, "
+                f"{self._VENDOR} returned no text (model={self.model_id!r}, "
                 f"finish_reason={choice.finish_reason!r})"
             )
 
