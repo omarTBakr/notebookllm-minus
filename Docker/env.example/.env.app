@@ -1,5 +1,5 @@
 APPLICATION_NAME="NotebookLLM-minus"
-APP_VERSION="0.1"
+APP_VERSION="v2"
 
 ALLOWED_TYPES=["application/pdf", "text/plain", "text/markdown"]
 MAX_FILE_SIZE=10485760
@@ -30,7 +30,7 @@ VECTOR_DB_DISTANCE_METHOD="cosine"
 
 # --- llm providers -----------------------------------------------------------
 GENERATION_BACKEND="ollama"  # anthropic | openai | google | cohere | nvidia | ollama
-EMBEDDING_BACKEND="ollama"
+EMBEDDING_BACKEND="nvidia"
 
 ANTHROPIC_API_KEY=""
 OPENAI_API_KEY=""
@@ -48,8 +48,8 @@ GENERATION_DEFAULT_TEMPERATURE=0.1
 GENERATION_THINKING="true"
 
 # --- embedding ---------------------------------------------------------------
-EMBEDDING_MODEL_ID="qwen3-embedding:8b"
-EMBEDDING_MODEL_SIZE=4096
+EMBEDDING_MODEL_ID="nvidia/nemotron-3-embed-1b"
+EMBEDDING_MODEL_SIZE=2048
 
 # --- chat --------------------------------------------------------------------
 DEFAULT_LANG="en"
