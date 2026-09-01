@@ -1,0 +1,109 @@
+# Test, then restart the systemd unit on the main box.
+#
+# The unit (notebookllm-minus.service) runs `docker compose up -d --build` in
+# the checkout on that machine, so a restart is only a deployment if the
+# checkout has moved first — hence the `git pull` below. Drop that line and
+# this becomes a pure "bounce the service" button.
+#
+# Secrets used (repository settings -> Secrets and variables -> Actions):
+#   SSH_MAIN_HOST_IP       the box's public IP
+#   SSH_MAIN_PRIVATE_KEY   a private key whose public half is in the
+#                          remote user's ~/.ssh/authorized_keys
+#
+# The remote user needs passwordless sudo for exactly the restart, e.g. in
+# /etc/sudoers.d/notebookllm:
+#   omar ALL=(root) NOPASSWD: /usr/bin/systemctl restart notebookllm-minus, \
+#                             /usr/bin/systemctl is-active notebookllm-minus
+
+name: deploy-main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time. Without this, two quick pushes can have their builds
+# interleave on the box, and `compose up --build` is not safe to run twice at
+# once against the same project.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+env:
+  REMOTE_USER: omar
+  REMOTE_DIR: /home/omar/notebookllm-minus
+  SERVICE: notebookllm-minus
+
+jobs:
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"     # matches requires-python and the image
+
+      - name: install uv
+        run: pip install --disable-pip-version-check uv
+
+      # --locked so CI fails loudly if uv.lock drifts from pyproject, which is
+      # exactly what broke the image build once already. The project lives in
+      # src/, the test suite is rooted at the repo top (pytest.ini), so the
+      # environment is built there and the command still runs from here.
+      - name: install dependencies
+        run: uv sync --locked --project src
+
+      - name: run the test suite
+        run: uv run --project src python -m pytest -q
+
+  deploy:
+    name: restart the service
+    needs: test              # nothing reaches the box unless the suite is green
+    runs-on: ubuntu-latest
+    timeout-minutes: 30      # `--build` from a cold cache is minutes, not seconds
+
+    steps:
+      - name: restart over ssh
+        env:
+          HOST: ${{ secrets.SSH_MAIN_HOST_IP }}
+          SSH_KEY: ${{ secrets.SSH_MAIN_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Trust on first use: a GitHub runner is a fresh machine every time,
+          # so there is no known_hosts to compare against and pinning a
+          # fingerprint here would only move the secret. StrictHostKeyChecking
+          # stays on for the session itself.
+          ssh-keyscan -T 10 "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              "$REMOTE_USER@$HOST" \
+              "REMOTE_DIR='$REMOTE_DIR' SERVICE='$SERVICE' bash -euo pipefail -s" <<'REMOTE'
+            cd "$REMOTE_DIR"
+
+            # --ff-only: refuse to merge. A box that has drifted should stop
+            # the deploy and be looked at, not have a merge commit invented
+            # on it by a script nobody is watching.
+            git pull --ff-only
+
+            sudo systemctl restart "$SERVICE"
+
+            # restart returns once ExecStart has finished, but "finished" for a
+            # oneshot unit only means compose exited 0 — ask the unit what it
+            # thinks, and fail the job if it is not active.
+            systemctl is-active --quiet "$SERVICE"
+            systemctl --no-pager --lines=20 status "$SERVICE" || true
+            (cd Docker && docker compose ps)
+          REMOTE
+
+      - name: scrub the key
+        if: always()          # including when the deploy failed
+        run: shred -u ~/.ssh/deploy_key 2>/dev/null || rm -f ~/.ssh/deploy_key
