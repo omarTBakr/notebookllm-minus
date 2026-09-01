@@ -27,6 +27,33 @@ from utils import CLOUD, LOCAL, NVIDIA, host_for, qualify
 from .BaseController import BaseController
 
 
+# Ollama's capability names, as /api/show reports them. A model may hold
+# several ("completion", "tools", "vision", "thinking"); only these two decide
+# which list it belongs in.
+COMPLETION = "completion"
+EMBEDDING = "embedding"
+
+
+def _can(model: dict, capability: str) -> bool:
+    """Whether *model* is offered for *capability*.
+
+    Unknown capabilities (an older Ollama, a vendor that publishes none) count
+    as completion and nothing else: every model can be asked to generate, and
+    guessing that something embeds is the error that costs a rebuilt index.
+
+    An *empty* list is treated the same as a missing one. "The server told us
+    nothing" is not evidence a model can do nothing, and the alternative is a
+    model that silently appears in neither list — which is the failure this
+    function exists to end.
+    """
+    capabilities = model.get("capabilities")
+
+    if not capabilities:
+        return capability == COMPLETION
+
+    return capability in capabilities
+
+
 def _source_of(backend: str) -> str:
     """Which source a .env backend name corresponds to.
 
@@ -102,7 +129,44 @@ class ModelController(BaseController):
 
         models.sort(key=lambda m: m["id"])
 
+        # /api/tags does not carry capabilities on every Ollama build — on the
+        # version this was written against it is null for every entry, which
+        # is why the catalogue used to offer nomic-embed-text as a chat model
+        # and llama3.1:8b as an embedding one. /api/show does carry it.
+        await self._fill_capabilities(models)
+
         return models
+
+    async def _fill_capabilities(self, models: list[dict]) -> None:
+        """Ask /api/show what each model can do, for the ones that did not say.
+
+        Concurrent, unlike the embedding probe: /api/show reads a manifest and
+        returns, where /api/embed loads the model into memory. There is
+        nothing here for two requests to contend over.
+        """
+        unknown = [m for m in models if m.get("capabilities") is None]
+
+        if not unknown:
+            return
+
+        async with httpx.AsyncClient(timeout=15) as client:
+
+            async def ask(model: dict) -> None:
+                try:
+                    response = await client.post(
+                        f"{self.base_url}/api/show", json={"model": model["tag"]}
+                    )
+                    if response.status_code == 200:
+                        model["capabilities"] = response.json().get("capabilities")
+
+                except Exception as exc:
+                    # Still None afterwards, which reads as "unknown" — and an
+                    # unknown model is offered for chat rather than hidden.
+                    self.logger.debug(
+                        "Could not read capabilities for %r: %s", model["id"], exc
+                    )
+
+            await asyncio.gather(*(ask(model) for model in unknown))
 
     async def _probe_all(self, models: list[dict]) -> list[dict]:
         """Widths for this host's models, in order, one at a time.
@@ -183,8 +247,17 @@ class ModelController(BaseController):
 
     @classmethod
     def forget_probes(cls) -> None:
-        """Drop the cache, so newly pulled models are picked up."""
+        """Drop every probe cache, so newly pulled models are picked up.
+
+        Reaches the vendor caches too — they live on subclasses, and a test
+        that clears only this one leaks an access verdict into the next.
+        """
         cls._embedding_cache.clear()
+
+        for subclass in cls.__subclasses__():
+            cache = getattr(subclass, "_access_cache", None)
+            if cache is not None:
+                cache.clear()
 
     def _hosts(self) -> list["ModelController"]:
         """Every source we are configured to talk to.
@@ -208,10 +281,15 @@ class ModelController(BaseController):
 
         Spans every configured source regardless of which one this instance
         points at — the picker shows one list, and each entry says where it
-        lives. Every model is offered for chat, since Ollama will generate
-        with any of them and NVIDIA's catalogue is chat-first. Only those that
-        answer an embed probe are offered for embedding, each carrying the
-        vector width its collections must be built at.
+        lives.
+
+        The two lists are disjoint by capability, not by what a model happens
+        to tolerate. Ollama will embed with *any* model — llama3.1:8b answers
+        an embed probe with 4096 dimensions — so "it answered" was never
+        evidence that a model belongs in the embedding list, and the picker
+        offered chat models for embedding and embedding models for chat.
+        `capabilities` decides instead; a model that reports neither is
+        offered for chat, since that is the only thing every model can do.
         """
         hosts = self._hosts()
 
@@ -235,12 +313,12 @@ class ModelController(BaseController):
                 {**model, "dimensions": width}
                 for mine, widths in zip(by_host, probed)
                 for model, width in zip(mine, widths)
-                if width
+                if width and _can(model, EMBEDDING)
             ]
             embedding.sort(key=lambda m: m["id"])
 
         return {
-            "chat": models,
+            "chat": [m for m in models if _can(m, COMPLETION)],
             "embedding": embedding,
             "current": {
                 # A .env default names a bare tag, and which source that tag
@@ -283,6 +361,21 @@ class NvidiaModelController(ModelController):
     # Substrings that make a model worth an embed probe. A heuristic on the
     # *candidate set* only: the answer still comes from the endpoint.
     _EMBEDDING_HINTS = ("embed", "retriev")
+
+    # qualified id -> True when this account may call the model. Beside
+    # _embedding_cache, on the class and for the same reason: the routes build
+    # a controller per request, and this is the answer to a network round trip.
+    _access_cache: dict[str, bool] = {}
+
+    # How many access probes are in flight at once. They are cheap (no
+    # inference) but there are eighty of them, and a vendor that sees eighty
+    # simultaneous requests from one key may reasonably start refusing.
+    _PROBE_CONCURRENCY = 8
+
+    # A model that has not answered by now is not one to offer: the catalogue
+    # is on the path of a page load. One model (openai/gpt-oss-20b) hangs for
+    # 45s rather than answering at all.
+    _PROBE_TIMEOUT = 8
 
     def __init__(self, base_url: str | None = None) -> None:
         super().__init__(base_url=base_url, source=NVIDIA)
@@ -333,7 +426,108 @@ class NvidiaModelController(ModelController):
 
         models.sort(key=lambda m: m["id"])
 
-        return models
+        return await self._only_usable(models)
+
+    async def _only_usable(self, models: list[dict]) -> list[dict]:
+        """*models*, minus what this account cannot call, each one classified.
+
+        Two endpoints, because a model serves one or the other: an embedding
+        NIM answers /embeddings and refuses /chat/completions, so testing
+        everything for chat would drop every embedding model from the
+        catalogue — including the one this application is configured to use.
+
+        A name hint picks which endpoint to try first; the endpoint, not the
+        name, gives the answer. A "…embed…" model that does not embed falls
+        through to the chat probe rather than being discarded on its name.
+        """
+        hinted = [m for m in models if self._looks_like_embedding(m)]
+        rest = [m for m in models if not self._looks_like_embedding(m)]
+
+        # The width probe is the access test as well — and it populates
+        # _embedding_cache, so the later _probe_all pass costs nothing.
+        widths = await asyncio.gather(
+            *(self.embedding_dimensions(m["tag"]) for m in hinted)
+        )
+
+        embedders = []
+
+        for model, width in zip(hinted, widths):
+            if width:
+                # Evidence, not a guess: it embedded. Recording it here is
+                # what keeps an embedding model out of the chat list.
+                model["capabilities"] = [EMBEDDING]
+                embedders.append(model)
+            else:
+                rest.append(model)
+
+        chatters = await self._only_callable(rest)
+
+        usable = sorted(embedders + chatters, key=lambda m: m["id"])
+
+        self.logger.info(
+            "NVIDIA: %d of %d models usable with this key (%d embedding)",
+            len(usable),
+            len(models),
+            len(embedders),
+        )
+
+        return usable
+
+    def _looks_like_embedding(self, model: dict) -> bool:
+        return any(hint in model["tag"].lower() for hint in self._EMBEDDING_HINTS)
+
+    async def _only_callable(self, models: list[dict]) -> list[dict]:
+        """*models*, minus the ones this account is not entitled to call.
+
+        The catalogue and the entitlement are different things: /v1/models
+        returns everything NVIDIA publishes — 82 of them — while a given key
+        may call a handful, and the rest answer
+
+            404 Function '<uuid>': Not found for account '<account>'
+
+        only once a real request is made. Listing them all is what made the
+        picker offer models that answer 404 the moment they are chosen.
+
+        The probe is free. An empty `messages` list is invalid for every
+        model, and NVIDIA checks entitlement *before* it validates the body:
+        a callable model answers 400 (body is wrong), an unavailable one 404
+        (model is not yours). Neither runs inference, and both come back in
+        about a third of a second.
+        """
+        semaphore = asyncio.Semaphore(self._PROBE_CONCURRENCY)
+
+        async with httpx.AsyncClient(timeout=self._PROBE_TIMEOUT) as client:
+
+            async def callable_(model: dict) -> bool:
+                cached = self._access_cache.get(model["id"])
+                if cached is not None:
+                    return cached
+
+                allowed = False
+
+                try:
+                    async with semaphore:
+                        response = await client.post(
+                            f"{self.base_url}/chat/completions",
+                            headers=self._headers,
+                            json={"model": model["tag"], "messages": []},
+                        )
+                    # Anything that is not "not found for this account" means
+                    # the model is reachable; 400 is the body complaint we
+                    # deliberately provoked.
+                    allowed = response.status_code != 404
+
+                except Exception as exc:
+                    # A timeout is the third answer, and it is not a yes.
+                    self.logger.debug("Access probe failed for %r: %s", model["id"], exc)
+
+                self._access_cache[model["id"]] = allowed
+
+                return allowed
+
+            verdicts = await asyncio.gather(*(callable_(m) for m in models))
+
+        return [model for model, ok in zip(models, verdicts) if ok]
 
     async def _probe_all(self, models: list[dict]) -> list[dict]:
         """Widths for the plausible embedding models, in order.
@@ -342,11 +536,9 @@ class NvidiaModelController(ModelController):
         hosted service, so there is no model being swapped in and out of a
         GPU and nothing to be gained by queueing them.
         """
-        candidates = [
-            model
-            for model in models
-            if any(hint in model["tag"].lower() for hint in self._EMBEDDING_HINTS)
-        ]
+        # Already settled by _only_usable, and already in _embedding_cache —
+        # this pass just reads the widths back out in the caller's order.
+        candidates = [model for model in models if _can(model, EMBEDDING)]
 
         widths = dict(
             zip(

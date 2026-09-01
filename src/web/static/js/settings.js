@@ -45,6 +45,10 @@ const SIZE = /\d/;
  *  read from here, so teaching the UI about a new source is one edit. */
 const SOURCES = ["local", "cloud", "nvidia"];
 const QUALIFIED = new RegExp(`^(?:${SOURCES.join("|")})/`);
+const SOURCE_PREFIX = new RegExp(`^(${SOURCES.join("|")})/`);
+
+/** Which source an id names. Mirrors split_source: no known prefix is local. */
+const sourceOf = (id) => id.match(SOURCE_PREFIX)?.[1] ?? "local";
 
 /** Mirror of split_source in utils/model_ids.py: an id with no known prefix
  *  is local. Chats saved before there was a second host store a bare tag, and
@@ -151,7 +155,30 @@ function paintCurrent(picker, model, selected) {
   if (selected) face.append(badge(model ? model.source : "missing"));
 }
 
-/** Rebuild one picker from the catalogue. *selected* is a qualified id. */
+/** Is *id* anywhere in the catalogue, even in the other list? */
+function knownElsewhere(id) {
+  if (!catalogue) return false;
+
+  return [...(catalogue.chat ?? []), ...(catalogue.embedding ?? [])]
+    .some((model) => model.id === id);
+}
+
+function groupHeading(source) {
+  const heading = document.createElement("p");
+  heading.className = "picker__group";
+
+  const [, key] = SOURCE_BADGES[source] ?? [];
+  heading.textContent = key ? t(key) : source;
+
+  return heading;
+}
+
+/** Rebuild one picker from the catalogue, one group per source.
+ *
+ * *selected* is a qualified id. Groups appear in SOURCES order and an empty
+ * one is not drawn at all — a cloud host that is down should leave no trace
+ * in the list rather than an empty heading.
+ */
 function fill(picker, options, selected) {
   const list = picker.querySelector(".picker__list");
   list.replaceChildren();
@@ -159,24 +186,36 @@ function fill(picker, options, selected) {
   const wanted = selected ? qualifyId(selected) : null;
   const chosen = options.find((m) => m.id === wanted);
 
-  // A notebook can name a model that has since been removed, or that lives on
-  // a host which is currently unreachable. Show it flagged rather than
-  // silently appearing to be set to something else.
+  let rows = options;
+
   if (wanted && !chosen) {
-    list.append(row({ id: wanted, source: "missing" }, picker, true));
+    if (knownElsewhere(wanted)) {
+      // The catalogue has it, this list does not: a model whose kind was
+      // reclassified — llama3.1:8b answers an embed probe but reports only
+      // `completion`, so it is no longer offered for embedding. The notebook
+      // using it still works, so it stays selectable in its own group.
+      // Calling that "Missing" would tell the user something untrue.
+      rows = [{ id: wanted, source: sourceOf(wanted) }, ...options];
+    } else {
+      // Genuinely gone: deleted, or on a host that is unreachable right now.
+      // Flagged, above the groups, exactly as before.
+      list.append(row({ id: wanted, source: "missing" }, picker, true));
+    }
   }
 
-  // Local, cloud or a hosted vendor; the badge on each row says which.
-  const heading = document.createElement("p");
-  heading.className = "picker__group";
-  heading.textContent = t("ollama");
-  list.append(heading);
+  for (const source of SOURCES) {
+    const group = rows.filter((model) => model.source === source);
 
-  for (const model of options) {
-    list.append(row(model, picker, model.id === wanted));
+    if (!group.length) continue;
+
+    list.append(groupHeading(source));
+
+    for (const model of group) {
+      list.append(row(model, picker, model.id === wanted));
+    }
   }
 
-  paintCurrent(picker, chosen, wanted);
+  paintCurrent(picker, chosen ?? rows.find((model) => model.id === wanted), wanted);
 }
 
 function row(model, picker, active) {
