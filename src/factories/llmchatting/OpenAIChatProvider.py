@@ -22,6 +22,13 @@ class OpenAIChatProvider(LLMChattingInterface):
     # anywhere near OpenAI.
     _VENDOR = "OpenAI"
 
+    # What this endpoint calls the output cap. OpenAI deprecated max_tokens and
+    # *requires* max_completion_tokens on its reasoning models, so that is the
+    # default — but it is not universal across OpenAI-compatible servers, and a
+    # server whose schema forbids unknown fields answers 400 extra_forbidden
+    # rather than ignoring it. Hence a name a subclass can change.
+    _MAX_TOKENS_FIELD = "max_completion_tokens"
+
     def __init__(
         self, api_key: str, model_id: str, base_url: str | None = None, **kwargs
     ) -> None:
@@ -40,9 +47,8 @@ class OpenAIChatProvider(LLMChattingInterface):
             response = await self.client.chat.completions.create(
                 model=self.model_id,
                 messages=messages,
-                # max_completion_tokens, not the deprecated max_tokens.
-                max_completion_tokens=max_tokens,
                 temperature=temperature,
+                **{self._MAX_TOKENS_FIELD: max_tokens},
             )
 
         except Exception as exc:
@@ -95,9 +101,9 @@ class OpenAIChatProvider(LLMChattingInterface):
             stream = await self.client.chat.completions.create(
                 model=self.model_id,
                 messages=messages,
-                max_completion_tokens=max_tokens,
                 temperature=temperature,
                 stream=True,
+                **{self._MAX_TOKENS_FIELD: max_tokens},
                 # Usage is omitted from a streamed response unless asked for,
                 # and _log_usage is the only reason this provider looks at it.
                 stream_options={"include_usage": True},

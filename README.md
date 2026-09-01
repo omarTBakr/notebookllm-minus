@@ -53,6 +53,7 @@ startup with the full list rather than on first use. The ones worth knowing abou
 | `GENERATION_BACKEND` | `anthropic` · `openai` · `google` · `cohere` · `nvidia` · `ollama` |
 | `EMBEDDING_BACKEND` | the same minus `anthropic`, which ships no embeddings API |
 | `GENERATION_MODEL_ID` / `EMBEDDING_MODEL_ID` | named the way the vendor names them (`gemma4:e4b`, `nvidia/nemotron-3-embed-1b`) |
+| `GENERATION_DEFAULT_MAX_TOKENS` | output cap. Sent as `max_tokens` to NVIDIA and `max_completion_tokens` to OpenAI — several NIM schemas reject the newer name outright |
 | `EMBEDDING_MODEL_SIZE` | **must match the model** — it is baked into the collection at creation |
 | `PDF_LOADER` | `pymupdf` (default) · `pypdf` · `pdfplumber` |
 | `OLLAMA_HOST` / `OLLAMA_PORT` | where `ollama serve` is listening |
@@ -267,13 +268,28 @@ of belonging in the embedding list. `/api/show` reports real capabilities where 
 does not, and `completion` / `embedding` decide. A model reporting neither is offered for
 chat, the one thing every model can do.
 
-**NVIDIA models are filtered to what the key can call.** `/v1/models` lists NVIDIA's whole
-catalogue, but an account may call a fraction of it and the rest answer `404 Function …: Not
-found for account` only once chosen. Entitlement is checked before body validation, so
-posting an empty `messages` list separates them for free — 400 means callable, 404 means not
-yours, neither runs inference. Embedding NIMs refuse `/chat/completions`, so they are probed
-on `/embeddings` instead, which also yields the vector width. Verdicts are cached on the
-class, so the first catalogue call after a restart pays for it and later ones are a lookup.
+**NVIDIA models are filtered to the ones that actually answer**, in two passes, because
+entitlement and usability are different questions and only the first is free.
+
+`/v1/models` lists NVIDIA's whole catalogue, but an account may call a fraction of it and the
+rest answer `404 Function …: Not found for account` only once chosen. Entitlement is checked
+before body validation, so posting an empty `messages` list separates them at no cost — 400
+means reachable, 404 means not yours, neither runs inference.
+
+Passing that says nothing about whether a model accepts the request this application sends.
+Of the twenty that reach the second pass, several reject the output-cap field outright
+(`extra_forbidden`), some are not chat models and answer 500, and some never answer at all.
+So the survivors are asked for one token using the same field names the provider sends —
+read from the provider class, so the probe cannot test a shape the provider no longer uses.
+
+A **timeout is not cached** as a refusal: a large model can miss the deadline waking up and
+answer comfortably once warm, and a remembered no would hide it until a restart. Definite
+verdicts are cached on the class, so the first catalogue call after a restart pays for the
+probing and later ones are a dict lookup.
+
+What survives is what responds — not what is useful. A safety classifier answers
+`{"User Safety": "safe"}` to anything, and that is a working endpoint by every mechanical
+test; excluding it would mean judging a model by its name.
 
 ## Database backends
 

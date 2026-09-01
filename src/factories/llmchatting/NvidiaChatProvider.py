@@ -21,3 +21,8 @@ class NvidiaChatProvider(OpenAIChatProvider):
     """
 
     _VENDOR = "NVIDIA"
+
+    # NIM schemas are strict about unknown fields, and several models reject
+    # max_completion_tokens outright — "extra_forbidden ... max_completion_tokens"
+    # is a 400, not a warning. max_tokens is accepted across the fleet.
+    _MAX_TOKENS_FIELD = "max_tokens"

@@ -370,9 +370,11 @@ class NvidiaModelController(ModelController):
     _PROBE_CONCURRENCY = 8
 
     # A model that has not answered by now is not one to offer: the catalogue
-    # is on the path of a page load. One model (openai/gpt-oss-20b) hangs for
-    # 45s rather than answering at all.
-    _PROBE_TIMEOUT = 8
+    # is on the path of a page load, and a model too slow to say "hi" in this
+    # long is too slow to hold a conversation. Several NIMs never answer at
+    # all — openai/gpt-oss-20b hangs for 45s, two of the guard models for
+    # longer — and excluding them is the point rather than a side effect.
+    _PROBE_TIMEOUT = 20
 
     def __init__(self, base_url: str | None = None) -> None:
         super().__init__(base_url=base_url, source=NVIDIA)
@@ -485,44 +487,85 @@ class NvidiaModelController(ModelController):
         only once a real request is made. Listing them all is what made the
         picker offer models that answer 404 the moment they are chosen.
 
-        The probe is free. An empty `messages` list is invalid for every
-        model, and NVIDIA checks entitlement *before* it validates the body:
-        a callable model answers 400 (body is wrong), an unavailable one 404
-        (model is not yours). Neither runs inference, and both come back in
-        about a third of a second.
+        Two passes, because entitlement and usability are different questions
+        and only the first one is free.
+
+        **Entitlement** costs nothing. An empty `messages` list is invalid for
+        every model, and NVIDIA checks access *before* it validates the body:
+        a reachable model answers 400 (your body is wrong), an unavailable one
+        404 (the model is not yours). Neither runs inference.
+
+        **Usability** needs a real request, because passing entitlement says
+        nothing about whether a model accepts the request this application
+        sends. Measured across the models that pass the first pass: some
+        reject the output-cap field outright ("extra_forbidden"), some are not
+        chat models at all and answer 500, and some never answer. All of them
+        used to sit in the picker looking selectable and fail on first use.
+
+        So the survivors are asked to generate one token, with the same field
+        names NvidiaChatProvider sends — taken from the provider class itself
+        rather than repeated here, so the probe cannot test a shape the
+        provider no longer uses.
         """
         semaphore = asyncio.Semaphore(self._PROBE_CONCURRENCY)
 
         async with httpx.AsyncClient(timeout=self._PROBE_TIMEOUT) as client:
 
-            async def callable_(model: dict) -> bool:
-                cached = self._access_cache.get(model["id"])
-                if cached is not None:
-                    return cached
-
-                allowed = False
-
+            async def ask(tag: str, body: dict) -> int | None:
+                """The status, or None when it never answered."""
                 try:
                     async with semaphore:
                         response = await client.post(
                             f"{self.base_url}/chat/completions",
                             headers=self._headers,
-                            json={"model": model["tag"], "messages": []},
+                            json={"model": tag, **body},
                         )
-                    # Anything that is not "not found for this account" means
-                    # the model is reachable; 400 is the body complaint we
-                    # deliberately provoked.
-                    allowed = response.status_code != 404
+                    return response.status_code
 
                 except Exception as exc:
-                    # A timeout is the third answer, and it is not a yes.
-                    self.logger.debug("Access probe failed for %r: %s", model["id"], exc)
+                    self.logger.debug("Probe failed for %r: %s", tag, exc)
+                    return None
 
-                self._access_cache[model["id"]] = allowed
+            async def usable(model: dict) -> bool:
+                cached = self._access_cache.get(model["id"])
+                if cached is not None:
+                    return cached
 
-                return allowed
+                # Free: is it ours at all?
+                entitled = await ask(model["tag"], {"messages": []})
 
-            verdicts = await asyncio.gather(*(callable_(m) for m in models))
+                if entitled is None:
+                    # Never answered. Not offered now, but not written down as
+                    # a no either: a large model can miss the deadline waking
+                    # up and answer comfortably once warm, and a cached no
+                    # would hide it until the process restarts.
+                    return False
+
+                if entitled == 404:
+                    ok = False
+                else:
+                    # One token, shaped exactly like a real request.
+                    from factories.llmchatting import NvidiaChatProvider
+
+                    status = await ask(
+                        model["tag"],
+                        {
+                            "messages": [{"role": "user", "content": "hi"}],
+                            "temperature": 0,
+                            NvidiaChatProvider._MAX_TOKENS_FIELD: 1,
+                        },
+                    )
+
+                    if status is None:
+                        return False      # same reasoning: no verdict recorded
+
+                    ok = status == 200
+
+                self._access_cache[model["id"]] = ok
+
+                return ok
+
+            verdicts = await asyncio.gather(*(usable(m) for m in models))
 
         return [model for model, ok in zip(models, verdicts) if ok]
 

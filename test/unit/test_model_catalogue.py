@@ -139,11 +139,17 @@ class _Response:
 
 
 class _Client:
-    """Answers each model with a canned status, or raises for a timeout."""
+    """Answers per model *and per stage*.
+
+    The probe asks twice: an empty `messages` list to test entitlement, then a
+    real one-token request to test that the model accepts the shape this
+    application sends. `statuses` maps a tag to (entitlement, usability); a
+    value of "timeout" raises instead of answering.
+    """
 
     def __init__(self, statuses):
         self.statuses = statuses
-        self.asked: list[str] = []
+        self.asked: list[tuple[str, str]] = []
 
     async def __aenter__(self):
         return self
@@ -153,9 +159,11 @@ class _Client:
 
     async def post(self, url, headers=None, json=None):
         model = json["model"]
-        self.asked.append(model)
+        stage = "entitlement" if not json.get("messages") else "usability"
+        self.asked.append((model, stage))
 
-        status = self.statuses.get(model, 404)
+        entitled, usable = self.statuses.get(model, (404, 404))
+        status = entitled if stage == "entitlement" else usable
 
         if status == "timeout":
             raise TimeoutError("no answer in time")
@@ -186,28 +194,75 @@ def _nv(tag):
     return {"id": f"nvidia/{tag}", "tag": tag, "source": "nvidia", "capabilities": None}
 
 
-@pytest.mark.parametrize("status, kept", [
-    # The body we send is invalid for every model, so 400 means "your request
-    # is wrong" — which is only reachable once entitlement has passed.
-    (400, True),
-    (404, False),
-    (200, True),
-    ("timeout", False),
+@pytest.mark.parametrize("statuses, kept, why", [
+    # Entitlement passes (400 = "your body is wrong", reachable) and the real
+    # request is accepted.
+    ((400, 200), True, "callable and accepts our request"),
+    # Not this account's model — the free pass alone settles it.
+    ((404, 200), False, "not entitled"),
+    # Entitled, but rejects the shape we send: several NIM schemas forbid
+    # unknown fields outright. This is the failure that reached a user as
+    # "extra_forbidden ... max_completion_tokens" *after* choosing the model.
+    ((400, 400), False, "rejects our request shape"),
+    # Entitled, but not a chat model at all.
+    ((400, 500), False, "not a chat model"),
+    # Never answers — too slow to hold a conversation.
+    ((400, "timeout"), False, "times out on a real request"),
+    (("timeout", 200), False, "times out on entitlement"),
 ])
-async def test_the_access_probe_reads_the_status(nvidia, status, kept):
-    controller, _ = nvidia({"meta/x": status})
+async def test_only_models_that_actually_answer_are_offered(nvidia, statuses, kept, why):
+    controller, _ = nvidia({"meta/x": statuses})
 
     usable = await controller._only_callable([_nv("meta/x")])
 
-    assert bool(usable) is kept
+    assert bool(usable) is kept, why
 
 
-async def test_only_callable_models_survive(nvidia):
-    controller, _ = nvidia({"meta/ok": 400, "vendor/nope": 404, "vendor/hangs": "timeout"})
+async def test_an_unentitled_model_costs_only_the_free_probe(nvidia):
+    """The real request runs inference; it must not be spent on a model the
+    account cannot call anyway."""
+    controller, client = nvidia({"vendor/nope": (404, 200)})
 
-    usable = await controller._only_callable(
-        [_nv("meta/ok"), _nv("vendor/nope"), _nv("vendor/hangs")]
-    )
+    await controller._only_callable([_nv("vendor/nope")])
+
+    assert [stage for _, stage in client.asked] == ["entitlement"]
+
+
+async def test_the_probe_sends_the_field_the_provider_sends(nvidia, monkeypatch):
+    """A probe testing a shape the provider no longer uses would pass models
+    that then fail on first use — which is exactly what happened."""
+    from factories.llmchatting import NvidiaChatProvider
+
+    sent = {}
+
+    controller, client = nvidia({"meta/x": (400, 200)})
+
+    original = client.post
+
+    async def capture(url, headers=None, json=None):
+        if json.get("messages"):
+            sent.update(json)
+        return await original(url, headers=headers, json=json)
+
+    client.post = capture
+
+    await controller._only_callable([_nv("meta/x")])
+
+    assert NvidiaChatProvider._MAX_TOKENS_FIELD in sent
+    assert sent[NvidiaChatProvider._MAX_TOKENS_FIELD] == 1
+
+
+async def test_only_working_models_survive(nvidia):
+    controller, _ = nvidia({
+        "meta/ok": (400, 200),
+        "vendor/nope": (404, 404),
+        "vendor/wrong-shape": (400, 400),
+        "vendor/hangs": (400, "timeout"),
+    })
+
+    usable = await controller._only_callable([
+        _nv("meta/ok"), _nv("vendor/nope"), _nv("vendor/wrong-shape"), _nv("vendor/hangs")
+    ])
 
     assert [m["tag"] for m in usable] == ["meta/ok"]
 
@@ -215,22 +270,36 @@ async def test_only_callable_models_survive(nvidia):
 async def test_the_verdict_is_cached_across_controllers(nvidia):
     """The routes build a controller per request; without the class-level
     cache the whole catalogue would be re-probed on every page load."""
-    controller, client = nvidia({"meta/ok": 400})
+    controller, client = nvidia({"meta/ok": (400, 200)})
 
     await controller._only_callable([_nv("meta/ok")])
     await NvidiaModelController()._only_callable([_nv("meta/ok")])
 
-    assert client.asked == ["meta/ok"]
+    assert [tag for tag, _ in client.asked] == ["meta/ok", "meta/ok"]  # both stages, once
+
+
+async def test_a_timeout_is_not_remembered_as_a_no(nvidia):
+    """A large model can miss the deadline waking up and answer comfortably
+    once warm. Caching that as a refusal would hide it until a restart."""
+    controller, client = nvidia({"meta/slow": (400, "timeout")})
+
+    await controller._only_callable([_nv("meta/slow")])
+    assert "nvidia/meta/slow" not in controller._access_cache
+
+    controller.statuses = None
+    client.statuses["meta/slow"] = (400, 200)
+
+    assert await controller._only_callable([_nv("meta/slow")])
 
 
 async def test_forget_probes_clears_the_access_cache(nvidia):
-    controller, client = nvidia({"meta/ok": 400})
+    controller, client = nvidia({"meta/ok": (400, 200)})
 
     await controller._only_callable([_nv("meta/ok")])
     ModelController.forget_probes()
     await controller._only_callable([_nv("meta/ok")])
 
-    assert client.asked == ["meta/ok", "meta/ok"]
+    assert len(client.asked) == 4      # both stages, twice
 
 
 # --- NVIDIA: which endpoint decides ------------------------------------------
@@ -258,7 +327,7 @@ async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(
     nvidia, monkeypatch
 ):
     """The name picks which endpoint to try first; the endpoint answers."""
-    controller, client = nvidia({"vendor/embed-but-chats": 400})
+    controller, client = nvidia({"vendor/embed-but-chats": (400, 200)})
 
     async def width(_):
         return None
@@ -269,7 +338,7 @@ async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(
 
     assert [m["tag"] for m in usable] == ["vendor/embed-but-chats"]
     assert usable[0]["capabilities"] is None      # chat, by elimination
-    assert client.asked == ["vendor/embed-but-chats"]
+    assert [tag for tag, _ in client.asked] == ["vendor/embed-but-chats"] * 2
 
 
 # --- the size a tag advertises ------------------------------------------------
