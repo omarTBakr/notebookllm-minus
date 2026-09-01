@@ -326,3 +326,133 @@ def test_everything_built_alternates(  ):
         assert roles[0] == ChatRole.USER.value
         assert roles[-1] == ChatRole.USER.value
         assert all(a != b for a, b in zip(roles, roles[1:])), roles
+
+
+# --- streaming over the OpenAI wire format ------------------------------------
+#
+# OpenAIChatProvider used to inherit the interface's fallback — generate the
+# whole answer, yield it once — so the UI sat empty for the length of a reply
+# and a reasoning model's scratchpad was never shown, a finished answer having
+# none left to show. NVIDIA's reasoning NIMs fill `reasoning_content` beside
+# `content` in the same stream.
+
+
+class _Delta:
+    def __init__(self, content=None, reasoning_content=None):
+        self.content = content
+        self.reasoning_content = reasoning_content
+
+
+class _Chunk:
+    def __init__(self, content=None, reasoning=None, usage=None):
+        self.choices = (
+            [] if content is None and reasoning is None and usage
+            else [type("Choice", (), {"delta": _Delta(content, reasoning)})()]
+        )
+        self.usage = usage
+
+
+class _Stream:
+    """What the SDK returns for stream=True: awaitable, then async-iterable."""
+
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.kwargs = None
+
+    def __await__(self):
+        async def _self():
+            return self
+        return _self().__await__()
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            yield chunk
+
+
+def _openai_client(chunks):
+    from factories.llmchatting import OpenAIChatProvider
+
+    client = OpenAIChatProvider(api_key="sk-test", model_id="m", base_url="http://x.invalid/v1")
+    stream = _Stream(chunks)
+
+    def create(**kwargs):
+        stream.kwargs = kwargs
+        return stream
+
+    client.client.chat.completions.create = create
+
+    return client, stream
+
+
+async def _collect(client, **kwargs):
+    return [piece async for piece in client.stream_text("q", **kwargs)]
+
+
+async def test_content_deltas_stream_as_content():
+    client, _ = _openai_client([_Chunk(content="Hel"), _Chunk(content="lo")])
+
+    pieces = await _collect(client)
+
+    assert pieces == [
+        {"kind": "content", "text": "Hel"},
+        {"kind": "content", "text": "lo"},
+    ]
+
+
+async def test_reasoning_deltas_stream_as_thinking():
+    """The scratchpad arrives on its own field, so nothing has to parse tags
+    out of the answer text."""
+    client, _ = _openai_client([
+        _Chunk(reasoning="let me think"),
+        _Chunk(reasoning=" a moment"),
+        _Chunk(content="391"),
+    ])
+
+    pieces = await _collect(client)
+
+    assert [p["kind"] for p in pieces] == ["thinking", "thinking", "content"]
+    assert "".join(p["text"] for p in pieces if p["kind"] == "content") == "391"
+
+
+async def test_empty_deltas_are_skipped():
+    """The first frame carries only the role and the last only a finish
+    reason; forwarding those would put empty strings in the answer."""
+    client, _ = _openai_client([_Chunk(content=None), _Chunk(content="x"), _Chunk(content="")])
+
+    assert await _collect(client) == [{"kind": "content", "text": "x"}]
+
+
+async def test_the_request_asks_for_a_stream_and_its_usage():
+    client, stream = _openai_client([_Chunk(content="x")])
+
+    await _collect(client, max_tokens=64, temperature=0.2)
+
+    assert stream.kwargs["stream"] is True
+    assert stream.kwargs["stream_options"] == {"include_usage": True}
+    assert stream.kwargs["max_completion_tokens"] == 64
+
+
+async def test_a_usage_only_frame_does_not_become_a_piece():
+    """It arrives after the last choice, with an empty choices list."""
+    usage = type("Usage", (), {"prompt_tokens": 11, "completion_tokens": 3})()
+    client, _ = _openai_client([_Chunk(content="x"), _Chunk(usage=usage)])
+
+    assert await _collect(client) == [{"kind": "content", "text": "x"}]
+
+
+async def test_a_mid_stream_failure_is_a_provider_error():
+    """Raised once the caller is already consuming — it still has to be the
+    type a non-streamed failure produces, or the route's error frame would
+    differ by transport."""
+    class _Boom(_Stream):
+        async def __aiter__(self):
+            yield _Chunk(content="partial")
+            raise RuntimeError("connection reset")
+
+    from factories.llmchatting import OpenAIChatProvider
+
+    client = OpenAIChatProvider(api_key="sk-test", model_id="m", base_url="http://x.invalid/v1")
+    client.client.chat.completions.create = lambda **kw: _Boom([])
+
+    with pytest.raises(LLMProviderError, match="streaming failed"):
+        await _collect(client)

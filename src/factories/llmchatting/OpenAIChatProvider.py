@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 from openai import AsyncOpenAI  # ty: ignore[unresolved-import]
 
 from exceptions import LLMProviderError
@@ -72,3 +74,60 @@ class OpenAIChatProvider(LLMChattingInterface):
             )
 
         return text
+
+    async def _stream_text(
+        self, messages: list[dict], max_tokens: int, temperature: float
+    ) -> AsyncIterator[dict]:
+        """The same call with ``stream=True``, in pieces as they arrive.
+
+        Without this the interface's fallback applies: generate the whole
+        answer, yield it once. Correct, but the UI then sits empty for the
+        length of the reply and a reasoning model's scratchpad is never shown
+        at all, because a finished answer no longer has one.
+
+        Reasoning arrives on its own field. OpenAI-compatible servers put it
+        in ``reasoning_content`` beside ``content`` — NVIDIA's reasoning NIMs
+        fill both in the same stream — so the two map straight onto the
+        thinking/content split the interface already defines, and nothing
+        needs to parse tags out of the answer text.
+        """
+        try:
+            stream = await self.client.chat.completions.create(
+                model=self.model_id,
+                messages=messages,
+                max_completion_tokens=max_tokens,
+                temperature=temperature,
+                stream=True,
+                # Usage is omitted from a streamed response unless asked for,
+                # and _log_usage is the only reason this provider looks at it.
+                stream_options={"include_usage": True},
+            )
+
+            async for chunk in stream:
+                usage = getattr(chunk, "usage", None)
+                if usage:
+                    self._log_usage(
+                        getattr(usage, "prompt_tokens", None),
+                        getattr(usage, "completion_tokens", None),
+                    )
+
+                if not chunk.choices:
+                    # The usage-only frame arrives after the last choice.
+                    continue
+
+                delta = chunk.choices[0].delta
+
+                reasoning = getattr(delta, "reasoning_content", None)
+                if reasoning:
+                    yield {"kind": "thinking", "text": reasoning}
+
+                # Empty deltas are ordinary — the first frame carries only the
+                # role, the last only a finish reason.
+                if delta.content:
+                    yield {"kind": "content", "text": delta.content}
+
+        except Exception as exc:
+            # Raised mid-iteration, once the caller is already consuming, so
+            # it still has to be the same error type a non-streamed failure
+            # produces or the route's error frame would differ by transport.
+            raise LLMProviderError(f"{self._VENDOR} streaming failed: {exc}") from exc

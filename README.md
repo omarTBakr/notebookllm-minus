@@ -216,6 +216,14 @@ abandoned stored a question and never an answer, and history is a window of the 
 `CHAT_HISTORY_LIMIT` messages that can open mid-exchange. Consecutive same-role turns are
 joined rather than dropped, because an unanswered question is context for the next one.
 
+**Streaming is per provider.** `stream_text()` is concrete on the interface and yields
+`{"kind": "thinking" | "content"}` pieces; a provider that cannot stream inherits a fallback
+that generates the whole answer and yields it once, so the endpoint works either way and only
+latency differs. Ollama and the OpenAI wire format (so OpenAI and NVIDIA) stream for real.
+Reasoning arrives on its own field — Ollama's `thinking`, `reasoning_content` on an
+OpenAI-compatible server — which is why the scratchpad never has to be parsed back out of the
+answer text.
+
 **Embeddings are batch-first**, and two failures are caught at the boundary: a count mismatch
 (vectors are zipped against chunk ids by position, so one dropped vector silently misaligns
 everything after it) and a width mismatch against `EMBEDDING_MODEL_SIZE`, which would
