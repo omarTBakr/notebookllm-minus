@@ -12,8 +12,14 @@
 #
 # The remote user needs passwordless sudo for exactly the restart, e.g. in
 # /etc/sudoers.d/notebookllm:
-#   omar ALL=(root) NOPASSWD: /usr/bin/systemctl restart notebookllm-minus, \
-#                             /usr/bin/systemctl is-active notebookllm-minus
+#   omar ALL=(root) NOPASSWD: /usr/bin/systemctl restart notebookllm-minus
+#
+# It has to match what runs below character for character — a rule naming
+# /bin/systemctl, or "notebookllm-minus.service", does not match and sudo
+# falls back to asking for a password that no runner can type. Check it with
+#   ssh <user>@<host> 'sudo -n -l'
+# which lists exactly what is allowed without one. Only `restart` needs sudo;
+# is-active and status are readable by any user.
 
 name: Github-Actions
 
@@ -105,7 +111,11 @@ jobs:
             # on it by a script nobody is watching.
             git pull --ff-only
 
-            sudo systemctl restart "$SERVICE"
+            # Absolute path, deliberately: sudoers matches the command as
+            # written, so `sudo systemctl` resolved through PATH may or may
+            # not equal the /usr/bin/systemctl a NOPASSWD rule names. The
+            # rule must spell this identically, argument for argument.
+            sudo -n /usr/bin/systemctl restart "$SERVICE"
 
             # restart returns once ExecStart has finished, but "finished" for a
             # oneshot unit only means compose exited 0 — ask the unit what it
