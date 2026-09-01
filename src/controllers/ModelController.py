@@ -17,6 +17,7 @@ so `catalogue` merges them without knowing which is which.
 """
 
 import asyncio
+import re
 
 import httpx  # ty: ignore[unresolved-import]
 
@@ -346,6 +347,14 @@ class NvidiaModelController(ModelController):
     looks like an embedding model but cannot embed is still excluded.
     """
 
+    # "llama-3.2-11b-vision", "nemotron-3-super-120b-a12b", "gpt-oss-120b".
+    # NVIDIA publishes no parameter count, but nearly every tag carries one.
+    # Anchored on a digit run followed by "b" at a token boundary, so the
+    # version in "llama-3.2" is not read as a size, and the first match wins:
+    # a mixture-of-experts tag names its total before its active count
+    # ("120b-a12b" is a 120B model), and the total is the useful number.
+    _PARAMETERS = re.compile(r"(?:^|[-_/])(\d+(?:\.\d+)?)b(?=$|[-_/])")
+
     # Substrings that make a model worth an embed probe. A heuristic on the
     # *candidate set* only: the answer still comes from the endpoint.
     _EMBEDDING_HINTS = ("embed", "retriev")
@@ -407,7 +416,7 @@ class NvidiaModelController(ModelController):
                     # API publishes neither family nor parameter count.
                     "size_gb": None,
                     "family": (tag.split("/")[0] if "/" in tag else None),
-                    "parameters": None,
+                    "parameters": self._parameters_of(tag),
                     "capabilities": None,
                 }
             )
@@ -516,6 +525,19 @@ class NvidiaModelController(ModelController):
             verdicts = await asyncio.gather(*(callable_(m) for m in models))
 
         return [model for model, ok in zip(models, verdicts) if ok]
+
+    @classmethod
+    def _parameters_of(cls, tag: str) -> str | None:
+        """The parameter count a tag advertises, in Ollama's spelling.
+
+        Returned as "11B" rather than a number so the picker can treat every
+        source's value the same way — Ollama reports "8.0B" from the tag list,
+        and a model that names no size (minimax-m3, nemotron-parse) reports
+        nothing here rather than a guess.
+        """
+        match = cls._PARAMETERS.search(tag.lower())
+
+        return f"{match.group(1)}B".upper() if match else None
 
     async def _probe_all(self, models: list[dict]) -> list[dict]:
         """Widths for the plausible embedding models, in order.

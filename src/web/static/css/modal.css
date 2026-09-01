@@ -173,10 +173,29 @@
 .picker__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .picker__dims { flex: none; font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
+/* The size band inside a source group: subordinate to it, so indented and
+   quieter than the source heading it sits under. */
+.picker__group--size {
+  padding-inline-start: 18px;
+  font-size: 11px;
+  opacity: 0.75;
+  text-transform: none;
+}
+
+/* Parameter count, in the same idiom as the vector width beside it — .name
+   already carries flex:1, so both simply sit at the right edge in order. */
+.picker__params {
+  flex: none;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Same micro-caps pill idiom as .soon-tag in base.css. */
 .model-tag { flex: none; }
 .model-tag--local { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
 .model-tag--web   { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+
 .model-tag--vendor { background: color-mix(in srgb, var(--vendor) 18%, transparent); color: var(--vendor); }
 .model-tag--missing { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 

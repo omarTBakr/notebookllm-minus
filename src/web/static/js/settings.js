@@ -163,6 +163,58 @@ function knownElsewhere(id) {
     .some((model) => model.id === id);
 }
 
+// --- parameter size ----------------------------------------------------------
+
+/** "8.0B" / "37.76M" / "11B" -> billions of parameters, or null.
+ *
+ * Both sources speak this spelling: Ollama reports it in its tag list, and
+ * NvidiaModelController parses it out of the model name, since NVIDIA
+ * publishes no count of its own. A model that advertises no size gets null
+ * and sorts last, rather than being guessed at.
+ */
+function billions(parameters) {
+  const match = /^([\d.]+)\s*([BM])$/i.exec(String(parameters ?? "").trim());
+
+  if (!match) return null;
+
+  const value = Number(match[1]);
+
+  if (!Number.isFinite(value)) return null;
+
+  return match[2].toUpperCase() === "M" ? value / 1000 : value;
+}
+
+/** The size bands the picker groups by, in order — first match wins.
+ *
+ * Written as predicates rather than upper bounds because the boundaries are
+ * not uniform: "under 8B" excludes 8B and "8B – 30B" includes 30B, so one
+ * shared comparison would file a 30B model under "over 30B" and contradict
+ * the heading directly above it.
+ */
+const SIZE_BANDS = [
+  { key: "sizeSmall", holds: (size) => size < 8 },
+  { key: "sizeMedium", holds: (size) => size <= 30 },
+  { key: "sizeLarge", holds: () => true },
+];
+
+const UNKNOWN_BAND = { key: "sizeUnknown", holds: () => false };
+
+function bandOf(model) {
+  const size = billions(model.parameters);
+
+  if (size === null) return UNKNOWN_BAND;
+
+  return SIZE_BANDS.find((band) => band.holds(size)) ?? SIZE_BANDS.at(-1);
+}
+
+function subHeading(band) {
+  const heading = document.createElement("p");
+  heading.className = "picker__group picker__group--size";
+  heading.textContent = t(band.key);
+
+  return heading;
+}
+
 function groupHeading(source) {
   const heading = document.createElement("p");
   heading.className = "picker__group";
@@ -210,8 +262,21 @@ function fill(picker, options, selected) {
 
     list.append(groupHeading(source));
 
-    for (const model of group) {
-      list.append(row(model, picker, model.id === wanted));
+    // Then by size within the source: a second heading per band, smallest
+    // first, and the bands that hold nothing are not drawn.
+    for (const band of [...SIZE_BANDS, UNKNOWN_BAND]) {
+      const banded = group
+        .filter((model) => bandOf(model) === band)
+        .sort((a, b) => (billions(a.parameters) ?? 0) - (billions(b.parameters) ?? 0)
+                        || a.id.localeCompare(b.id));
+
+      if (!banded.length) continue;
+
+      list.append(subHeading(band));
+
+      for (const model of banded) {
+        list.append(row(model, picker, model.id === wanted));
+      }
     }
   }
 
@@ -231,6 +296,13 @@ function row(model, picker, active) {
   name.textContent = prettyModel(model.id);
 
   option.append(name, badge(model.source));
+
+  if (model.parameters) {
+    const size = document.createElement("span");
+    size.className = "picker__params";
+    size.textContent = model.parameters;
+    option.append(size);
+  }
 
   if (model.dimensions) {
     const dims = document.createElement("span");

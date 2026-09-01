@@ -270,3 +270,29 @@ async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(
     assert [m["tag"] for m in usable] == ["vendor/embed-but-chats"]
     assert usable[0]["capabilities"] is None      # chat, by elimination
     assert client.asked == ["vendor/embed-but-chats"]
+
+
+# --- the size a tag advertises ------------------------------------------------
+#
+# NVIDIA publishes no parameter count, but nearly every tag carries one, and
+# the picker groups by size. Ollama reports its own, so only this side needs
+# reading out of the name.
+
+
+@pytest.mark.parametrize("tag, parameters", [
+    ("meta/llama-3.2-11b-vision-instruct", "11B"),
+    ("openai/gpt-oss-120b", "120B"),
+    ("nvidia/riva-translate-4b-instruct-v2", "4B"),
+    # A mixture-of-experts tag names its total before its active count; the
+    # total is the number worth showing.
+    ("nvidia/nemotron-3-super-120b-a12b", "120B"),
+    ("google/diffusiongemma-26b-a4b-it", "26B"),
+    # The version is not a size: "llama-3.2" and "1.5" must not be read as one.
+    ("nvidia/ising-calibration-1.5-31b", "31B"),
+    # Nothing advertised — reported as unknown rather than guessed.
+    ("minimaxai/minimax-m3", None),
+    ("nvidia/nemotron-parse", None),
+    ("poolside/laguna-xs-2.1", None),
+])
+def test_parameters_are_read_from_the_tag(tag, parameters):
+    assert NvidiaModelController._parameters_of(tag) == parameters
