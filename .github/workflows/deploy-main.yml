@@ -74,17 +74,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          install -m 700 -d ~/.sshb 
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          # Written once and reused, rather than spelled out at each use: a
+          # typo in one of four literal ~/.ssh paths creates a plausible
+          # directory, exits 0, and fails two lines later on a redirect.
+          KEY_DIR="$HOME/.ssh"
+          KEY_FILE="$KEY_DIR/deploy_key"
+
+          install -m 700 -d "$KEY_DIR"
+          printf '%s\n' "$SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
 
           # Trust on first use: a GitHub runner is a fresh machine every time,
           # so there is no known_hosts to compare against and pinning a
           # fingerprint here would only move the secret. StrictHostKeyChecking
           # stays on for the session itself.
-          ssh-keyscan -T 10 "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if ! ssh-keyscan -T 10 "$HOST" >> "$KEY_DIR/known_hosts" 2>/dev/null \
+             || ! [ -s "$KEY_DIR/known_hosts" ]; then
+            echo "::error::no host key from $HOST — is the box up, and is port 22" \
+                 "open to GitHub's runners? (their IPs are dynamic)"
+            exit 1
+          fi
 
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+          ssh -i "$KEY_FILE" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               "$REMOTE_USER@$HOST" \
               "REMOTE_DIR='$REMOTE_DIR' SERVICE='$SERVICE' bash -euo pipefail -s" <<'REMOTE'
             cd "$REMOTE_DIR"
