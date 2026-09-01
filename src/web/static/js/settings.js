@@ -311,6 +311,10 @@ async function saveSettings(patch) {
     const result = await api.setSettings(state.notebook.chat_id, patch);
     Object.assign(state.notebook, result);
     status(t("saved"));
+    // No repaint here on purpose: these come from sliders and a color input,
+    // which already show their own value, and redrawing mid-drag would fight
+    // the thumb. The model pickers are the opposite case — nothing else
+    // updates them.
   } catch (error) {
     status(error.message);
     showFor(state.notebook);
@@ -326,6 +330,13 @@ async function saveModels(patch, { rebuilds } = {}) {
   try {
     const result = await api.setModels(state.notebook.chat_id, patch);
     Object.assign(state.notebook, result);
+
+    // Repaint from the saved notebook. Without this the request succeeded and
+    // nothing on screen moved: the picker face still named the old model and
+    // the footer still echoed it, so the only way to see that a choice had
+    // taken was to reload the page. The failure path has always repainted —
+    // it was the success path that left the UI lying.
+    showFor(state.notebook);
 
     status(
       result.reindexed_chunks

@@ -54,11 +54,28 @@ def test_split_system_returns_none_when_there_is_no_system_turn():
 
 def test_build_messages_appends_the_prompt_to_the_history():
     client = FakeChatClient()
+    history = [
+        LLMChattingInterface.construct_message(ChatRole.USER, "earlier"),
+        LLMChattingInterface.construct_message(ChatRole.ASSISTANT, "a reply"),
+    ]
+
+    built = client._build_messages("now", history)
+
+    assert [m["content"] for m in built] == ["earlier", "a reply", "now"]
+
+
+def test_an_unanswered_question_is_joined_to_the_next_one():
+    """Two user turns in a row is what a failed or abandoned stream leaves
+    behind — the question was stored, the answer never was. It used to go out
+    as-is, which NVIDIA and Anthropic both reject, so one failed answer broke
+    every later message in that chat."""
+    client = FakeChatClient()
     history = [LLMChattingInterface.construct_message(ChatRole.USER, "earlier")]
 
     built = client._build_messages("now", history)
 
-    assert [m["content"] for m in built] == ["earlier", "now"]
+    assert [m["role"] for m in built] == [ChatRole.USER.value]
+    assert built[0]["content"] == "earlier\n\nnow"
 
 
 # --- generate and stream ------------------------------------------------------
@@ -222,3 +239,90 @@ def test_nvidia_errors_name_nvidia_not_openai(settings):
     ).create(provider="nvidia")
 
     assert client._VENDOR == "NVIDIA"
+
+
+# --- strict alternation -------------------------------------------------------
+#
+# "Conversation roles must alternate user/assistant/user/assistant/..." — a 400
+# from NVIDIA, and the same requirement Anthropic has. Ollama accepts anything,
+# which is why this went unnoticed for so long.
+
+
+def _turns(built):
+    return [(m["role"], m["content"]) for m in built]
+
+
+def test_a_history_opening_on_a_reply_drops_it():
+    """History is the last CHAT_HISTORY_LIMIT messages, so the window can begin
+    mid-exchange — leading with an answer to a question the model cannot see."""
+    client = FakeChatClient()
+    history = [
+        LLMChattingInterface.construct_message(ChatRole.ASSISTANT, "answer to something older"),
+        LLMChattingInterface.construct_message(ChatRole.USER, "q1"),
+        LLMChattingInterface.construct_message(ChatRole.ASSISTANT, "a1"),
+    ]
+
+    built = client._build_messages("now", history)
+
+    assert _turns(built) == [
+        (ChatRole.USER.value, "q1"),
+        (ChatRole.ASSISTANT.value, "a1"),
+        (ChatRole.USER.value, "now"),
+    ]
+
+
+def test_the_system_turn_stays_at_the_front():
+    client = FakeChatClient()
+    history = [
+        LLMChattingInterface.construct_message(ChatRole.SYSTEM, "be terse"),
+        LLMChattingInterface.construct_message(ChatRole.ASSISTANT, "stray"),
+    ]
+
+    built = client._build_messages("now", history)
+
+    assert _turns(built) == [
+        (ChatRole.SYSTEM.value, "be terse"),
+        (ChatRole.USER.value, "now"),
+    ]
+
+
+def test_consecutive_assistant_turns_are_joined():
+    client = FakeChatClient()
+    history = [
+        LLMChattingInterface.construct_message(ChatRole.USER, "q1"),
+        LLMChattingInterface.construct_message(ChatRole.ASSISTANT, "part one"),
+        LLMChattingInterface.construct_message(ChatRole.ASSISTANT, "part two"),
+    ]
+
+    built = client._build_messages("now", history)
+
+    assert _turns(built) == [
+        (ChatRole.USER.value, "q1"),
+        (ChatRole.ASSISTANT.value, "part one\n\npart two"),
+        (ChatRole.USER.value, "now"),
+    ]
+
+
+def test_everything_built_alternates(  ):
+    """The invariant itself, over the shapes this application actually makes."""
+    client = FakeChatClient()
+
+    histories = [
+        [],
+        [LLMChattingInterface.construct_message(ChatRole.USER, "q")],
+        [LLMChattingInterface.construct_message(ChatRole.ASSISTANT, "a")],
+        [
+            LLMChattingInterface.construct_message(ChatRole.SYSTEM, "s"),
+            LLMChattingInterface.construct_message(ChatRole.ASSISTANT, "a"),
+            LLMChattingInterface.construct_message(ChatRole.USER, "q1"),
+            LLMChattingInterface.construct_message(ChatRole.USER, "q2"),
+        ],
+    ]
+
+    for history in histories:
+        roles = [m["role"] for m in client._build_messages("now", history)
+                 if m["role"] != ChatRole.SYSTEM.value]
+
+        assert roles[0] == ChatRole.USER.value
+        assert roles[-1] == ChatRole.USER.value
+        assert all(a != b for a, b in zip(roles, roles[1:])), roles

@@ -283,12 +283,59 @@ class LLMChattingInterface(ABC):
         return {"role": ChatRole(role).value, "content": content}
 
     def _build_messages(self, prompt: str, chat_history: list[dict] | None) -> list[dict]:
-        """History plus the new user turn, in neutral form."""
+        """History plus the new user turn, in neutral form and strictly alternating."""
         messages = list(chat_history or [])
 
         messages.append(self.construct_message(ChatRole.USER, prompt))
 
-        return messages
+        return self._alternate(messages)
+
+    @staticmethod
+    def _alternate(messages: list[dict]) -> list[dict]:
+        """Force user/assistant/user/... after the system turns.
+
+        Ollama accepts any shape, so this stayed broken for a long time. Most
+        hosted templates do not: NVIDIA answers
+
+            400 Conversation roles must alternate user/assistant/user/...
+
+        and Anthropic has the same requirement. Two things in this application
+        produce a shape those reject, and neither is a caller bug:
+
+        * **An unanswered question.** A stream that fails or is abandoned has
+          already stored its user message and never stores an assistant reply,
+          so the history ends on a user turn and the next question makes two
+          in a row. One failed answer would otherwise poison a conversation
+          permanently — every later message in that chat 400s the same way.
+        * **A window that opens on a reply.** History is the last
+          CHAT_HISTORY_LIMIT messages, and that slice can begin mid-exchange,
+          leading with an assistant turn that answers a question the model
+          cannot see.
+
+        Consecutive turns of one role are joined rather than dropped: an
+        unanswered question is context for the one that follows it, and losing
+        it silently would be worse than a slightly long user turn.
+        """
+        system = [m for m in messages if m["role"] == ChatRole.SYSTEM.value]
+        turns = [m for m in messages if m["role"] != ChatRole.SYSTEM.value]
+
+        # A conversation opens on a user turn; an assistant turn before one is
+        # a reply to something outside the window.
+        while turns and turns[0]["role"] == ChatRole.ASSISTANT.value:
+            turns.pop(0)
+
+        merged: list[dict] = []
+
+        for turn in turns:
+            if merged and merged[-1]["role"] == turn["role"]:
+                merged[-1] = {
+                    **merged[-1],
+                    "content": f"{merged[-1]['content']}\n\n{turn['content']}",
+                }
+            else:
+                merged.append(dict(turn))
+
+        return system + merged
 
     @staticmethod
     def _split_system(messages: list[dict]) -> tuple[str | None, list[dict]]:
