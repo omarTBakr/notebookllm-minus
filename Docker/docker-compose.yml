@@ -141,6 +141,14 @@ services:
       - prometheus:/prometheus
     networks:
       - backend
+    extra_hosts:
+      # The `node` job scrapes host.docker.internal:9100, where node_exporter
+      # runs on the host rather than in this stack. Docker Desktop provides
+      # that name for free, so this was only ever needed on Linux — where the
+      # name does not resolve at all, and the job sat permanently DOWN with a
+      # DNS error while every other target was green. Same mapping the fastapi
+      # service already uses to reach the host's Ollama.
+      - "host.docker.internal:host-gateway"
     depends_on:
       - fastapi
 
