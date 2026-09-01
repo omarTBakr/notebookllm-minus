@@ -1,4 +1,4 @@
-"""Which Ollama a model lives on, encoded in the model id itself.
+"""Where a model lives, encoded in the model id itself.
 
 There can be two Ollama hosts — the local one and a second reached over the
 network (OLLAMA_CLOUD_BASE_URL). Both are Ollama, so a tag alone no longer
@@ -6,14 +6,30 @@ identifies a model: the same tag can be pulled on both, and they are different
 models to us. Ids are therefore qualified — "local/llama3.1:8b",
 "cloud/gemma4:latest".
 
+A hosted vendor joins the same scheme: "nvidia/meta/llama-3.2-11b-vision-instruct"
+is NVIDIA's, and the prefix is what tells ProviderCache to build an NVIDIA
+client rather than an Ollama one. NVIDIA's own ids contain a slash (the
+publisher), which costs nothing here — only the *first* segment is read as a
+source, and the rest is handed back whole.
+
 This lives in utils rather than beside ModelController because both the
 controllers and the provider factories need it, and controllers already import
 factories — putting it in either would close the loop.
 """
 
+from enums import LLMChattingProvider
+
 LOCAL = "local"
 CLOUD = "cloud"
-SOURCES = (LOCAL, CLOUD)
+NVIDIA = "nvidia"
+
+# Every prefix an id may carry. The first two are Ollama hosts; NVIDIA is a
+# hosted vendor, which is why `backend_for` exists below — the prefix now picks
+# the *provider*, not just which machine to ask.
+SOURCES = (LOCAL, CLOUD, NVIDIA)
+
+# The subset that is Ollama, and therefore has a base URL to point a client at.
+OLLAMA_SOURCES = (LOCAL, CLOUD)
 
 
 def split_source(model_id: str) -> tuple[str, str]:
@@ -37,16 +53,34 @@ def qualify(source: str, tag: str) -> str:
     return f"{source}/{tag}"
 
 
+def backend_for(source: str) -> str:
+    """The provider backend an id's *source* names.
+
+    The two Ollama sources differ only in which host answers, so both are
+    "ollama"; a vendor prefix is the backend itself. This is what lets one
+    chat run on a local model while the next runs on NVIDIA, without either
+    touching GENERATION_BACKEND in .env.
+    """
+    return LLMChattingProvider.OLLAMA.value if source in OLLAMA_SOURCES else source
+
+
 def host_for(settings, source: str) -> str:
     """The Ollama base URL that *source* names.
 
     Raises rather than falling back to the local host: a chat set to a cloud
     model would otherwise ask localhost for a model it never pulled, and the
-    resulting "model not found" says nothing about the real problem.
+    resulting "model not found" says nothing about the real problem. Asking
+    for a non-Ollama source's host is a caller bug, and says so.
     """
     # Imported here: exceptions is a leaf, but utils is imported by almost
     # everything and a module-level import would widen its import graph.
     from exceptions import LLMProviderError
+
+    if source not in OLLAMA_SOURCES:
+        raise LLMProviderError(
+            f"{source!r} is not an Ollama source, so it has no Ollama host "
+            f"(expected one of {OLLAMA_SOURCES})"
+        )
 
     if source != CLOUD:
         return settings.ollama_base_url

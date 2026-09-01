@@ -9,9 +9,21 @@ request and leaking pools.
 Keyed on the qualified model id ("local/llama3.1:8b"), so switching a chat back
 to a model already in use costs a dict lookup — and the same tag on two
 different Ollama hosts stays two different clients.
+
+The prefix also picks the *provider*: "nvidia/..." builds an NVIDIA client
+even when GENERATION_BACKEND says ollama. That is what lets one notebook run
+on a local model and the next on a hosted one, which a single global backend
+setting could not express.
 """
 
-from utils import Settings, get_logger, host_for, split_source
+from utils import (
+    OLLAMA_SOURCES,
+    Settings,
+    backend_for,
+    get_logger,
+    host_for,
+    split_source,
+)
 
 from .llmchatting import LLMChattingFactory, LLMChattingInterface
 from .llmembedding import LLMEmbeddingFactory, LLMEmbeddingInterface
@@ -29,6 +41,20 @@ class ProviderCache:
         self._chatting: dict[str, LLMChattingInterface] = {}
         self._embedding: dict[tuple[str, int], LLMEmbeddingInterface] = {}
 
+    def _for_source(self, source: str, backend_field: str, **overrides) -> Settings:
+        """A copy of Settings describing *source* rather than .env's default.
+
+        The backend comes from the id's prefix, and an Ollama host is resolved
+        only for the sources that have one — asking host_for about a vendor
+        prefix is a caller bug it will raise on.
+        """
+        update = {backend_field: backend_for(source), **overrides}
+
+        if source in OLLAMA_SOURCES:
+            update["OLLAMA_BASE_URL_OVERRIDE"] = host_for(self.settings, source)
+
+        return self.settings.model_copy(update=update)
+
     # --- chatting -------------------------------------------------------------
 
     def chatting(self, model_id: str | None = None) -> LLMChattingInterface:
@@ -40,18 +66,13 @@ class ProviderCache:
         if cached is not None:
             return cached
 
-        # A shallow copy of Settings with the model and its host swapped: the
-        # factory reads every other knob (backend, key, temperature) from it,
-        # so this overrides two fields without duplicating that logic — and
-        # without the provider classes learning there are two hosts at all.
+        # A shallow copy of Settings with the model, its backend and its host
+        # swapped: the factory reads every other knob (keys, temperature) from
+        # it, so this overrides only what the id decides — and without the
+        # provider classes learning that a chat can name a host or a vendor.
         source, tag = split_source(resolved)
 
-        settings = self.settings.model_copy(
-            update={
-                "GENERATION_MODEL_ID": tag,
-                "OLLAMA_BASE_URL_OVERRIDE": host_for(self.settings, source),
-            }
-        )
+        settings = self._for_source(source, "GENERATION_BACKEND", GENERATION_MODEL_ID=tag)
 
         client = LLMChattingFactory(settings).create()
 
@@ -81,12 +102,11 @@ class ProviderCache:
 
         source, tag = split_source(resolved)
 
-        settings = self.settings.model_copy(
-            update={
-                "EMBEDDING_MODEL_ID": tag,
-                "EMBEDDING_MODEL_SIZE": size,
-                "OLLAMA_BASE_URL_OVERRIDE": host_for(self.settings, source),
-            }
+        settings = self._for_source(
+            source,
+            "EMBEDDING_BACKEND",
+            EMBEDDING_MODEL_ID=tag,
+            EMBEDDING_MODEL_SIZE=size,
         )
 
         client = LLMEmbeddingFactory(settings).create()

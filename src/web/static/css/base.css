@@ -15,6 +15,9 @@
   --dark: #1c1e26;
   --warn: #c2410c;
   --ok: #2f9e44;
+  /* hosted vendors (NVIDIA, and whatever follows) — a third hue, so a
+     vendor badge is never mistaken for local green or cloud blue. */
+  --vendor: #7c3aed;
 
   --radius: 14px;
   --radius-sm: 9px;
@@ -46,6 +49,7 @@
     --accent: #7089f5;
     --accent-fg: #10101a;
     --dark: #2a2d38;
+    --vendor: #a78bfa;
   }
 }
 
@@ -60,6 +64,7 @@
   --accent: #7089f5;
   --accent-fg: #10101a;
   --dark: #2a2d38;
+  --vendor: #a78bfa;
 }
 
 /* Tells form controls and scrollbars which scheme they are painting into. */

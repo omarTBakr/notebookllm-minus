@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from controllers import ModelController
+from controllers import ModelController, for_source
 from exceptions import InvalidInputError
 from models import ChatModel, ChunkModel, ProjectModel
 
@@ -44,10 +44,11 @@ async def set_chat_models(chat_id: str, request: SetModelsRequest, http_request:
     dimensions = None
 
     if request.embedding_model:
-        # Probe on the host the id names, not always the local one — a cloud
-        # embedding model would otherwise be rejected as incapable.
+        # Probe on the source the id names, not always the local one — a
+        # cloud or NVIDIA embedding model would otherwise be rejected as
+        # incapable, since the local Ollama has never heard of it.
         source, tag = split_source(request.embedding_model)
-        dimensions = await ModelController(source=source).embedding_dimensions(tag)
+        dimensions = await for_source(source).embedding_dimensions(tag)
 
         if not dimensions:
             raise InvalidInputError(

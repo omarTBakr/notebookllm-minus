@@ -3,7 +3,7 @@
 import pytest
 
 from exceptions import LLMProviderError, NotebookLLMError
-from utils import CLOUD, LOCAL, host_for
+from utils import CLOUD, LOCAL, NVIDIA, host_for
 
 
 def test_local_resolves_to_the_local_host(settings):
@@ -36,5 +36,20 @@ def test_that_error_maps_to_a_gateway_status(settings):
     assert caught.value.status_code == 502
 
 
-def test_an_unknown_source_is_treated_as_local(settings):
-    assert host_for(settings, "whatever") == settings.ollama_base_url
+def test_a_vendor_source_has_no_ollama_host(settings):
+    """This used to return the local Ollama URL for anything that was not
+    "cloud". Harmless while every source *was* an Ollama host; now that
+    "nvidia/..." is a real id, that fallback would hand an NVIDIA model a
+    localhost URL and produce a connection error pointing at the wrong
+    machine. Asking is a caller bug, so it says so."""
+    with pytest.raises(LLMProviderError) as caught:
+        host_for(settings, NVIDIA)
+
+    assert NVIDIA in str(caught.value)
+
+
+def test_an_unknown_source_also_raises(settings):
+    """split_source only ever yields a known source, so reaching here at all
+    means a caller invented one."""
+    with pytest.raises(LLMProviderError):
+        host_for(settings, "whatever")

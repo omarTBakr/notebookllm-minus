@@ -39,7 +39,12 @@ const status = (message) => { $("settings-status").textContent = message ?? ""; 
 
 // 8b, 31b, e4b, 137m — a size or variant token, which reads as an acronym.
 const SIZE = /\d/;
-const QUALIFIED = /^(local|cloud)\//;
+
+/** Mirrors SOURCES in utils/model_ids.py. Order does not matter; being the
+ *  single list does — the prefix regex, the name cleaner and the badge all
+ *  read from here, so teaching the UI about a new source is one edit. */
+const SOURCES = ["local", "cloud", "nvidia"];
+const QUALIFIED = new RegExp(`^(?:${SOURCES.join("|")})/`);
 
 /** Mirror of split_source in utils/model_ids.py: an id with no known prefix
  *  is local. Chats saved before there was a second host store a bare tag, and
@@ -48,15 +53,16 @@ const qualifyId = (id) => (QUALIFIED.test(id) ? id : `local/${id}`);
 
 /** A readable name from an Ollama tag.
  *
- * "local/nomic-embed-text:latest" -> "Nomic Embed Text"
- * "cloud/gemma4:31b"              -> "Gemma4 31B"
- * "local/dimavz/whisper-tiny:…"   -> "Whisper Tiny"
+ * "local/nomic-embed-text:latest"      -> "Nomic Embed Text"
+ * "cloud/gemma4:31b"                   -> "Gemma4 31B"
+ * "local/dimavz/whisper-tiny:…"        -> "Whisper Tiny"
+ * "nvidia/meta/llama-3.2-11b-instruct" -> "Llama 3.2 11b Instruct"
  *
  * Deliberately one function: tags are a free-for-all and this will need
  * correcting as odd ones turn up.
  */
 export function prettyModel(id) {
-  const [, tag = id] = id.match(/^(?:local|cloud)\/(.+)$/) ?? [];
+  const tag = id.replace(QUALIFIED, "");
 
   // Drop a publisher namespace, but only a leading one — the rest of the tag
   // never contains a slash.
@@ -82,18 +88,29 @@ export function prettyModel(id) {
   return words.join(" ") || id;
 }
 
+/** source -> [css modifier, translation key].
+ *
+ * "missing" is not a source the backend returns — the picker invents it for an
+ * id the catalogue no longer contains, so that a model pulled out from under a
+ * chat says so instead of silently reading as local.
+ */
+const SOURCE_BADGES = {
+  local: ["local", "modelLocal"],
+  cloud: ["web", "modelWeb"],
+  nvidia: ["vendor", "modelNvidia"],
+  missing: ["missing", "modelMissing"],
+};
+
 function badge(source) {
   const tag = document.createElement("span");
+  const [modifier, key] = SOURCE_BADGES[source] ?? [];
 
-  if (source === "missing") {
-    tag.className = "pill model-tag model-tag--missing";
-    tag.textContent = t("modelMissing");
-    return tag;
-  }
+  // A source the backend knows and this file does not: label it with its own
+  // name rather than mislabelling it "Local", which is what the old two-way
+  // `source === "cloud"` test did to everything that was not cloud.
+  tag.className = `pill model-tag model-tag--${modifier ?? "vendor"}`;
+  tag.textContent = key ? t(key) : source;
 
-  const web = source === "cloud";
-  tag.className = `pill model-tag model-tag--${web ? "web" : "local"}`;
-  tag.textContent = t(web ? "modelWeb" : "modelLocal");
   return tag;
 }
 
@@ -149,7 +166,7 @@ function fill(picker, options, selected) {
     list.append(row({ id: wanted, source: "missing" }, picker, true));
   }
 
-  // Both hosts are Ollama; the badge on each row says which machine.
+  // Local, cloud or a hosted vendor; the badge on each row says which.
   const heading = document.createElement("p");
   heading.className = "picker__group";
   heading.textContent = t("ollama");

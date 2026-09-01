@@ -74,3 +74,52 @@ async def test_aclose_all_closes_and_empties(cache):
     await cache.aclose_all()
 
     assert cache._chatting == {} and cache._embedding == {}
+
+
+# --- the prefix picks the provider, not just the host -------------------------
+
+
+@pytest.fixture
+def keyed(settings):
+    """Settings with a vendor key, so a vendor client can actually be built."""
+    return settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})
+
+
+def test_an_nvidia_id_builds_an_nvidia_client(keyed):
+    """The whole point of the vendor prefix: GENERATION_BACKEND still says
+    ollama here (conftest sets it), and the id overrides it."""
+    client = ProviderCache(keyed).chatting("nvidia/meta/llama-3.2-11b-vision-instruct")
+
+    assert type(client).__name__ == "NvidiaChatProvider"
+    assert client.model_id == "meta/llama-3.2-11b-vision-instruct"
+    assert str(client.client.base_url).rstrip("/") == keyed.NVIDIA_API_BASE_URL
+
+
+def test_an_nvidia_embedding_id_builds_an_nvidia_client(keyed):
+    client = ProviderCache(keyed).embedding("nvidia/nvidia/nemotron-3-embed-1b", 2048)
+
+    assert type(client).__name__ == "NvidiaEmbeddingProvider"
+    assert client.model_id == "nvidia/nemotron-3-embed-1b"
+    assert client.embedding_size == 2048
+
+
+def test_a_local_id_is_unaffected_by_the_vendor_route(keyed):
+    """The Ollama path must keep resolving to a host, not a vendor."""
+    client = ProviderCache(keyed).chatting("local/llama3.1:8b")
+
+    assert isinstance(client, LLMChattingInterface)
+    assert type(client).__name__ == "OllamaChatProvider"
+    assert client.base_url == keyed.ollama_base_url
+
+
+def test_the_two_kinds_of_id_coexist_in_one_cache(keyed):
+    """One notebook on a local model while the next is on NVIDIA — the case a
+    single global GENERATION_BACKEND could not express."""
+    cache = ProviderCache(keyed)
+
+    local = cache.chatting("local/llama3.1:8b")
+    vendor = cache.chatting("nvidia/meta/llama-3.2-11b-vision-instruct")
+
+    assert local is not vendor
+    assert type(local).__name__ != type(vendor).__name__
+    assert cache.chatting("local/llama3.1:8b") is local

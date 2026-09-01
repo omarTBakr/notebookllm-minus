@@ -177,6 +177,7 @@
 .model-tag { flex: none; }
 .model-tag--local { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
 .model-tag--web   { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.model-tag--vendor { background: color-mix(in srgb, var(--vendor) 18%, transparent); color: var(--vendor); }
 .model-tag--missing { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 
 /* The footer echo of the notebook's two models. */
