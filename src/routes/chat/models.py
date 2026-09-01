@@ -9,7 +9,7 @@ from models import ChatModel, ChunkModel, ProjectModel
 
 from ..schemas import ChatSettingsRequest, SetModelsRequest
 from ._helpers import _nlp_controller, CHAT_CHUNK_SIZE, CHAT_CHUNK_OVERLAP
-from utils import get_settings, split_source
+from utils import default_chat_model, default_embedding_model, get_settings, split_source
 
 models_router = APIRouter()
 
@@ -97,8 +97,8 @@ async def set_chat_models(chat_id: str, request: SetModelsRequest, http_request:
         status_code=200,
         content={
             "chat_id": chat_id,
-            "generation_model": updated.generation_model or settings.GENERATION_MODEL_ID,
-            "embedding_model": updated.embedding_model or settings.EMBEDDING_MODEL_ID,
+            "generation_model": updated.generation_model or default_chat_model(settings),
+            "embedding_model": updated.embedding_model or default_embedding_model(settings),
             "embedding_dimensions": (
                 updated.embedding_dimensions or settings.EMBEDDING_MODEL_SIZE
             ),

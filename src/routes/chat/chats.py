@@ -8,7 +8,7 @@ from models import Chat, ChatModel, SessionModel, UserModel
 from ..schemas import CreateChatRequest, RenameChatRequest
 from ._helpers import _new_id, _chat_controller, CHAT_CHUNK_SIZE, CHAT_CHUNK_OVERLAP
 from .sessions import default_session
-from utils import get_settings
+from utils import default_chat_model, default_embedding_model, get_settings
 
 chats_router = APIRouter()
 
@@ -84,8 +84,11 @@ async def get_chat(chat_id: str, http_request: Request):
             "lang": chat.lang,
             "has_documents": chat.has_documents,
             "grounded": grounded,
-            "generation_model": chat.generation_model or settings.GENERATION_MODEL_ID,
-            "embedding_model": chat.embedding_model or settings.EMBEDDING_MODEL_ID,
+            # Qualified, because that is what the picker matches against —
+            # a raw .env value spells the same model differently and shows
+            # up in the UI as "Missing".
+            "generation_model": chat.generation_model or default_chat_model(settings),
+            "embedding_model": chat.embedding_model or default_embedding_model(settings),
             "embedding_dimensions": (
                 chat.embedding_dimensions or settings.EMBEDDING_MODEL_SIZE
             ),

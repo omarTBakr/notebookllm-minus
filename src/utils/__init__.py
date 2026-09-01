@@ -7,8 +7,11 @@ from .model_ids import (
     OLLAMA_SOURCES,
     SOURCES,
     backend_for,
+    default_chat_model,
+    default_embedding_model,
     host_for,
     qualify,
+    source_of,
     split_source,
 )
 from .logging_config import (
@@ -23,6 +26,9 @@ __all__ = [
     "get_settings",
     "Settings",
     "backend_for",
+    "default_chat_model",
+    "default_embedding_model",
+    "source_of",
     "CLOUD",
     "LOCAL",
     "NVIDIA",

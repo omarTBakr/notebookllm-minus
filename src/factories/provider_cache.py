@@ -20,6 +20,8 @@ from utils import (
     OLLAMA_SOURCES,
     Settings,
     backend_for,
+    default_chat_model,
+    default_embedding_model,
     get_logger,
     host_for,
     split_source,
@@ -60,7 +62,11 @@ class ProviderCache:
     def chatting(self, model_id: str | None = None) -> LLMChattingInterface:
         """The chat client for *model_id*, defaulting to GENERATION_MODEL_ID."""
 
-        resolved = model_id or self.settings.GENERATION_MODEL_ID
+        # Qualified, never raw: an NVIDIA tag begins with its publisher, so
+        # split_source would read "nvidia/nemotron-3-embed-1b" as source
+        # nvidia plus tag nemotron-3-embed-1b and ask the vendor for a
+        # model id that is one segment short of existing.
+        resolved = model_id or default_chat_model(self.settings)
 
         cached = self._chatting.get(resolved)
         if cached is not None:
@@ -93,7 +99,7 @@ class ProviderCache:
         produces vectors that belong in a different collection, so they must
         not share a client whose ``embedding_size`` validates the result.
         """
-        resolved = model_id or self.settings.EMBEDDING_MODEL_ID
+        resolved = model_id or default_embedding_model(self.settings)
         size = dimensions or self.settings.EMBEDDING_MODEL_SIZE
 
         cached = self._embedding.get((resolved, size))

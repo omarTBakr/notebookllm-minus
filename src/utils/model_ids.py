@@ -64,6 +64,39 @@ def backend_for(source: str) -> str:
     return LLMChattingProvider.OLLAMA.value if source in OLLAMA_SOURCES else source
 
 
+def source_of(backend: str) -> str:
+    """Which source a configured *backend* corresponds to — inverse of backend_for.
+
+    "ollama" is the local host: a bare tag in .env has never meant the cloud
+    one. Any other backend names itself, because a vendor is its own source.
+    """
+    backend = str(getattr(backend, "value", backend)).strip().lower()
+
+    return LOCAL if backend == LLMChattingProvider.OLLAMA.value else backend
+
+
+def default_chat_model(settings) -> str:
+    """The qualified id of the model GENERATION_MODEL_ID names.
+
+    .env names a model the way its vendor does — "gemma4:e4b",
+    "nvidia/nemotron-3-embed-1b" — and says separately which backend serves it.
+    Qualifying the two together here is what keeps every caller agreeing on one
+    spelling.
+
+    It matters more than it looks. An NVIDIA tag already begins with a
+    publisher, so a raw .env value like "nvidia/nemotron-3-embed-1b" reads to
+    split_source as source "nvidia" plus tag "nemotron-3-embed-1b" — one
+    segment short, and 404 from the vendor. Going through qualify() first
+    makes the leading segment the source it actually is.
+    """
+    return qualify(source_of(settings.GENERATION_BACKEND), settings.GENERATION_MODEL_ID)
+
+
+def default_embedding_model(settings) -> str:
+    """The qualified id of the model EMBEDDING_MODEL_ID names."""
+    return qualify(source_of(settings.EMBEDDING_BACKEND), settings.EMBEDDING_MODEL_ID)
+
+
 def host_for(settings, source: str) -> str:
     """The Ollama base URL that *source* names.
 

@@ -20,9 +20,16 @@ import asyncio
 
 import httpx  # ty: ignore[unresolved-import]
 
-from enums import LLMChattingProvider
 from exceptions import LLMProviderError
-from utils import CLOUD, LOCAL, NVIDIA, host_for, qualify
+from utils import (
+    CLOUD,
+    LOCAL,
+    NVIDIA,
+    default_chat_model,
+    default_embedding_model,
+    host_for,
+    qualify,
+)
 
 from .BaseController import BaseController
 
@@ -52,17 +59,6 @@ def _can(model: dict, capability: str) -> bool:
         return capability == COMPLETION
 
     return capability in capabilities
-
-
-def _source_of(backend: str) -> str:
-    """Which source a .env backend name corresponds to.
-
-    The inverse of utils.backend_for: "ollama" is the local host (a bare tag
-    in .env has never meant the cloud one), and any other backend names itself.
-    """
-    backend = str(getattr(backend, "value", backend)).strip().lower()
-
-    return LOCAL if backend == LLMChattingProvider.OLLAMA.value else backend
 
 
 class ModelController(BaseController):
@@ -321,20 +317,12 @@ class ModelController(BaseController):
             "chat": [m for m in models if _can(m, COMPLETION)],
             "embedding": embedding,
             "current": {
-                # A .env default names a bare tag, and which source that tag
-                # belongs to is whatever backend .env selected — an ollama
-                # backend means the local host, a vendor backend means the
-                # vendor. Qualifying everything as local, as this once did,
-                # left the picker showing "missing" for the model actually in
-                # use the moment EMBEDDING_BACKEND stopped being ollama.
-                "chat": qualify(
-                    _source_of(self.settings.GENERATION_BACKEND),
-                    self.settings.GENERATION_MODEL_ID,
-                ),
-                "embedding": qualify(
-                    _source_of(self.settings.EMBEDDING_BACKEND),
-                    self.settings.EMBEDDING_MODEL_ID,
-                ),
+                # The same helper the chat routes report through, so the id in
+                # the catalogue and the id on a notebook are one string. They
+                # were two for a while, and the picker called the difference
+                # "Missing".
+                "chat": default_chat_model(self.settings),
+                "embedding": default_embedding_model(self.settings),
                 "embedding_dimensions": self.settings.EMBEDDING_MODEL_SIZE,
             },
         }

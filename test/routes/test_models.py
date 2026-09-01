@@ -57,3 +57,42 @@ async def test_settings_404s_for_an_unknown_chat(client, seed):
     )
 
     assert response.status_code == 404
+
+
+# --- the id a notebook reports is the id the catalogue lists -------------------
+
+
+async def test_a_notebook_with_no_model_reports_the_qualified_default(client, seed, monkeypatch):
+    """The picker matches on an exact id. This route used to answer with the
+    raw .env value while the catalogue answered with a qualified one, and for
+    an NVIDIA default those are different strings — which the UI rendered as
+    "Missing" against a notebook that was working fine."""
+    monkeypatch.setenv("EMBEDDING_BACKEND", "nvidia")
+    monkeypatch.setenv("EMBEDDING_MODEL_ID", "nvidia/nemotron-3-embed-1b")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+
+    from utils import get_settings
+
+    get_settings.cache_clear()
+
+    response = await client.get("/chat/chats/c1")
+
+    assert response.status_code == 200
+    assert response.json()["embedding_model"] == "nvidia/nvidia/nemotron-3-embed-1b"
+
+
+async def test_that_default_matches_what_the_catalogue_calls_current(client, seed, monkeypatch):
+    """Both sides through one helper, so they cannot drift apart again."""
+    monkeypatch.setenv("EMBEDDING_BACKEND", "nvidia")
+    monkeypatch.setenv("EMBEDDING_MODEL_ID", "nvidia/nemotron-3-embed-1b")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
+
+    from controllers import ModelController
+    from utils import get_settings
+
+    get_settings.cache_clear()
+
+    reported = (await client.get("/chat/chats/c1")).json()["embedding_model"]
+    catalogue = await ModelController().catalogue(probe_embeddings=False)
+
+    assert reported == catalogue["current"]["embedding"]
