@@ -297,6 +297,7 @@ class FakeVectorRepository:
         self.points: dict[str, list[dict]] = {}
         self.hits = hits if hits is not None else []
         self.searched: list[dict] = []
+        self.indexed: list[dict] = []
 
     async def collection_exists(self, collection_name):
         return collection_name in self.collections
@@ -313,6 +314,26 @@ class FakeVectorRepository:
             self.collections[collection_name] = {"embedding_size": embedding_size}
             self.points[collection_name] = []
         return not existed or reset
+
+    async def create_index(
+        self, collection_name, embedding_size, index_type=None, reset=False
+    ):
+        """Records the build; both real backends do it after the bulk load.
+
+        Absent until now, which every upload test hit as a bare 500 —
+        NLPController.index_chunks() has called this since the ANN build moved
+        after insertion, and a fake that stops matching the interface fails in
+        the one place that says nothing about why.
+        """
+        self.indexed.append(
+            {
+                "collection_name": collection_name,
+                "embedding_size": embedding_size,
+                "index_type": index_type,
+                "reset": reset,
+            }
+        )
+        return True
 
     async def delete_collection(self, collection_name):
         # The points go with it. The real backends drop the table (Postgres) or
