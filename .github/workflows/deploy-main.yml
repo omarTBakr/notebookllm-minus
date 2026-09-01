@@ -15,7 +15,7 @@
 #   omar ALL=(root) NOPASSWD: /usr/bin/systemctl restart notebookllm-minus, \
 #                             /usr/bin/systemctl is-active notebookllm-minus
 
-name: deploy-main
+name: Github-Actions
 
 on:
   push:
@@ -74,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          install -m 700 -d ~/.ssh
+          install -m 700 -d ~/.sshb 
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
