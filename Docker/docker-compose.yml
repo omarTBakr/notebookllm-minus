@@ -41,6 +41,10 @@ services:
     depends_on:
       pgvector:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     # No healthcheck block: the image defines its own, and depends_on's
     # service_healthy honours it. Repeating it here was the same probe twice,
     # in two files that could drift.
@@ -125,6 +129,68 @@ services:
       - qdrant:/qdrant/storage
     networks:
       - backend
+
+  # --- message broker ---------------------------------------------------------
+
+  rabbitmq:
+    # Pinned to the management-enabled variant so the HTTP API / web UI
+    # (port 15672) are available without a separate plugin install step.
+    image: rabbitmq:4.1-management-alpine
+    container_name: rabbitmq
+    restart: unless-stopped
+    env_file:
+      - ./env/.env.rabbitmq
+    ports:
+      # AMQP clients (app, workers, publishers)
+      - "5672:5672"
+      # Management web UI — browse to http://localhost:15672
+      - "15672:15672"
+    volumes:
+      # Durable queue/exchange definitions and messages survive restarts.
+      - rabbitmq:/var/lib/rabbitmq
+      # Custom broker config: listener ports, memory watermarks, log format.
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    networks:
+      - backend
+    healthcheck:
+      # Management plugin exposes /api/health/check/aliveness on 15672.
+      # Requires wget (present in the alpine image).
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+
+  # --- cache / session store ---------------------------------------------------
+
+  redis:
+    # Pinned minor version; alpine keeps the image small.
+    image: redis:7.4-alpine
+    container_name: redis
+    restart: unless-stopped
+    env_file:
+      - ./env/.env.redis
+    ports:
+      # Exposed on the host for local tooling (redis-cli, RedisInsight).
+      - "6379:6379"
+    volumes:
+      # Named volume so RDB snapshots / AOF log survive container recreation.
+      - redis:/data
+      # Our redis.conf overrides the image defaults (password, maxmemory, …).
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    # Pass the config file explicitly; the image default CMD ignores custom
+    # conf files placed in the container without this override.
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - backend
+    healthcheck:
+      # redis-cli ping returns PONG when the server is ready. Use -a to
+      # authenticate when requirepass is set.
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # --- observability ----------------------------------------------------------
 
@@ -220,6 +286,8 @@ volumes:
   pgvector:
   mongodb:
   qdrant:
+  rabbitmq:
+  redis:
   prometheus:
   grafana:
 

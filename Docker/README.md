@@ -9,6 +9,7 @@ driven from `docker-compose.yml`; run every command from **this directory**.
 - [Services and ports](#services-and-ports)
 - [Configuration](#configuration)
 - [Choosing a database backend](#choosing-a-database-backend)
+- [Message broker \& cache](#message-broker--cache)
 - [Observability](#observability)
 - [Things that will catch you out](#things-that-will-catch-you-out)
 - [Troubleshooting](#troubleshooting)
@@ -47,10 +48,15 @@ Docker/
 ├── env/                          per-service environment, mounted into containers
 │   ├── .env.app                  the application's own configuration
 │   ├── .env.grafana
-│   └── .env.postgres-exporter
-├── env.example/                  templates for the above; env/ is gitignored
+│   ├── .env.postgres-exporter
+│   ├── .env.rabbitmq             first-boot broker credentials
+│   └── .env.redis                cache password + connection details
+├── env.example/                  templates for the above — env/ itself IS tracked
+│                                  (this repo mirrors the deploy machine on purpose)
 ├── nginx/nginx.conf              reverse proxy config
 ├── prometheus/prometheus.yml     scrape targets
+├── rabbitmq/rabbitmq.conf        broker config: ports, vhost, memory/disk limits
+├── redis/redis.conf              cache config: auth, persistence, eviction policy
 └── notebookllm-minus/
     ├── Dockerfile
     └── Dockerfile.dockerignore
@@ -91,12 +97,15 @@ output reports a context in the hundreds of MB rather than single digits, this i
 | `pgvector` | `pgvector/pgvector:0.8.6-pg18-trixie` | 5400 | documents *and* vectors |
 | `mongo` | `mongo:8.2` | 27017 | profile `mongo` only |
 | `qdrant` | `qdrant/qdrant:v1.12.4` | 6333 | profile `mongo` only |
+| `rabbitmq` | `rabbitmq:4.1-management-alpine` | 5672, 15672 | AMQP + management UI; not yet used by the app |
+| `redis` | `redis:7.4-alpine` | 6379 | cache/session store; not yet used by the app |
 | `prometheus` | `prom/prometheus:v3.1.0` | 9090 | |
 | `grafana` | `grafana/grafana:11.4.0` | 3000 | |
 | `postgres-exporter` | `prometheuscommunity/postgres-exporter:v0.16.0` | 9187 | |
-| `node-exporter` | `prom/node-exporter:v1.8.2` | 9100 | host CPU, memory, disk |
-| `cadvisor` | `gcr.io/cadvisor/cadvisor:v0.49.1` | 8081 | per-container usage |
-| `nvidia-exporter` | `utkuozdemir/nvidia_gpu_exporter:1.2.1` | 9835 | GPU utilisation and VRAM |
+
+`node-exporter` runs on the host as a `systemd --user` unit, not as a container — see
+[Observability](#observability). `cadvisor` and an NVIDIA exporter are not part of this
+compose file; see the "host-level exporters" comment block in `docker-compose.yml` for why.
 
 Every image is pinned. `latest` on a database is a way to discover a breaking change during an
 outage.
@@ -131,7 +140,8 @@ Values inside `env/.env.app` are **container-shaped, not host-shaped**:
 Ollama runs on the host, not in this stack. `host.docker.internal` is not automatic on Linux,
 so the `fastapi` service maps it to the docker bridge gateway via `extra_hosts`.
 
-`env/` is gitignored; `env.example/` is the committed template.
+`env/` is tracked in this repo (it mirrors the deploy machine on purpose, including
+credentials); `env.example/` is the blanked public template new services are copied from.
 
 ## Choosing a database backend
 
@@ -150,6 +160,40 @@ They keep separate data. Switching backends does not migrate anything.
 
 The Postgres schema is owned by Alembic and applied at startup under an advisory lock, so
 nothing needs running by hand.
+
+## Message broker & cache
+
+RabbitMQ and Redis start with the rest of the stack — they are **not behind a profile** —
+but nothing in `src/` publishes to the broker or reads from the cache yet. They exist so a
+task queue or a cache layer has somewhere to run when that code is written; today they are
+idle infrastructure, healthy and reachable, doing nothing.
+
+Same two-layer split as the app's own config:
+
+- **`rabbitmq/rabbitmq.conf`** and **`redis/redis.conf`** — broker/server behaviour (ports,
+  memory limits, persistence, eviction policy), mounted read-only, restart to apply.
+- **`env/.env.rabbitmq`** and **`env/.env.redis`** — credentials and connection details,
+  injected as container environment.
+
+**Action required before the first `docker compose up`** — both env files ship with
+`change-me` placeholders that must become real values, or ship already generated (check
+`env/.env.rabbitmq` and `env/.env.redis` for what is actually there):
+
+| variable | file | why it matters |
+| --- | --- | --- |
+| `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS` | `env/.env.rabbitmq` | only honoured the *first* time the container boots against an empty `rabbitmq` volume — changing it later does nothing until the volume is dropped |
+| `RABBITMQ_ERLANG_COOKIE` | `env/.env.rabbitmq` | must stay stable across restarts or the node cannot rejoin its own persisted data; `openssl rand -hex 32` |
+| `REDIS_PASSWORD` (env) ↔ `requirepass` (conf) | `env/.env.redis` and `redis/redis.conf` | **must match exactly** — Redis reads its own password from `redis.conf`, not from the environment, so these are two independent settings a human has to keep in sync. A mismatch is `NOAUTH`/`WRONGPASS` from any client, including the healthcheck |
+
+The Redis healthcheck (`redis-cli -a $$REDIS_PASSWORD ping`) and the RabbitMQ one
+(`rabbitmq-diagnostics ping`) are what `fastapi`'s `depends_on: condition: service_healthy`
+waits on — a wrong password fails the healthcheck, not just a client connection, so
+`docker compose ps` shows it directly rather than the app failing later with a vague error.
+
+Ports on the host: AMQP `5672`, RabbitMQ's management UI `15672` (browse to it, log in with
+`RABBITMQ_DEFAULT_USER`/`RABBITMQ_DEFAULT_PASS`), Redis `6379`. All three are also reachable
+inside the `backend` network at their service names (`rabbitmq`, `redis`) — that is what a
+future `RABBITMQ_HOST=rabbitmq` / `REDIS_HOST=redis` in `env/.env.app` would point at.
 
 ## Observability
 
