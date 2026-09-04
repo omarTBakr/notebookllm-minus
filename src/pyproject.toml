@@ -54,6 +54,21 @@ dependencies = [
     "openai>=1.60.0",
     "pdfplumber>=0.11.10",
     "pymupdf>=1.28.2",
+    # celery[redis] rather than bare celery: the result backend is a redis://
+    # URL, and without the extra Celery raises ModuleNotFoundError the moment
+    # it resolves the backend — so every worker fails on its first result and
+    # both task-status endpoints 500. kombu/billiard/vine are celery's own
+    # dependencies, pinned here only to keep the lockfile explicit.
+    "celery[redis]>=5.5.0",
+    # The Celery dashboard. Installed into the application image rather than
+    # run from mher/flower so it can be started with `--app celery_app:celery_app`:
+    # that reuses the broker/backend DSNs config.py already assembles from the
+    # CELERY_* variables, instead of maintaining a second copy of the URL in
+    # compose that could drift from the one the workers use.
+    "flower>=2.0.1",
+    "kombu>=5.6.2",
+    "billiard>=4.2.4",
+    "vine>=5.1.0",
 ]
 
 # Removed: "dotenv", which is a stub package whose only content is a dependency
@@ -62,6 +77,36 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "black>=25.1.0",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "ruff>=0.11.0",
 ]
+
+[tool.black]
+target-version = ["py312"]
+line-length = 120
+extend-exclude = '''
+/(\.git|\.mypy_cache|\.pytest_cache|\.ruff_cache|\.venv|assets|web/static/js/vendor)/
+'''
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "assets",
+    "web/static/js/vendor",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

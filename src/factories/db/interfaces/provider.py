@@ -6,6 +6,7 @@ from .chunk_repository import ChunkRepository
 from .message_repository import MessageRepository
 from .project_repository import ProjectRepository
 from .session_repository import SessionRepository
+from .task_repository import TaskRepository
 from .user_repository import UserRepository
 from .vector_repository import VectorRepository
 
@@ -60,6 +61,10 @@ class DbProvider(ABC):
 
     @abstractmethod
     def chunks(self) -> ChunkRepository:
+        pass
+
+    @abstractmethod
+    def tasks(self) -> TaskRepository:
         pass
 
     # --- vector repository ---------------------------------------------------

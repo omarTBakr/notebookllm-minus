@@ -128,6 +128,27 @@ def app(fake_db, fake_providers):
 
 
 @pytest.fixture
+def ingest(client, app):
+    """POST a document and run the ingestion it queues.
+
+    Attaching now returns 202 with the work queued, so a test that wants to
+    assert on chunks or vectors has to run that work. Tests that only care
+    about the upload itself keep using `client` directly.
+    """
+    from test.fakes.ingest import drain_ingestion
+
+    async def _ingest(chat_id, files):
+        response = await client.post(f"/chat/chats/{chat_id}/documents", files=files)
+
+        if response.status_code < 400:
+            await drain_ingestion(app)
+
+        return response
+
+    return _ingest
+
+
+@pytest.fixture
 async def client(app):
     """An HTTP client speaking straight to the ASGI app.
 

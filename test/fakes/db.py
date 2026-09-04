@@ -2,7 +2,7 @@
 
 `models/__init__.py` is a thin adapter — `AssetModel(db)` is literally
 `db.assets()` — and every route reaches storage through `request.app.db`.
-So one fake provider with eight accessors covers the whole route layer, with
+So one fake provider with nine accessors covers the whole route layer, with
 no patching and no mongomock.
 
 Repositories here store pydantic models in dicts and raise the same typed
@@ -10,9 +10,13 @@ errors the real ones do, because the status code a route returns is derived
 from the exception class.
 """
 
+from datetime import datetime, timezone
+
+from enums import IN_FLIGHT, TaskExecutionStatus
 from exceptions import (
     AssetNotFoundError,
     ChatNotFoundError,
+    NotFoundError,
     ProjectNotFoundError,
     SessionNotFoundError,
     UserNotFoundError,
@@ -368,6 +372,123 @@ class FakeVectorRepository:
         return self.hits[:limit]
 
 
+
+class FakeTaskRepository:
+    """In-memory task_executions, keyed by Celery task id."""
+
+    def __init__(self):
+        self.items: dict[str, object] = {}
+
+    async def create_task(self, task):
+        self.items[task.task_id] = task
+        return task.task_id
+
+    async def get_task(self, task_id):
+        task = self.items.get(task_id)
+        if task is None:
+            raise NotFoundError(f"Task {task_id!r} not found")
+        return task
+
+    async def find_task(self, task_id):
+        return self.items.get(task_id)
+
+    async def find_in_flight(self, task_name, args_hash):
+        # The empty-hash guard is part of the contract, not an optimisation:
+        # without it every unhashed row would match every other one.
+        if not args_hash:
+            return None
+        return next(
+            (
+                t
+                for t in sorted(self.items.values(), key=lambda t: t.created_at, reverse=True)
+                if t.task_name == task_name
+                and t.args_hash == args_hash
+                and t.status in IN_FLIGHT
+            ),
+            None,
+        )
+
+    async def find_active_for_project(self, project_id):
+        return next(
+            (
+                t
+                for t in sorted(self.items.values(), key=lambda t: t.created_at, reverse=True)
+                if t.project_id == project_id and t.status in IN_FLIGHT
+            ),
+            None,
+        )
+
+    async def update_status(self, task_id, status, result=None, error="", error_type=""):
+        task = self.items.get(task_id)
+        if task is None:
+            return
+        task.status = TaskExecutionStatus(status)
+        now = datetime.now(timezone.utc)
+        if status == TaskExecutionStatus.STARTED.value:
+            task.started_at = now
+        if status in (
+            TaskExecutionStatus.SUCCESS.value,
+            TaskExecutionStatus.FAILURE.value,
+            TaskExecutionStatus.DEAD.value,
+        ):
+            task.completed_at = now
+        if result is not None:
+            task.result = result
+        if error:
+            task.error = error[:2000]
+            task.error_type = error_type
+        task.updated_at = now
+
+    async def set_stage(self, task_id, stage, done=0, total=0):
+        task = self.items.get(task_id)
+        if task is None:
+            return
+        task.stage, task.done, task.total = stage, done, total
+
+    async def iter_project_tasks(self, project_id):
+        for task in sorted(self.items.values(), key=lambda t: t.created_at, reverse=True):
+            if task.project_id == project_id:
+                yield task
+
+    async def delete_finished_before(self, cutoff):
+        terminal = {
+            TaskExecutionStatus.SUCCESS,
+            TaskExecutionStatus.FAILURE,
+            TaskExecutionStatus.DEAD,
+        }
+        doomed = [
+            k for k, v in self.items.items()
+            if v.status in terminal and v.created_at < cutoff
+        ]
+        for k in doomed:
+            del self.items[k]
+        return len(doomed)
+
+    async def mark_abandoned(self, started_before, queued_before, status):
+        marked = 0
+        for task in self.items.values():
+            stale_run = (
+                task.status is TaskExecutionStatus.STARTED
+                and task.started_at
+                and task.started_at < started_before
+            )
+            stale_queue = (
+                task.status is TaskExecutionStatus.QUEUED and task.created_at < queued_before
+            )
+            if stale_run or stale_queue:
+                task.status = TaskExecutionStatus(status)
+                task.error = "no completion recorded; the worker running this task is gone"
+                task.error_type = "WorkerLost"
+                task.completed_at = datetime.now(timezone.utc)
+                marked += 1
+        return marked
+
+    async def delete_tasks_for_project(self, project_id):
+        self.items = {
+            k: v for k, v in self.items.items() if v.project_id != project_id
+        }
+
+
 class FakeDb:
     """A DbProvider built from the repositories above."""
 
@@ -380,6 +501,7 @@ class FakeDb:
         self._assets = FakeAssetRepository()
         self._chunks = FakeChunkRepository()
         self._vectors = FakeVectorRepository(hits=hits)
+        self._tasks = FakeTaskRepository()
         self.connected = False
 
     async def connect(self):
@@ -399,3 +521,4 @@ class FakeDb:
     def assets(self):   return self._assets
     def chunks(self):   return self._chunks
     def vectors(self):  return self._vectors
+    def tasks(self):    return self._tasks

@@ -88,7 +88,14 @@ export const api = {
     request(`/chat/chats/${chatId}/sources`, patch({ excluded_assets: excluded })),
   // How far the in-flight upload for this notebook has got. Polled while
   // addSource is still outstanding, so it must stay cheap on the server.
-  indexingProgress: (chatId) => request(`/chat/chats/${chatId}/indexing`),
+  // taskId pins the answer to this upload's own run. Without it the endpoint
+  // reports whatever is currently unfinished for the chat, which is the wrong
+  // thing to watch when two uploads overlap.
+  indexingProgress: (chatId, taskId = null) =>
+    request(
+      `/chat/chats/${chatId}/indexing` +
+      (taskId ? `?task_id=${encodeURIComponent(taskId)}` : "")
+    ),
 
   addSource: (chatId, file) => {
     const form = new FormData();
@@ -101,7 +108,14 @@ export const api = {
   listMessages: (chatId) => request(`/chat/chats/${chatId}/messages`),
 
   // --- settings ---
-  listModels: () => request("/chat/models"),
+  // `sources` narrows discovery to a comma-separated subset, so the picker can
+  // ask for the cheap providers first and merge the slow ones in as they land.
+  listModels: (probeEmbeddings = true, sources = null) =>
+    request(
+      `/chat/models?probe_embeddings=${probeEmbeddings}` +
+      (sources ? `&sources=${encodeURIComponent(sources)}` : "")
+    ),
+  quickModels: () => request("/chat/models/quick"),
   setModels: (chatId, models) => request(`/chat/chats/${chatId}/models`, patch(models)),
   setSettings: (chatId, settings) => request(`/chat/chats/${chatId}/settings`, patch(settings)),
 

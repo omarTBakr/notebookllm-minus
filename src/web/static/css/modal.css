@@ -142,6 +142,22 @@
   overflow-y: auto;
 }
 
+.picker__providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.picker__provider {
+  flex: 1 1 auto;
+  min-width: 72px;
+  font-size: 0.72rem;
+  padding: 5px 7px;
+}
+
 /* Both hosts are Ollama, so they sit under one heading and the badge on each
    row says which machine it lives on. */
 .picker__group {
@@ -168,6 +184,9 @@
   cursor: pointer;
 }
 .picker__option:hover { background: var(--surface-2); }
+/* Dimmed rather than disabled: still selectable, just clearly not ready. The
+   name fades, the reason badge beside it does not. */
+.picker__option.is-unavailable .picker__name { opacity: 0.55; }
 .picker__option.is-active { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 
 .picker__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -198,6 +217,16 @@
 
 .model-tag--vendor { background: color-mix(in srgb, var(--vendor) 18%, transparent); color: var(--vendor); }
 .model-tag--missing { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+/* Still loading, not gone — a provider that has not answered yet. Muted
+   rather than warning-coloured: nothing is wrong, it just has not arrived. */
+.model-tag--pending { background: color-mix(in srgb, var(--text-muted) 18%, transparent); color: var(--text-muted); }
+/* Probed and refused — the vendor answered, and the answer was no. Warning
+   coloured like "missing", because unlike "pending" something is genuinely
+   wrong; the row stays clickable, so the colour is the only warning it gets. */
+.model-tag--unavailable { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.model-tag--anthropic { background: color-mix(in srgb, #d97757 18%, transparent); color: #d97757; }
+.model-tag--google { background: color-mix(in srgb, #4285f4 18%, transparent); color: #4285f4; }
+.model-capability { background: color-mix(in srgb, var(--text-muted) 14%, transparent); color: var(--text-muted); }
 
 /* The footer echo of the notebook's two models. */
 .modelline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.76rem; color: var(--text-muted); }

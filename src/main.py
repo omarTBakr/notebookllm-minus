@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
 from exceptions import NotebookLLMError
 from factories import DbFactory, ProviderCache
 from middleware import RequestLoggingMiddleware
@@ -36,23 +37,30 @@ async def lifespan(app: FastAPI):
     # Connect the document database provider (Mongo, Postgres, …) — the choice
     # is made by DOCUMENT_DB_BACKEND in .env; everything else is agnostic.
     app.db = DbFactory(SETTINGS).create()
-    await app.db.connect()
-    logger.info("DB connected (backend=%s)", SETTINGS.DOCUMENT_DB_BACKEND)
+    app.providers = None
+    try:
+        await app.db.connect()
+        logger.info("DB connected (backend=%s)", SETTINGS.DOCUMENT_DB_BACKEND)
 
-    # Create indexes once at startup — idempotent, safe to re-run.
-    await app.db.setup_indexes()
-    logger.info("Database indexes ensured")
+        # Create indexes once at startup — idempotent, safe to re-run.
+        await app.db.setup_indexes()
+        logger.info("Database indexes ensured")
 
-    # startup: build the configured providers. Constructed once here rather
-    # than per request — each one owns an HTTP connection pool worth keeping
-    # open. A missing API key or an unknown backend name raises here, so the
-    # app refuses to start rather than failing on the first question a user
-    # asks.
-    # One cache for every model a chat might name, rather than a single client
-    # pinned to .env. The defaults below are just its first two entries.
-    app.providers = ProviderCache(SETTINGS)
-    app.generation_client = app.providers.chatting()
-    app.embedding_client = app.providers.embedding()
+        # One cache for every model a chat might name, rather than a single
+        # client pinned to .env. The defaults below are just its first two.
+        app.providers = ProviderCache(SETTINGS)
+        app.generation_client = app.providers.chatting()
+        app.embedding_client = app.providers.embedding()
+    except Exception:
+        # Lifespan shutdown does not run when startup itself fails. Close any
+        # resources already opened so a bad provider or migration cannot leak
+        # the database pool while the process is restarting.
+        try:
+            if app.providers is not None:
+                await app.providers.aclose_all()
+        finally:
+            await app.db.disconnect()
+        raise
     logger.info(
         "Providers ready (generation=%s, embedding=%s)",
         SETTINGS.GENERATION_BACKEND,

@@ -94,10 +94,10 @@ async def test_deleting_a_user_removes_their_sessions_and_chats(client, seed, fa
     assert "c1" not in fake_db.chats().items
 
 
-async def test_deleting_a_user_removes_their_documents_and_chunks(client, seed, fake_db):
+async def test_deleting_a_user_removes_their_documents_and_chunks(ingest, client, seed, fake_db):
     """The whole point: a user's uploads and everything derived from them must
     not outlive the user."""
-    await client.post("/chat/chats/c1/documents", files=a_text_file("keep-me.txt"))
+    await ingest("c1", a_text_file("keep-me.txt"))
     assert fake_db.chunks().items, "nothing was ingested, so this proves nothing"
 
     response = await client.delete("/chat/users/u1")
@@ -108,8 +108,8 @@ async def test_deleting_a_user_removes_their_documents_and_chunks(client, seed, 
     assert fake_db.projects().items == {}
 
 
-async def test_deleting_a_user_removes_their_vectors(client, seed, fake_db):
-    await client.post("/chat/chats/c1/documents", files=a_text_file("indexed.txt"))
+async def test_deleting_a_user_removes_their_vectors(ingest, client, seed, fake_db):
+    await ingest("c1", a_text_file("indexed.txt"))
     assert any(rows for rows in fake_db.vectors().points.values())
 
     await client.delete("/chat/users/u1")
@@ -131,8 +131,8 @@ async def test_deleting_a_user_removes_their_messages(client, seed, fake_db):
     assert fake_db.messages().items == []
 
 
-async def test_the_response_reports_what_went(client, seed, fake_db):
-    await client.post("/chat/chats/c1/documents", files=a_text_file("counted.txt"))
+async def test_the_response_reports_what_went(ingest, client, seed, fake_db):
+    await ingest("c1", a_text_file("counted.txt"))
 
     body = (await client.delete("/chat/users/u1")).json()
 
@@ -145,7 +145,7 @@ async def test_the_response_reports_what_went(client, seed, fake_db):
     assert deleted["chunks"] > 0
 
 
-async def test_deleting_a_user_leaves_another_users_data_alone(client, seed, fake_db):
+async def test_deleting_a_user_leaves_another_users_data_alone(ingest, client, seed, fake_db):
     """The delete is scoped by ownership, not by "everything that looks similar"."""
     from models.db_schema import Chat, Project, Session, User
 
@@ -155,7 +155,7 @@ async def test_deleting_a_user_leaves_another_users_data_alone(client, seed, fak
         chat_id="c2", session_id="s2", user_id="u2", title="Their notebook"
     )
     fake_db.projects().items["c2"] = Project(project_id="c2", name="Their notebook")
-    await client.post("/chat/chats/c2/documents", files=a_text_file("theirs.txt"))
+    await ingest("c2", a_text_file("theirs.txt"))
 
     await client.delete("/chat/users/u1")
 

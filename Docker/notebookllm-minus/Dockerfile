@@ -89,10 +89,17 @@ COPY --from=builder /usr/share/nltk_data /usr/share/nltk_data
 # and the local .venv, none of which belong in a runtime image.
 COPY --chown=app:app src/ /app/
 
-# Written to at runtime: rotating logs, and the on-disk asset directory the
-# file controller uses. Both are excluded from the build context, so they are
-# created here — `install -d` sets the mode and owner in the one command.
-RUN install -d -o app -g app /app/logs /app/assets
+# Written to at runtime: rotating logs, the on-disk asset directory the file
+# controller uses, Flower's task history and beat's schedule record. All are
+# excluded from the build context, so they are created here — `install -d` sets
+# the mode and owner in the one command.
+#
+# The last two must exist *and* be owned by app before their named volumes are
+# mounted over them: Docker seeds an empty named volume from the image and
+# takes the directory's ownership with it. Without this each volume arrives
+# root-owned and the process dies on start with EACCES — Flower opening
+# flower.db, beat writing its schedule file.
+RUN install -d -o app -g app /app/logs /app/assets /app/flower /app/celerybeat
 
 USER app
 

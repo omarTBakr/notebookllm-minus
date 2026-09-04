@@ -22,11 +22,13 @@ from enums import LLMChattingProvider
 LOCAL = "local"
 CLOUD = "cloud"
 NVIDIA = "nvidia"
+ANTHROPIC = "anthropic"
+GOOGLE = "google"
 
 # Every prefix an id may carry. The first two are Ollama hosts; NVIDIA is a
 # hosted vendor, which is why `backend_for` exists below — the prefix now picks
 # the *provider*, not just which machine to ask.
-SOURCES = (LOCAL, CLOUD, NVIDIA)
+SOURCES = (LOCAL, CLOUD, NVIDIA, ANTHROPIC, GOOGLE)
 
 # The subset that is Ollama, and therefore has a base URL to point a client at.
 OLLAMA_SOURCES = (LOCAL, CLOUD)
@@ -111,8 +113,7 @@ def host_for(settings, source: str) -> str:
 
     if source not in OLLAMA_SOURCES:
         raise LLMProviderError(
-            f"{source!r} is not an Ollama source, so it has no Ollama host "
-            f"(expected one of {OLLAMA_SOURCES})"
+            f"{source!r} is not an Ollama source, so it has no Ollama host " f"(expected one of {OLLAMA_SOURCES})"
         )
 
     if source != CLOUD:
@@ -121,8 +122,6 @@ def host_for(settings, source: str) -> str:
     host = settings.OLLAMA_CLOUD_BASE_URL
 
     if not host:
-        raise LLMProviderError(
-            "A cloud model was named but OLLAMA_CLOUD_BASE_URL is not set"
-        )
+        raise LLMProviderError("A cloud model was named but OLLAMA_CLOUD_BASE_URL is not set")
 
     return host

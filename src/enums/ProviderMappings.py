@@ -9,9 +9,9 @@ key off.
 
 from langchain_text_splitters import Language  # ty: ignore[unresolved-import]
 
+from .db import DistanceMethod
 from .LLMChattingEnum import ChatRole, LLMChattingProvider
 from .LLMEmbeddingEnum import EmbeddingInputType, LLMEmbeddingProvider, TruncateMode
-from .db import DistanceMethod
 
 # Gemini calls the assistant "model"; the user role keeps its name.
 CHAT_ROLE_TO_GOOGLE: dict[str, str] = {
@@ -81,6 +81,7 @@ CHAT_PROVIDER_API_KEY_FIELDS: dict[LLMChattingProvider, str] = {
 # own signature default in charge. Ollama is absent: its base URL is a derived
 # property (ollama_base_url), not a plain field, so the factory builds it.
 CHAT_PROVIDER_SETTING_KWARGS: dict[LLMChattingProvider, dict[str, str]] = {
+    LLMChattingProvider.ANTHROPIC: {"workspace_id": "ANTHROPIC_WORKSPACE_ID"},
     LLMChattingProvider.OPENAI: {"base_url": "OPENAI_API_BASE_URL"},
     LLMChattingProvider.NVIDIA: {"base_url": "NVIDIA_API_BASE_URL"},
 }

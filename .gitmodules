@@ -2,6 +2,3 @@
 # commit of markdown-viewer/skills — but without this file nothing said where
 # to fetch it from, so a fresh clone got an empty directory and
 # `git submodule update --init` had nothing to work with.
-[submodule "skills"]
-	path = skills
-	url = https://github.com/markdown-viewer/skills.git

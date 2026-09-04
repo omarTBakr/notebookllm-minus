@@ -237,15 +237,17 @@ async function renderHighlightedPage(source, url, pageNumber, chunkOrder) {
     nextBtn.disabled = num >= doc.numPages;
 
     const page = await doc.getPage(num);
-    // Fit the panel's content width (clientWidth includes canvasWrap's own
-    // padding, which its children are not laid out into — subtracted here so
-    // the canvas's pixel size, set below, is not slightly wider than the
-    // space it actually has). Height follows from the page's own aspect
-    // ratio. Floored at 280 because clientWidth is 0 while the panel is still
-    // hidden or mid-animation, and a 0-scale render throws.
+    // Fit the whole page into the panel by default. Subtract the wrapper's
+    // padding from both dimensions because its children are not laid out into
+    // that space. This keeps a portrait page from being scaled to the width
+    // and then needlessly clipped below the fold.
     const containerWidth = Math.max(canvasWrap.clientWidth - 20, 0) || 280;
+    const containerHeight = Math.max(canvasWrap.clientHeight - 20, 0) || 280;
     const unscaled = page.getViewport({ scale: 1 });
-    const scale = containerWidth / unscaled.width;
+    const scale = Math.min(
+      containerWidth / unscaled.width,
+      containerHeight / unscaled.height,
+    );
     const viewport = page.getViewport({ scale });
 
     // No CSS width/height on the canvas: its `width`/`height` attributes,
@@ -288,6 +290,13 @@ async function renderHighlightedPage(source, url, pageNumber, chunkOrder) {
     toast(error.message);
     return false;
   }
+
+  // Panel widths are user-resizable and the viewport changes on mobile. Keep
+  // the page fitted to the new space rather than leaving the old canvas size.
+  const resizeObserver = new ResizeObserver(() => {
+    renderPage(current).catch((error) => toast(error.message));
+  });
+  resizeObserver.observe(canvasWrap);
 
   return true;
 }
@@ -653,10 +662,17 @@ export async function add(file) {
   $("sources-empty").hidden = true;
   $("sources-list").append(pending);
 
-  const stopPolling = trackProgress(state.notebook.chat_id, name, meter, fill, file.name);
-
   try {
-    await api.addSource(state.notebook.chat_id, file);
+    // Returns as soon as the file is stored and the work is queued; chunking
+    // and embedding then run on a worker. The row cannot be reloaded until
+    // that finishes, or the source would appear with nothing indexed behind
+    // it — a notebook that looks ready and retrieves nothing.
+    const queued = await api.addSource(state.notebook.chat_id, file);
+
+    await trackProgress(
+      state.notebook.chat_id, queued.task_id, name, meter, fill, file.name
+    );
+
     await load(state.notebook.chat_id);
     onSourcesChanged();
     return true;
@@ -665,56 +681,60 @@ export async function add(file) {
     render();
     toast(error.message);
     return false;
-  } finally {
-    // The bar belongs to this upload; render() replaces the list on success
-    // and the catch removes the row, so either way the poll must stop.
-    stopPolling();
   }
 }
 
-/** Poll the server's view of this upload and paint it onto the row.
+/** Poll this upload's task until it finishes, painting the row as it goes.
  *
- *  Returns the canceller. Any failure to read progress is ignored on purpose:
- *  a missing bar must never be the reason an otherwise fine upload reports an
- *  error, so the row simply falls back to the indeterminate state.
+ *  Resolves when the task reaches a terminal state, and rejects if it failed —
+ *  the caller must not reload the source list for an ingestion that did not
+ *  complete. A failure to *read* progress is still ignored: a missing bar must
+ *  never be the reason an otherwise fine upload reports an error.
  */
-function trackProgress(chatId, nameEl, meter, fill, filename) {
-  let stopped = false;
+function trackProgress(chatId, taskId, nameEl, meter, fill, filename) {
+  return new Promise((resolve, reject) => {
+    let timer = null;
 
-  const tick = async () => {
-    if (stopped) return;
+    const tick = async () => {
+      let progress = null;
 
-    try {
-      const progress = await api.indexingProgress(chatId);
-
-      if (!stopped && progress.active) {
-        const label = t(`stage_${progress.stage}`);
-        const pct = progress.percent;
-
-        if (typeof pct === "number") {
-          // Determinate: the embedding pass knows how many chunks there are.
-          meter.classList.remove("is-waiting");
-          fill.style.inlineSize = `${pct}%`;
-          nameEl.textContent = `${filename} — ${label} ${pct}%`;
-        } else {
-          // Extracting and chunking have no honest fraction to report.
-          meter.classList.add("is-waiting");
-          nameEl.textContent = `${filename} — ${label}`;
-        }
+      try {
+        progress = await api.indexingProgress(chatId, taskId);
+      } catch {
+        // Leave whatever the row is already showing and try again.
+        timer = setTimeout(tick, 600);
+        return;
       }
-    } catch {
-      // Leave whatever the row is already showing.
-    }
 
-    if (!stopped) timer = setTimeout(tick, 600);
-  };
+      if (progress.status === "FAILURE") {
+        reject(new Error(progress.error || t("uploadFailed")));
+        return;
+      }
 
-  let timer = setTimeout(tick, 250);
+      if (!progress.active) {
+        resolve();
+        return;
+      }
 
-  return () => {
-    stopped = true;
-    clearTimeout(timer);
-  };
+      const label = t(`stage_${progress.stage}`);
+      const pct = progress.percent;
+
+      if (typeof pct === "number") {
+        // Determinate: the embedding pass knows how many chunks there are.
+        meter.classList.remove("is-waiting");
+        fill.style.inlineSize = `${pct}%`;
+        nameEl.textContent = `${filename} — ${label} ${pct}%`;
+      } else {
+        // Extracting and chunking have no honest fraction to report.
+        meter.classList.add("is-waiting");
+        nameEl.textContent = `${filename} — ${label}`;
+      }
+
+      timer = setTimeout(tick, 600);
+    };
+
+    timer = setTimeout(tick, 250);
+  });
 }
 
 export function bindSources() {

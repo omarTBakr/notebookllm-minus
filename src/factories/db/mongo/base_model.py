@@ -16,9 +16,7 @@ class BaseModel:
         # e.g. "models.ProjectModel" — every model inherits a logger named
         # after its own module, matching the controllers' convention.
         self.logger = get_logger(type(self).__module__)
-        self.logger.debug(
-            "%s bound to collection %r", type(self).__name__, collection_name.value
-        )
+        self.logger.debug("%s bound to collection %r", type(self).__name__, collection_name.value)
 
     # --- write helpers --------------------------------------------------------
     # Every repository here patches a single document the same way: match on
@@ -68,9 +66,7 @@ class BaseModel:
 
         keys: list of (field, direction) tuples — 1=ASC, -1=DESC
         """
-        auto_name = "_".join(
-            f"{field}_{'asc' if direction == 1 else 'desc'}" for field, direction in keys
-        ) + "_idx"
+        auto_name = "_".join(f"{field}_{'asc' if direction == 1 else 'desc'}" for field, direction in keys) + "_idx"
 
         return {
             "key": keys,
@@ -83,8 +79,14 @@ class BaseModel:
         keys: list[tuple[str, int]],
         unique: bool = False,
         name: str | None = None,
+        **options,
     ) -> str:
+        """Create one index. **options passes driver kwargs straight through.
+
+        Needed by the partial unique index on assets, which supplies
+        partialFilterExpression: without somewhere for it to go this raised
+        TypeError on the first Mongo startup, and nothing caught it because
+        the live stack runs Postgres and the tests use a fake provider.
+        """
         index = self.get_index(keys, unique, name)
-        return await self.collection.create_index(
-            index["key"], name=index["name"], unique=index["unique"]
-        )
+        return await self.collection.create_index(index["key"], name=index["name"], unique=index["unique"], **options)

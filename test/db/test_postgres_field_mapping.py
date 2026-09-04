@@ -26,9 +26,19 @@ from factories.db.postgres.base_repository import (
     MessageRow,
     ProjectRow,
     SessionRow,
+    TaskExecutionRow,
     UserRow,
 )
-from models.db_schema import Asset, Chat, DataChunk, Message, Project, Session, User
+from models.db_schema import (
+    Asset,
+    Chat,
+    DataChunk,
+    Message,
+    Project,
+    Session,
+    TaskExecution,
+    User,
+)
 
 REPOSITORIES = [
     ("user", User),
@@ -38,6 +48,7 @@ REPOSITORIES = [
     ("project", Project),
     ("asset", Asset),
     ("chunk", DataChunk),
+    ("task", TaskExecution),
 ]
 
 # The pydantic model and the ORM class that stores it.
@@ -49,6 +60,7 @@ TABLES = [
     (Project, ProjectRow),
     (Asset, AssetRow),
     (DataChunk, ChunkRow),
+    (TaskExecution, TaskExecutionRow),
 ]
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "factories" / "db" / "postgres"

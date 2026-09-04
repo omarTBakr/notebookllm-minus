@@ -18,15 +18,16 @@ from ..interfaces.message_repository import MessageRepository
 from ..interfaces.project_repository import ProjectRepository
 from ..interfaces.provider import DbProvider
 from ..interfaces.session_repository import SessionRepository
+from ..interfaces.task_repository import TaskRepository
 from ..interfaces.user_repository import UserRepository
 from ..interfaces.vector_repository import VectorRepository
-
 from .asset_repository import MongoAssetRepository
 from .chat_repository import MongoChatRepository
 from .chunk_repository import MongoChunkRepository
 from .message_repository import MongoMessageRepository
 from .project_repository import MongoProjectRepository
 from .session_repository import MongoSessionRepository
+from .task_repository import MongoTaskRepository
 from .user_repository import MongoUserRepository
 from .vector_repository import QdrantVectorRepository
 
@@ -109,6 +110,13 @@ class MongoProvider(DbProvider):
 
         await MongoMessageRepository(self.db).create_index([("chat_id", 1), ("created_at", 1)])
 
+        task_repo = MongoTaskRepository(self.db)
+        await task_repo.create_index([("task_id", 1)], unique=True)
+        # The progress poll, and the idempotency lookup. Mirrors
+        # idx_tasks_project_created / idx_tasks_name_hash_status on Postgres.
+        await task_repo.create_index([("project_id", 1), ("created_at", -1)])
+        await task_repo.create_index([("task_name", 1), ("args_hash", 1), ("status", 1)])
+
         self.logger.info("MongoDB indexes ensured")
 
     # --- document repositories -----------------------------------------------
@@ -133,6 +141,9 @@ class MongoProvider(DbProvider):
 
     def chunks(self) -> ChunkRepository:
         return MongoChunkRepository(self.db)
+
+    def tasks(self) -> TaskRepository:
+        return MongoTaskRepository(self.db)
 
     # --- vector repository ---------------------------------------------------
 

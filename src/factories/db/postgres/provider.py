@@ -29,15 +29,16 @@ from ..interfaces.message_repository import MessageRepository
 from ..interfaces.project_repository import ProjectRepository
 from ..interfaces.provider import DbProvider
 from ..interfaces.session_repository import SessionRepository
+from ..interfaces.task_repository import TaskRepository
 from ..interfaces.user_repository import UserRepository
 from ..interfaces.vector_repository import VectorRepository
-
 from .asset_repository import PostgresAssetRepository
 from .chat_repository import PostgresChatRepository
 from .chunk_repository import PostgresChunkRepository
 from .message_repository import PostgresMessageRepository
 from .project_repository import PostgresProjectRepository
 from .session_repository import PostgresSessionRepository
+from .task_repository import PostgresTaskRepository
 from .user_repository import PostgresUserRepository
 from .vector_repository import PostgresVectorRepository
 
@@ -155,6 +156,9 @@ class PostgresProvider(DbProvider):
 
     def chunks(self) -> ChunkRepository:
         return PostgresChunkRepository(self._sessions())
+
+    def tasks(self) -> TaskRepository:
+        return PostgresTaskRepository(self._sessions())
 
     def vectors(self) -> VectorRepository:
         return PostgresVectorRepository(

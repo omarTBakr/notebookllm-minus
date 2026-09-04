@@ -11,6 +11,10 @@ survives::
     raise DbError("...") from exc
 """
 
+from celery.exceptions import CeleryError as CeleryLibraryError
+from kombu.exceptions import OperationalError as BrokerOperationalError
+from redis.exceptions import RedisError
+
 
 class NotebookLLMError(Exception):
     """Base for every error this application raises deliberately."""
@@ -40,6 +44,53 @@ class DbConnectionError(DbError):
     """The database connection could not be established or was lost."""
 
     pass
+
+
+class CeleryError(NotebookLLMError):
+    """The background-task broker or result backend is unavailable."""
+
+    status_code = 503
+
+
+class CeleryBrokerError(CeleryError):
+    """A task could not be submitted to the Celery broker."""
+
+    pass
+
+
+class CeleryResultError(CeleryError):
+    """A task state or result could not be read from Celery."""
+
+    pass
+
+
+class CeleryTaskError(CeleryError):
+    """A Celery task failed before it could return its application result."""
+
+    pass
+
+
+# Celery publishes through Kombu, so broker failures can come from either
+# library. Keep the boundary tuples here instead of scattering library details
+# through route and task modules.
+#
+# RuntimeError is deliberately NOT in this tuple. It is not something kombu
+# raises for an unreachable broker, and catching it turns any ordinary
+# programming error inside .delay() into a 503 "broker unavailable" — the
+# wrong status, pointing the reader at the wrong system.
+CELERY_BROKER_EXCEPTIONS = (
+    CeleryLibraryError,
+    BrokerOperationalError,
+    ConnectionError,
+    TimeoutError,
+)
+
+# Reading a result talks to the *backend* (Redis), not the broker, and redis-py
+# raises its own hierarchy: RedisError derives straight from Exception, so
+# none of the tuple above catches a Redis outage. Without this the status
+# endpoints answer 500 on a backend that is merely down, when the whole point
+# of CeleryError is to say 503.
+CELERY_RESULT_EXCEPTIONS = CELERY_BROKER_EXCEPTIONS + (RedisError,)
 
 
 class ProcessingError(NotebookLLMError):
@@ -126,9 +177,6 @@ class LLMProviderError(NotebookLLMError):
     status_code = 502
 
 
-
-
-
 class UnsupportedProviderError(InvalidInputError):
     """A factory was asked for a backend it has no implementation for.
 
@@ -139,5 +187,3 @@ class UnsupportedProviderError(InvalidInputError):
 
 class EmbeddingError(ProcessingError):
     """Turning chunks into vectors failed, or returned the wrong number."""
-
-

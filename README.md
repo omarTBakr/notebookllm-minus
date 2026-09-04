@@ -10,10 +10,16 @@ Every backend is swappable from `.env` — chat model, embedding model, document
 store — and the whole stack runs **offline against a local Ollama** if you want it to. Models
 are discovered from what is actually installed and reachable, never pinned in code.
 
-- [Quickstart](#quickstart) · [Configuration](#configuration) · [Features](#features)
+- [Demo](#demo) · [Quickstart](#quickstart) · [Configuration](#configuration) · [Features](#features)
 - [Architecture](#architecture) · [Providers](#providers) · [Choosing models](#choosing-models)
 - [Database backends](#database-backends) · [Data model](#data-model) · [API](#api)
 - [Deployment](#deployment) · [Observability](#observability) · [Project structure](#project-structure)
+
+## Demo
+
+<!-- Video demo goes here. -->
+
+_Coming soon._
 
 ## Quickstart
 
@@ -36,6 +42,7 @@ uv run uvicorn main:app --reload
 - UI and API — <http://localhost:8000> (`:8080` through nginx)
 - Interactive API docs — <http://localhost:8000/docs>
 - Grafana — <http://localhost:3000>, Prometheus — <http://localhost:9090>
+- Flower (Celery) — <http://localhost:5555>, RabbitMQ — <http://localhost:15672>
 
 `DOCUMENT_DB_BACKEND` decides which database is used, not which containers are running. The
 compose file keeps Mongo and Qdrant behind a profile (`--profile mongo`), so the default
@@ -72,43 +79,50 @@ slower, which `PdfLayoutController` offsets by extracting pages across a process
 
 ## Features
 
-**Documents.** Upload PDF, txt or markdown per notebook, validated on type and size and
-stored as bytes in the database — nothing touches disk. A document is identified by the
-sha256 of its contents scoped to one notebook, so re-uploading the same file is refused with
-a 409 before anything is chunked, and renaming it does not sneak it past. Deleting a source
-removes it, its chunks and its vectors, derived-first. Ingestion is idempotent and runs off
-the event loop, so a 200-page PDF no longer freezes every other request.
+**Documents**
+- PDF, txt and markdown per notebook; validated on type and size, stored as bytes — nothing touches disk
+- Identity is the sha256 of the contents, scoped to one notebook: re-uploading the same file is refused with a 409 before anything is chunked, and renaming does not sneak it past
+- Enforced by a partial unique index, so two uploads racing each other collide in the database rather than both landing
+- Deleting a source removes it, its chunks and its vectors, derived-first
+- Ingestion is idempotent and runs on a worker, so a 200-page PDF never holds an API process
 
-**Chunking with a size guard.** `NLTKTextSplitter` cuts on sentence boundaries and a
-`RecursiveCharacterTextSplitter` re-splits anything still over the limit — not decorative,
-since PDF text often carries no sentence punctuation at all, which otherwise turns a whole
-document into one chunk. Text is sanitised at extraction: damaged font encodings decode to
-NUL bytes, which PostgreSQL refuses in both `text` and `jsonb`.
+**Chunking**
+- `NLTKTextSplitter` on sentence boundaries, with a `RecursiveCharacterTextSplitter` re-splitting anything still over the limit — PDF text often carries no sentence punctuation at all
+- Text sanitised at extraction: damaged font encodings decode to NUL bytes, which PostgreSQL refuses in both `text` and `jsonb`
+- Unicode normalised to NFKC with bidi controls stripped, so Arabic extracted as presentation forms still matches a normally typed query
 
-**Grounded chat.** Users → sessions → notebooks → messages, answers streamed token by token
-over SSE. A notebook holding documents answers from them with citations; one without them is
-an ordinary assistant — same endpoint, same code path, decided by whether the notebook has
-vectors rather than by a flag. A citation names the source's real **page** and opens the
-document there, highlighting the exact passage in a built-in PDF.js viewer, in a colour set
-per notebook. Reasoning models stream their scratchpad into a panel that collapses when the
-answer starts; it is shown, never stored. Generation can be stopped mid-answer and the
-partial reply is kept.
+**Grounded chat**
+- Users → sessions → notebooks → messages, streamed token by token over SSE
+- A notebook with documents answers from them with citations; one without is an ordinary assistant — same endpoint, decided by whether vectors exist rather than by a flag
+- Citations name the real **page** and open the document there, highlighting the passage in a built-in PDF.js viewer, in a per-notebook colour
+- Reasoning models stream their scratchpad into a collapsing panel — shown, never stored
+- Generation can be stopped mid-answer, and the partial reply is kept
 
-**Interface.** Jinja templates plus ES modules, no build step. Markdown renders as it
-streams. English and Arabic, including right-to-left layout. Sources / Chat / Studio panels
-resize by dragging and fold to a rail, remembered across reloads. Per-notebook tuning of
-temperature, output length, chunk size and overlap. Answers can be copied, downloaded, or
-saved back into Sources as a new document.
+**Models**
+- Six chat and five embedding providers behind factories; nothing above the factory layer names a vendor
+- Local and remote Ollama, NVIDIA NIM, Anthropic, Google, OpenAI-compatible endpoints
+- The picker probes rather than trusts: capability and entitlement checks cut one vendor catalogue of 82 to the ~12 that actually answer
+- Per-notebook model choice; switching the embedding model rebuilds that notebook's index
 
-**Operations.** Prometheus metrics at `/metrics` covering ingest duration per stage,
-embedding latency and batch size, time-to-first-token, retrieval latency and whether an
-answer was grounded — labels deliberately bounded to `provider`, `model` and `stage`, never a
-`chat_id`. Provisioned Grafana dashboards, structured logs with per-request correlation ids,
-and a live health probe that actually calls the database, the embedding model and the vector
-store rather than reporting what is configured.
+**Interface**
+- Jinja templates plus ES modules, no build step; markdown renders as it streams
+- English and Arabic, including right-to-left layout
+- Sources / Chat / Studio panels resize by dragging and fold to a rail, remembered across reloads
+- Per-notebook temperature, output length, chunk size and overlap
+- Answers can be copied, downloaded, or saved back into Sources as a new document
 
-**Not yet.** Web-search grounding is stored per notebook and shown marked *soon*, with no
-backend behind it. Formats past pdf/txt/md are enumerated in `AssetType` and not implemented.
+**Operations**
+- Two interchangeable database backends behind eight repository interfaces, enforced by a parity test
+- Ingestion as a Celery chain, with every run recorded in `task_executions` and swept on a schedule
+- Repeat submissions join the run already in flight instead of paying for it twice
+- Prometheus metrics at `/metrics`: ingest duration per stage, embedding latency and batch size, time-to-first-token, retrieval latency, whether an answer was grounded — labels bounded to `provider`, `model` and `stage`, never a `chat_id`
+- Provisioned Grafana dashboards, Flower for Celery, structured logs with per-request correlation ids
+- A health probe that actually calls the database, the embedding model and the vector store rather than reporting what is configured
+
+**Not yet**
+- Web-search grounding is stored per notebook and shown marked *soon*, with no backend behind it
+- `answer_chat_task` is routed but unimplemented, so no chat worker runs
+- Formats past pdf/txt/md are enumerated in `AssetType` and not implemented
 
 ## Architecture
 
@@ -321,7 +335,7 @@ from `src/` (the config lives beside the backend it migrates, hence `-c`):
 
 ```bash
 uv run alembic -c factories/db/postgres/alembic.ini upgrade head
-uv run alembic -c factories/db/postgres/alembic.ini revision --autogenerate --rev-id 0006 -m "…"
+uv run alembic -c factories/db/postgres/alembic.ini revision --autogenerate --rev-id 0008 -m "…"
 ```
 
 Revision ids are numbered by hand so `ls versions/` reads in order. **An autogenerate run
@@ -333,27 +347,129 @@ drifted.
 place. What that cannot do is reconcile a table that exists with the *wrong shape* — it skips
 the whole table, columns and all — which is what `0002` exists for, after every read of a
 user's sessions failed with `UndefinedColumnError`. Anything column-level needs its own
-migration. Five so far: initial schema, sessions reconcile, asset content hash, chunk lookup
-index, notebook highlight colour.
+migration. Seven so far: initial schema, sessions reconcile, asset content hash, chunk lookup
+index, notebook highlight colour, task executions, unique asset content.
+
+`0007` finally enforces one copy of a document per notebook — the index the dedupe lookup has
+claimed to use since `0003`, deferred three times because the databases held duplicates and
+choosing which copy to keep is not a migration's decision. It deduplicates nothing: it checks,
+and stops with a message naming the offending rows if any remain.
 
 **pgvector collections are not Alembic's.** One table per notebook, `vec_<collection>`,
 created at runtime — the vector width is not known until an embedding model is chosen, and a
 shared table would mean one fixed width for everyone. Alembic creates the extension; the
-repository creates the tables.
+repository creates the tables. `env.py`'s `include_name` hook excludes them from the
+autogenerate diff, without which every run proposed dropping every vector in the database.
 
 ## Data model
+
+```mermaid
+erDiagram
+    USERS ||--o{ SESSIONS : opens
+    SESSIONS ||--o{ CHATS : contains
+    CHATS ||--o{ MESSAGES : holds
+    CHATS ||--|| PROJECTS : "same id"
+    PROJECTS ||--o{ ASSETS : stores
+    PROJECTS ||--o{ CHUNKS : owns
+    ASSETS ||--o{ CHUNKS : "split into"
+    PROJECTS ||--o{ TASK_EXECUTIONS : "work on"
+    CHUNKS ||--|| VEC_PROJECT : embedded
+
+    USERS {
+        objectid id PK
+        string user_id UK "uuid4"
+        string label
+    }
+    SESSIONS {
+        objectid id PK
+        string session_id UK
+        string user_id FK
+        string title
+    }
+    CHATS {
+        objectid id PK
+        string chat_id UK "== project_id"
+        string session_id FK
+        string user_id FK
+        string lang
+        string generation_model "null = .env default"
+        string embedding_model "null = .env default"
+        int embedding_dimensions
+        bool has_documents "grounded or plain chat"
+        string highlight_color
+    }
+    MESSAGES {
+        objectid id PK
+        string message_id UK
+        string chat_id FK
+        string role "user | assistant"
+        text content
+        jsonb citations
+    }
+    PROJECTS {
+        objectid id PK
+        string project_id UK "string from the URL"
+        jsonb assets_ids "objectids"
+        jsonb chunks_ids "objectids"
+    }
+    ASSETS {
+        objectid id PK
+        string asset_id UK "uuid4"
+        string project_id FK "the *string* id"
+        string asset_type
+        bytea file_bytes "no disk"
+        string content_hash "sha256, unique per project"
+    }
+    CHUNKS {
+        objectid id PK
+        objectid project_id FK "the *row* id"
+        string asset_id FK
+        int chunk_order "with asset_id, the stable point key"
+        text chunk_content
+        jsonb chunk_metadata "page, source"
+    }
+    TASK_EXECUTIONS {
+        objectid id PK
+        string task_id UK "celery uuid"
+        string task_name
+        string project_id FK
+        string status "QUEUED STARTED SUCCESS FAILURE DEAD"
+        string stage
+        jsonb args
+        string args_hash "idempotency"
+        jsonb result "trimmed"
+    }
+    VEC_PROJECT {
+        uuid id PK "uuid5 of asset_id:chunk_order"
+        vector embedding "width set by the model"
+        jsonb metadata
+    }
+```
+
+Two things in that diagram are worth internalising early, because both have caused real
+bugs. `Project.project_id` is the **string** from the URL while `DataChunk.project_id` is the
+project's **`_id`** — the same field name meaning two different things one table apart. And
+`VEC_PROJECT` is not one table: it is one per notebook, `vec_<collection>`, created at runtime
+because the vector width is not known until an embedding model is chosen.
+
 
 | Collection | Key fields |
 | --- | --- |
 | `projects` | `project_id` (string, from the URL), `assets_ids`, `chunks_ids` |
 | `assets` | `asset_id` (uuid4), `asset_type`, `project_id`, `file_bytes`, `content_hash` |
 | `data_chunks` | `project_id` (**ObjectId**), `asset_id`, `chunk_order`, `chunk_content` |
+| `task_executions` | `task_id` (Celery uuid), `task_name`, `project_id`, `status`, `stage`, `args_hash` |
 
 The same pydantic documents back both stores; on Postgres they are tables of the same names
 (`data_chunks` becomes `chunks`). The identifier distinction is worth internalising early:
 `Project.project_id` is the string from the URL, while `DataChunk.project_id` is the
 project's `_id`. Primary keys stay 24-hex `ObjectId` strings on Postgres too, because the
 models are shared with the Mongo backend.
+
+`task_executions` is the one table that is not part of that tree — it records work rather
+than content, and is keyed by the Celery task id. Its `result` is stored trimmed: processing
+returns the full text of every chunk it created, and keeping that would copy each ingested
+document into the table a second time, so the counts are kept and the bodies dropped.
 
 Users → sessions → notebooks → messages, with assets and chunks hanging off a notebook.
 Nothing cascades in either store, so deletion routes walk the tree themselves, derived-first
@@ -369,7 +485,8 @@ Full interactive reference at `/docs`. The shape of it:
 | `GET` | `/base/health` | app name and version |
 | `GET` | `/nlp/health` | live probe — database, embedding model, vector store |
 | `POST` | `/data/upload/{project_id}` | store a file as an asset |
-| `POST` | `/process/{project_id}` | chunk one asset, or every asset in the project |
+| `POST` | `/process/{project_id}` | queue chunking for one asset, or every asset in the project |
+| `GET` | `/process/tasks/{task_id}` | read queued processing state and result |
 | `POST` | `/nlp/index/push/{project_id}` | embed a project's chunks and upsert them |
 | `POST` | `/nlp/index/search/{project_id}` | ranked passages with citation metadata |
 | `GET` | `/nlp/index/info/{project_id}` | collection name, size, width |
@@ -396,6 +513,80 @@ Switching a notebook's embedding model **rebuilds its index** — vector width i
 collection is created, so old vectors are unusable. The chunks are already stored, so the
 rebuild re-embeds them rather than asking for the documents again.
 
+### Background processing
+
+Ingestion runs in Celery rather than inside the FastAPI request. Attaching a document stores
+the file and returns `202 Accepted` immediately with an `asset_id` and a `task_id`; chunking
+and embedding then happen on the workers.
+
+**Processing and indexing are one chain.** `chain(process → index)` is queued as a unit, so a
+document can never be left chunked-but-unindexed — the state where a notebook looks grounded
+and retrieves nothing. The signatures are immutable (`.si`) on purpose: a mutable one would
+bind the first task's result dict to the second's `project_id`, and `reset` means "delete this
+asset's chunks" upstream but "drop the whole vector collection" downstream.
+
+**Every run is recorded.** `task_executions` holds one row per task — name, arguments, status,
+stage, progress, trimmed result, timings — so history survives the Redis result TTL, can be
+joined to the project it acted on, and is what the browser's progress bar polls. Celery's own
+state cannot do any of that, and cannot report a task whose worker was killed: that row would
+say `STARTED` forever, because the process that would have written the ending is gone.
+
+Statuses are `QUEUED`, `STARTED`, `SUCCESS`, `FAILURE` and `DEAD`. The last has no Celery
+equivalent and is the point of the table — work cancelled because the chain ahead of it
+failed, or abandoned when its worker vanished.
+
+**Repeat submissions join the run in progress.** `IdempotencyController` fingerprints
+`(task_name, args)` and returns `200` with the existing `task_id` instead of `202`, so a
+double-click does not pay for the same embedding twice. It is a query rather than a unique
+constraint by choice: both tasks are already re-runnable — processing skips assets that are
+already chunked, indexing upserts on a deterministic point id — so a constraint would turn a
+harmless race into a `500` rather than preventing anything that matters.
+
+The workloads are isolated into `process`, `index` and `maintenance` queues. Session CRUD,
+listings, health checks and semantic reads remain in FastAPI because they are short
+transactional or streaming operations and do not benefit from an extra broker round trip.
+
+The API and workers must share the same broker and result backend. From `src/`:
+
+```bash
+uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.process_data_task" --loglevel=INFO --concurrency=2
+uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.index_project_task" --loglevel=INFO --concurrency=1
+uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.maintenance_task" --loglevel=INFO --concurrency=1
+uv run celery -A celery_app.celery_app beat --loglevel=INFO
+```
+
+Compose runs the same set as `celery-process`, `celery-index`, `celery-maintenance` and
+`celery-beat`. There is no `celery-chat`: `answer_chat_task` is named in the queue enum and
+routed to, but no such task exists, and a worker for it would consume a queue nothing can
+publish to while appearing in Flower as capacity that is not there.
+
+**The sweep.** `maintenance_task` runs every `CELERY_MAINTENANCE_INTERVAL_HOURS` (default 24)
+and does two things: marks work that can no longer be running as `DEAD`, and deletes finished
+rows older than `CELERY_TASK_RETENTION_DAYS` (default 7). Two cutoffs, because the two failures
+differ. A run that started longer ago than twice the hard time limit is definitionally not
+running. Queued work gets the full retention window instead — a task waits legitimately for as
+long as its workers are down, and a tight cutoff would report a deploy as data loss.
+
+Broker and result-backend connection failures are the `CeleryError` branch of the exception
+hierarchy and return `503`. A task's own failure stays in its row and its result, with the
+exception type alongside the message.
+
+### Code quality
+
+Black and Ruff are configured in `src/pyproject.toml`. The repository's native pre-commit hook
+runs them automatically for staged Python files. Activate it once per checkout:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+To run the same checks manually from the repository root:
+
+```bash
+black --config src/pyproject.toml src
+ruff check --config src/pyproject.toml src
+```
+
 ## Deployment
 
 `.github/workflows/deploy-main.yml` runs the suite on every push to `main` and, only if it is
@@ -416,15 +607,37 @@ first; that is why the workflow pulls before restarting.
 
 ## Observability
 
-Prometheus scrapes four targets, all addressed by compose service name so nothing depends on
+Prometheus scrapes five targets, all addressed by compose service name so nothing depends on
 a published port:
 
 | Job | Source |
 | --- | --- |
 | `notebookllm` | the app's own `/metrics` |
 | `postgres` | `postgres-exporter` |
+| `rabbitmq` | `rabbitmq_prometheus`, on `/metrics/per-object` |
 | `prometheus` | itself |
 | `node` | `node_exporter` **on the host**, not in the stack |
+
+The RabbitMQ job needs `/metrics/per-object` specifically. The default `/metrics` aggregates
+everything into one series per metric with no `queue` label, which is why the queue panels
+rendered empty: `rabbitmq_queue_messages_ready` came back as a single `{instance, job}` series
+and the dashboard's `$queue` variable had nothing to resolve. Per-object is per *queue*, and
+Celery creates far more queues than this application defines — 28 `celery_delayed_N` for
+native delayed delivery, plus a `celeryev.<uuid>` and a `celery@<host>.celery.pidbox` per
+worker, all churning on every restart — so a `metric_relabel_configs` drop keeps the stored
+series to the queues that mean something.
+
+**Flower** runs on `:5555` for Celery itself: live workers, task history, per-task metrics at
+its own `/metrics`. It is built from the application image rather than `mher/flower` so
+`--app celery_app:celery_app` reads the same broker and backend URLs the workers do, instead
+of a second copy of the DSN in compose that could drift. Task history needs events, enabled
+once in `celery_app.py` (`worker_send_task_events`, `task_send_sent_event`) rather than as
+`-E` on four worker commands that could fall out of step.
+
+Note that `FLOWER_BASIC_AUTH=""` does **not** mean "no authentication" — Flower reads an empty
+string as "auth is on, with no valid users" and answers `401` to every route except
+`/healthcheck`, so the container passes its health probe while the dashboard is unreachable.
+`env/.env.app` keeps the variable commented out instead.
 
 `node_exporter` is the one piece to install separately (`apt install
 prometheus-node-exporter`). Both the app and Prometheus map `host.docker.internal` to
@@ -434,6 +647,10 @@ Linux — without it the node job sits down with a DNS error while every other t
 `/nlp/health` is deliberately **not** scraped: it performs a real embedding inference, so a
 15s scrape would fire one four times a minute forever. Liveness comes from the app's job
 being up at all.
+
+Grafana provisions its dashboards by scanning `Docker/grafana/dashboards/`, so a new `*.json`
+there is picked up without being listed anywhere: FastAPI observability, PostgreSQL, host, and
+RabbitMQ broker/queue health.
 
 ## Error handling
 
@@ -460,6 +677,9 @@ src/
 │   ├── chat/               # users · sessions · chats · messages · assets · models
 │   └── schemas/            # request models
 ├── controllers/            # the work: chat, process, text processing, nlp, models, pdf layout
+├── task/                   # Celery adapters and background-processing services
+│   ├── process.py           # task submission, execution lifecycle, result lookup
+│   └── process_service.py   # asset validation, chunking and persistence workflow
 ├── factories/              # swappable backends
 │   ├── llmchatting/        # interface + 6 providers + factory
 │   ├── llmembedding/       # interface + 5 providers + factory

@@ -1,0 +1,44 @@
+#!/bin/sh
+
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+staged_python_files=$(git diff --cached --name-only --diff-filter=ACMR | awk '/^src\/.*\.py$/ { print }')
+
+if [ -z "$staged_python_files" ]; then
+    exit 0
+fi
+
+find_tool() {
+    tool=$1
+    if command -v "$tool" >/dev/null 2>&1; then
+        command -v "$tool"
+    elif [ -x "src/.venv/bin/$tool" ]; then
+        printf '%s\n' "src/.venv/bin/$tool"
+    elif [ -x ".venv/bin/$tool" ]; then
+        printf '%s\n' ".venv/bin/$tool"
+    else
+        echo "pre-commit: $tool is required; install the dev dependencies first" >&2
+        exit 1
+    fi
+}
+
+black=$(find_tool black)
+ruff=$(find_tool ruff)
+
+printf '%s\n' "Running Black on staged Python files..."
+printf '%s\n' "$staged_python_files" | xargs "$black" --config src/pyproject.toml
+
+printf '%s\n' "Updating the staged formatting..."
+printf '%s\n' "$staged_python_files" | xargs git add
+
+printf '%s\n' "Running Ruff on staged Python files..."
+printf '%s\n' "$staged_python_files" | xargs "$ruff" check --config src/pyproject.toml --fix
+
+printf '%s\n' "Updating the staged lint fixes..."
+printf '%s\n' "$staged_python_files" | xargs git add
+
+printf '%s\n' "Verifying Ruff..."
+printf '%s\n' "$staged_python_files" | xargs "$ruff" check --config src/pyproject.toml

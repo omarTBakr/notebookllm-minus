@@ -3,10 +3,11 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from enums import (
+    CeleryTaskFunction,
     DbBackend,
     DistanceMethod,
     IndexType,
@@ -46,9 +47,7 @@ def _enum_choice_fields(annotations: dict, *, exclude: tuple = ()) -> tuple[str,
     return tuple(
         name
         for name, annotation in annotations.items()
-        if isinstance(annotation, type)
-        and issubclass(annotation, Enum)
-        and annotation not in exclude
+        if isinstance(annotation, type) and issubclass(annotation, Enum) and annotation not in exclude
     )
 
 
@@ -72,8 +71,8 @@ class Settings(BaseSettings):
 
     # --- uploads -------------------------------------------------------------
     ALLOWED_TYPES: list
-    MAX_FILE_SIZE: int = 10485760       # hard ceiling on a single upload (bytes)
-    MAX_FILE_CHUNK_SIZE: int            # streaming read size while uploading
+    MAX_FILE_SIZE: int = 10485760  # hard ceiling on a single upload (bytes)
+    MAX_FILE_CHUNK_SIZE: int  # streaming read size while uploading
 
     # --- indexing ------------------------------------------------------------
     # How many chunks are embedded per request to the model. One batch is one
@@ -102,7 +101,7 @@ class Settings(BaseSettings):
 
     # --- vector database -----------------------------------------------------
     # VECTOR_DB_PATH: str = "assets/qdrant_db"  # embedded mode; relative resolves against src/
-    VECTOR_DB_HOST: str | None = None   # set to use a server instead of VECTOR_DB_PATH
+    VECTOR_DB_HOST: str | None = None  # set to use a server instead of VECTOR_DB_PATH
     VECTOR_DB_PORT: int | None = None
     VECTOR_DB_API_KEY: str | None = None
     # Fixed when a collection is created; changing it means rebuilding.
@@ -118,9 +117,18 @@ class Settings(BaseSettings):
     EMBEDDING_BACKEND: LLMEmbeddingProvider
 
     ANTHROPIC_API_KEY: str | None = None
+    ANTHROPIC_MODEL_ID: str = "claude-sonnet-4-20250514"
+    # Required only for an identity-linked API key, which Anthropic rejects
+    # outright without it: "anthropic-workspace-id is required when
+    # authenticating with an identity-linked API key". An ordinary key needs
+    # no workspace, so this stays optional and the header is omitted when
+    # unset rather than sent empty. Found in the Anthropic console under
+    # Settings -> Workspaces; the id looks like "wrkspc_...".
+    ANTHROPIC_WORKSPACE_ID: str | None = None
     OPENAI_API_KEY: str | None = None
     OPENAI_API_BASE_URL: str | None = None  # for OpenAI-compatible endpoints
     GOOGLE_API_KEY: str | None = None
+    GOOGLE_MODEL_ID: str = "gemini-3.6-flash"
     COHERE_API_KEY: str | None = None
     # NVIDIA NIM — an OpenAI-compatible endpoint with its own key, kept
     # separate from OPENAI_API_KEY / OPENAI_API_BASE_URL so both vendors can be
@@ -171,8 +179,8 @@ class Settings(BaseSettings):
 
     # --- chat ----------------------------------------------------------------
     DEFAULT_LANG: Language = Language.EN  # prompt locale when a chat names none
-    CHAT_HISTORY_LIMIT: int = 10          # prior turns sent as context
-    RETRIEVAL_TOP_K: int = 5              # chunks retrieved per grounded answer
+    CHAT_HISTORY_LIMIT: int = 10  # prior turns sent as context
+    RETRIEVAL_TOP_K: int = 5  # chunks retrieved per grounded answer
     # Passages scoring below this are dropped before they reach the prompt.
     # Scores are similarities on both backends (higher is better), so 0.0 is
     # "keep everything" and is the default: a floor that is too high silently
@@ -228,7 +236,186 @@ class Settings(BaseSettings):
     METRICS_ENABLED: bool = True
     METRICS_PATH: str = "/metrics"
 
+    # --- task queue / Celery -------------------------------------------------
+    # Broker: RabbitMQ — celery_broker_url assembles these into an amqp:// DSN.
+    CELERY_USERNAME: str = "appuser"
+    CELERY_PASSWORD: str = "change-me"
+    CELERY_HOST: str = "localhost"
+    CELERY_PORT: int = 5672
+    CELERY_VHOST: str = "/"  # RabbitMQ virtual host
+
+    # Result backend: Redis — celery_result_backend_url builds the redis:// DSN.
+    CELERY_BACKEND_HOST: str = "localhost"
+    CELERY_BACKEND_PORT: int = 6379
+    CELERY_BACKEND_PASSWORD: str | None = None
+    CELERY_BACKEND_DB: int = 0  # logical Redis database index (0-15)
+
+    # Worker / serialisation — passed directly to the Celery app config dict.
+    CELERY_TASK_SERIALIZER: str = "json"
+    CELERY_RESULT_SERIALIZER: str = "json"
+    CELERY_ACCEPT_CONTENT: list = ["json"]
+    CELERY_TIMEZONE: str = "UTC"
+    CELERY_ENABLE_UTC: bool = True
+    CELERY_TASK_TIME_LIMIT: int = 600  # hard wall-clock limit per task (seconds)
+    # The limit that actually matters for correctness. The hard limit above is
+    # a SIGKILL of the worker child: it stops the task, but it also skips every
+    # `finally` on the way out — the DB disconnect in tasks/process.py and the
+    # provider-pool close in tasks/index.py — so each hard kill leaked a
+    # connection and a pool. The soft limit raises SoftTimeLimitExceeded inside
+    # the task instead, so cleanup runs and the failure is recorded; the hard
+    # limit stays as the backstop for a task that ignores it. Must be lower
+    # than CELERY_TASK_TIME_LIMIT or it can never fire.
+    CELERY_TASK_SOFT_TIME_LIMIT: int = 540
+    # Report STARTED once a worker picks a task up. Off by default in Celery,
+    # which is why a running task and a queued one were both PENDING — the
+    # single most misleading thing the status endpoints did.
+    CELERY_TASK_TRACK_STARTED: bool = True
+    # How long a finished result stays readable (seconds). Celery's default is
+    # one day, unset and therefore invisible; a result that expired used to
+    # reappear as PENDING, indistinguishable from "still queued". Expiry is now
+    # reported as UNKNOWN instead, so this is a retention choice rather than a
+    # correctness one — longer costs Redis memory, since results carry the
+    # task's return payload.
+    CELERY_RESULT_EXPIRES: int = 604800  # 7 days
+    # Emit task-* events. Required by Flower for any task history at all, and
+    # by the sent-event below for tasks that never reach a worker.
+    CELERY_WORKER_SEND_TASK_EVENTS: bool = True
+    # Emit task-sent when the *client* publishes, not when a worker receives.
+    # This is what makes a task that no worker ever picked up visible.
+    CELERY_TASK_SEND_SENT_EVENT: bool = True
+
+    # --- maintenance sweep ---------------------------------------------------
+    # How often the sweep runs. The table is append-only during normal use, so
+    # without this it grows for the life of the deployment.
+    CELERY_MAINTENANCE_INTERVAL_HOURS: int = 24
+    # How long a finished task's row is kept. Defaults to the same week as
+    # CELERY_RESULT_EXPIRES: past that point Celery has already forgotten the
+    # result, so a row that outlived it can no longer be cross-checked against
+    # anything and is only taking up space.
+    CELERY_TASK_RETENTION_DAYS: int = 7
+    # Acknowledge a message only after the task finishes, so a worker killed
+    # mid-ingest returns the job to the queue instead of losing it. This was
+    # False while the comment beside it described the True behaviour; True is
+    # what the rest of this config already assumes — the
+    # cancel_long_running_tasks_on_connection_loss setting below exists
+    # specifically to stop late-acked tasks running twice after a reconnect.
+    # The ingestion tasks tolerate redelivery: process skips assets that are
+    # already chunked, and index upserts on a deterministic point id.
+    CELERY_TASK_ACKS_LATE: bool = True
+    CELERY_WORKER_CONCURRENCY: int = 2
+
+    # Broker connection resilience
+    # Retry connecting to the broker if it is not up when the worker starts.
+    CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: bool = True
+    # Retry after a mid-run connection loss (not just at startup).
+    CELERY_BROKER_CONNECTION_RETRY: bool = True
+    # Seconds to wait between consecutive retry attempts.
+    CELERY_BROKER_CONNECTION_RETRY_DELAY: int = 2
+    # Maximum number of retry attempts before giving up. 0 means retry forever.
+    CELERY_BROKER_CONNECTION_MAX_RETRIES: int = 10
+
+    # Transport-level options passed verbatim to the broker / backend drivers.
+    # Kept as dicts here; override per-deployment if the transport needs extras
+    # (e.g. {"visibility_timeout": 3600} for a Redis broker).
+    CELERY_BROKER_TRANSPORT_OPTIONS: dict = {}
+    CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS: dict = {}
+
+    # Revoke and stop long-running tasks when the worker loses its broker
+    # connection, so they don't run silently after a reconnect.
+    CELERY_WORKER_CANCEL_LONG_RUNNING_TASKS_ON_CONNECTION_LOSS: bool = True
+
+    # --- Flower (Celery dashboard) -------------------------------------------
+    #
+    # Flower reads FLOWER_*-prefixed environment variables directly, so these
+    # are declared here for documentation and validation rather than because
+    # anything in this application passes them on. Keeping them in Settings
+    # means .env.example describes the whole stack in one place, and a typo in
+    # a port shows up as a validation error instead of a container that binds
+    # somewhere unexpected.
+    FLOWER_PORT: int = 5555
+    # Changing this alone is not enough: the published port and the container
+    # healthcheck in docker-compose.yml both name 5555 literally, because a
+    # Compose `ports:` mapping cannot read a value out of env_file.
+    #
+    # "user:password", or empty for no authentication — which matches the rest
+    # of this stack, where Grafana, Prometheus and the RabbitMQ management UI
+    # are all unauthenticated on the host.
+    #
+    # The empty default is only safe because this value is *not* exported to
+    # Flower. Setting FLOWER_BASIC_AUTH="" in the environment does not disable
+    # auth: Flower reads it as "auth enabled, no valid users" and answers 401
+    # everywhere except /healthcheck — so the container passes its health probe
+    # while the dashboard is entirely unreachable. env/.env.app therefore keeps
+    # the variable commented out rather than set to "".
+    FLOWER_BASIC_AUTH: str = ""
+    # Keep task history across restarts. Off by default in Flower, and the
+    # default is a poor fit here: a dashboard whose whole purpose is showing
+    # tasks that failed or never finished is least useful right after the
+    # restart that a failure tends to cause.
+    FLOWER_PERSISTENT: bool = True
+    FLOWER_DB: str = "/app/flower/flower.db"
+    # Ring-buffer size. Each retained task holds its args and result, and the
+    # ingest tasks return chunk counts rather than chunk text, so this is small.
+    FLOWER_MAX_TASKS: int = 10000
+    # Drop workers that have not been seen for this many seconds, so containers
+    # replaced by a redeploy stop appearing as live capacity.
+    FLOWER_PURGE_OFFLINE_WORKERS: int = 300
+
+    # classic | quorum. Quorum is not just the modern default — it is what
+    # stops Celery using RabbitMQ's deprecated `global_qos`. Celery sets the
+    # global QoS flag on RabbitMQ unless it detects a quorum queue
+    # (celery/worker/consumer/tasks.py), and RabbitMQ has announced global QoS
+    # for removal. Classic mirrored queues are already gone in 4.x.
+    # Changing this on a live broker needs the existing queues deleted first:
+    # a queue's type is fixed at declaration and redeclaring with a different
+    # x-queue-type fails with PRECONDITION_FAILED.
+    CELERY_TASK_QUEUE_TYPE: str = "quorum"
+
+    # Prefix used in every task and queue name. Queue names are derived as
+    # ``CELERY_PROJECT_NAME.<task function name>`` below.
+    CELERY_PROJECT_NAME: str = "notebookllm"
+    # Default queue name for tasks that do not declare one explicitly.
+    CELERY_TASK_DEFAULT_QUEUE: str | None = None
+    # Dedicated queues keep CPU-heavy ingestion, model calls, and destructive
+    # maintenance from competing for the same worker slots.
+    CELERY_QUEUE_PROCESS: str | None = None
+    CELERY_QUEUE_INDEX: str | None = None
+    CELERY_QUEUE_CHAT: str | None = None
+    CELERY_QUEUE_MAINTENANCE: str | None = None
+
     # --- normalizers ---------------------------------------------------------
+    @model_validator(mode="after")
+    def _derive_celery_queue_names(self):
+        """Use ``<project>.<task function>`` for unset queue overrides."""
+        defaults = {
+            "CELERY_TASK_DEFAULT_QUEUE": f"{self.CELERY_PROJECT_NAME}.default",
+            "CELERY_QUEUE_PROCESS": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.PROCESS.value}",
+            "CELERY_QUEUE_INDEX": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.INDEX.value}",
+            "CELERY_QUEUE_CHAT": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.CHAT.value}",
+            "CELERY_QUEUE_MAINTENANCE": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MAINTENANCE.value}",
+        }
+        for field, value in defaults.items():
+            if getattr(self, field) is None:
+                setattr(self, field, value)
+        return self
+
+    @model_validator(mode="after")
+    def _check_soft_time_limit(self):
+        """A soft limit at or above the hard one can never fire.
+
+        Worth failing startup over rather than warning: the symptom of getting
+        this wrong is silent — tasks go back to being SIGKILLed with their
+        cleanup skipped, which is exactly the bug the soft limit was added to
+        fix, and nothing in the logs would say so.
+        """
+        if self.CELERY_TASK_SOFT_TIME_LIMIT >= self.CELERY_TASK_TIME_LIMIT:
+            raise ValueError(
+                f"CELERY_TASK_SOFT_TIME_LIMIT ({self.CELERY_TASK_SOFT_TIME_LIMIT}) must be "
+                f"below CELERY_TASK_TIME_LIMIT ({self.CELERY_TASK_TIME_LIMIT}); "
+                "otherwise the hard kill always wins and task cleanup never runs"
+            )
+        return self
+
     # `mode="before"` so they run ahead of the enum check: a .env saying
     # "Ollama" or " postgres " is a spelling difference, not a wrong value.
     #
@@ -298,10 +485,7 @@ class Settings(BaseSettings):
         user = quote_plus(self.POSTGRES_USER)
         password = quote_plus(self.POSTGRES_PASSWORD)
         database = quote_plus(self.POSTGRES_DB)
-        return (
-            f"{driver}://{user}:{password}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{database}"
-        )
+        return f"{driver}://{user}:{password}" f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{database}"
 
     @property
     def postgres_url(self) -> str:
@@ -340,6 +524,36 @@ class Settings(BaseSettings):
             return self.OLLAMA_BASE_URL_OVERRIDE
         return f"http://{self.OLLAMA_HOST}:{self.OLLAMA_PORT}"
 
+    @property
+    def celery_broker_url(self) -> str:
+        """AMQP broker URL for Celery (RabbitMQ).
+
+        Credentials are percent-encoded so a password containing reserved URI
+        characters (@ / : ?) does not silently reshape the URL.
+        The default vhost "/" is encoded as "%2F" — the canonical form in
+        AMQP URLs; any other vhost is encoded the same way.
+        """
+        user = quote_plus(self.CELERY_USERNAME)
+        password = quote_plus(self.CELERY_PASSWORD)
+        vhost = quote_plus(self.CELERY_VHOST)
+        return f"amqp://{user}:{password}" f"@{self.CELERY_HOST}:{self.CELERY_PORT}/{vhost}"
+
+    @property
+    def celery_result_backend_url(self) -> str:
+        """Redis URL for the Celery result backend.
+
+        When CELERY_BACKEND_PASSWORD is set the auth segment is included
+        (``redis://:<password>@host:port/db``); when it is absent the segment
+        is omitted entirely so a Redis server without ``requirepass`` is not
+        sent an empty AUTH command that it would reject.
+        """
+        host = self.CELERY_BACKEND_HOST
+        port = self.CELERY_BACKEND_PORT
+        db = self.CELERY_BACKEND_DB
+        if self.CELERY_BACKEND_PASSWORD:
+            password = quote_plus(self.CELERY_BACKEND_PASSWORD)
+            return f"redis://:{password}@{host}:{port}/{db}"
+        return f"redis://{host}:{port}/{db}"
 
 
 @lru_cache

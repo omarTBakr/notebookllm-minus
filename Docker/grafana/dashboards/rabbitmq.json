@@ -1,0 +1,104 @@
+{
+  "uid": "notebookllm-rabbitmq",
+  "title": "RabbitMQ - notebookllm-minus",
+  "description": "RabbitMQ broker and Celery queue health from rabbitmq_prometheus.",
+  "tags": ["rabbitmq", "celery", "notebookllm"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-6h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "queue",
+        "label": "Queue",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(rabbitmq_queue_messages, queue)",
+        "query": {"query": "label_values(rabbitmq_queue_messages, queue)", "refId": "StandardVariableQuery"},
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "current": {"text": "All", "value": ["$__all"]},
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Ready messages",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "rabbitmq_queue_messages_ready{job=\"rabbitmq\",queue=~\"$queue\"}", "legendFormat": "{{queue}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Unacknowledged messages",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "rabbitmq_queue_messages_unacked{job=\"rabbitmq\",queue=~\"$queue\"}", "legendFormat": "{{queue}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Queue throughput",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (queue) (rate(rabbitmq_queue_messages_published_total{job=\"rabbitmq\",queue=~\"$queue\"}[5m]))", "legendFormat": "published {{queue}}", "refId": "A"},
+        {"expr": "sum by (queue) (rate(rabbitmq_queue_messages_delivered_total{job=\"rabbitmq\",queue=~\"$queue\"}[5m]))", "legendFormat": "delivered {{queue}}", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Consumers",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "rabbitmq_queue_consumers{job=\"rabbitmq\",queue=~\"$queue\"}", "legendFormat": "{{queue}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "RabbitMQ scrape",
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "up{job=\"rabbitmq\"}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "background"}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Broker connections",
+      "gridPos": {"h": 5, "w": 9, "x": 6, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "rabbitmq_connections{job=\"rabbitmq\"}", "legendFormat": "connections", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "options": {"legend": {"displayMode": "hidden"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Broker memory",
+      "gridPos": {"h": 5, "w": 9, "x": 15, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "rabbitmq_process_resident_memory_bytes{job=\"rabbitmq\"}", "legendFormat": "resident memory", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "min": 0}, "overrides": []},
+      "options": {"legend": {"displayMode": "hidden"}, "tooltip": {"mode": "single"}}
+    }
+  ]
+}

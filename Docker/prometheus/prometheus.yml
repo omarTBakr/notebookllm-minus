@@ -35,11 +35,40 @@ scrape_configs:
   # Qdrant serves Prometheus metrics itself; no exporter needed. Only runs on
   # the mongo backend (compose profile "mongo"), so expect this target down
   # when using postgres.
-  - job_name: qdrant
-    static_configs:
-      - targets: ["qdrant:6333"]
+  # Only reachable under `--profile mongo`; on the Postgres/pgvector stack this
+  # target is permanently DOWN and was the one red row in the target list.
+  # Left declared but commented so `--profile mongo` users can restore it.
+  # - job_name: qdrant
+  #   static_configs:
+  #     - targets: ["qdrant:6333"]
 
-      
+  # RabbitMQ exposes its own Prometheus endpoint on 15692 via the
+  # rabbitmq_prometheus plugin, which the management image enables by default.
+  # It was running and unscraped: the broker's queue depths, consumer counts
+  # and publish/deliver rates were being produced and thrown away. This is
+  # also where the management UI's charts move to once
+  # management_agent.disable_metrics_collector is on.
+  #
+  # metrics_path matters: the default /metrics aggregates everything into one
+  # series per metric with no `queue` label, which is why every panel of the
+  # RabbitMQ dashboard rendered empty — `rabbitmq_queue_messages_ready` came
+  # back as a single {instance, job} series and the `$queue` variable had
+  # nothing to resolve. /metrics/per-object emits the per-queue labels the
+  # dashboard is written against.
+  - job_name: rabbitmq
+    metrics_path: /metrics/per-object
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+    metric_relabel_configs:
+      # Per-object is per *queue*, and Celery creates far more queues than the
+      # four this application defines: 28 `celery_delayed_N` queues for the
+      # native delayed-delivery feature, plus one `celeryev.<uuid>` and one
+      # `celery@<host>.celery.pidbox` per worker, all of them churning on every
+      # worker restart. Keeping them would multiply the stored series by ~15
+      # and fill the dashboard's queue picker with UUIDs.
+      - source_labels: [queue]
+        regex: 'celery_delayed_.*|celeryev\..*|.*\.pidbox'
+        action: drop
 
   # Host CPU, memory, disk and network. node_exporter runs on the *host* as a
   # systemd --user service, not as a container: this stack is on Docker

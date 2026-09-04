@@ -1,13 +1,13 @@
 from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
-
-from sqlalchemy import cast, delete, func, select, update
+from sqlalchemy import cast, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.exc import SQLAlchemyError
 
-from exceptions import ProjectNotFoundError, DbError
+from exceptions import DbError, ProjectNotFoundError
 from models.db_schema import Project
-from .base_repository import PostgresBaseRepository, ProjectRow
+
 from ..interfaces.project_repository import ProjectRepository
+from .base_repository import PostgresBaseRepository, ProjectRow
 
 
 class PostgresProjectRepository(PostgresBaseRepository, ProjectRepository):
@@ -76,9 +76,7 @@ class PostgresProjectRepository(PostgresBaseRepository, ProjectRepository):
     async def get_project(self, project_id: str) -> Project:
         try:
             async with self.session_factory() as db:
-                row = await db.scalar(
-                    select(ProjectRow).where(ProjectRow.project_id == project_id)
-                )
+                row = await db.scalar(select(ProjectRow).where(ProjectRow.project_id == project_id))
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to get project: {exc}") from exc
 
@@ -90,11 +88,7 @@ class PostgresProjectRepository(PostgresBaseRepository, ProjectRepository):
     async def list_projects(self) -> list[Project]:
         try:
             async with self.session_factory() as db:
-                rows = (
-                    await db.scalars(
-                        select(ProjectRow).order_by(ProjectRow.created_at.desc())
-                    )
-                ).all()
+                rows = (await db.scalars(select(ProjectRow).order_by(ProjectRow.created_at.desc()))).all()
                 return self._records_to_models(list(rows), Project)
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to list projects: {exc}") from exc
@@ -116,9 +110,7 @@ class PostgresProjectRepository(PostgresBaseRepository, ProjectRepository):
     async def delete_project(self, project_id: str) -> None:
         try:
             async with self.session_factory.begin() as db:
-                result = await db.execute(
-                    delete(ProjectRow).where(ProjectRow.project_id == project_id)
-                )
+                result = await db.execute(delete(ProjectRow).where(ProjectRow.project_id == project_id))
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete project: {exc}") from exc
 
@@ -151,14 +143,51 @@ class PostgresProjectRepository(PostgresBaseRepository, ProjectRepository):
             raise ProjectNotFoundError(f"Project {project_id!r} not found")
 
     async def add_asset_id(self, project_id: str, asset_object_id: str) -> None:
-        await self._append_ids(
-            project_id, ProjectRow.assets_ids, [str(asset_object_id)], "asset id"
-        )
+        await self._append_ids(project_id, ProjectRow.assets_ids, [str(asset_object_id)], "asset id")
 
     async def add_chunk_ids(self, project_id: str, chunk_object_ids: list[str]) -> None:
         if not chunk_object_ids:
             return
 
-        await self._append_ids(
-            project_id, ProjectRow.chunks_ids, self._id_strings(chunk_object_ids), "chunk ids"
-        )
+        await self._append_ids(project_id, ProjectRow.chunks_ids, self._id_strings(chunk_object_ids), "chunk ids")
+
+    async def remove_chunk_ids(self, project_id: str, chunk_object_ids: list) -> None:
+        """Pull specific ids out of chunks_ids, leaving the rest in place.
+
+        The counterpart to add_chunk_ids, and what a single asset's re-ingest
+        needs. Mongo has had this since /process was written; Postgres did not,
+        so `POST /process/{id}` with reset=true raised AttributeError on the
+        default backend the moment it tried to tidy up after itself.
+
+        Done server-side like _append_ids, and for the same reason: a
+        read-modify-write would lose a concurrent append. jsonb has no "remove
+        these elements" operator, so this filters the array in SQL —
+        jsonb_array_elements_text unnests it, the WHERE drops the ids being
+        removed, and jsonb_agg rebuilds what is left. COALESCE covers the case
+        where every element was removed and jsonb_agg returns NULL.
+        """
+        if not chunk_object_ids:
+            return
+
+        removing = self._id_strings(chunk_object_ids)
+
+        statement = text("""
+            UPDATE projects
+               SET chunks_ids = COALESCE(
+                       (SELECT jsonb_agg(elem)
+                          FROM jsonb_array_elements_text(chunks_ids) AS elem
+                         WHERE elem <> ALL(:removing)),
+                       '[]'::jsonb
+                   ),
+                   updated_at = now()
+             WHERE project_id = :project_id
+            """)
+
+        try:
+            async with self.session_factory.begin() as db:
+                result = await db.execute(statement, {"removing": removing, "project_id": project_id})
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to remove chunk ids from project: {exc}") from exc
+
+        if result.rowcount == 0:
+            raise ProjectNotFoundError(f"Project {project_id!r} not found")

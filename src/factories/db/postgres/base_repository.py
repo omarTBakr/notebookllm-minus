@@ -20,7 +20,7 @@ Two naming rules keep this readable:
 import json
 from datetime import datetime
 from functools import lru_cache
-from typing import Any, TypeVar, Type, get_args
+from typing import Any, Type, TypeVar, get_args
 
 from bson.objectid import ObjectId
 from pydantic import BaseModel
@@ -34,8 +34,10 @@ from sqlalchemy import (
     String,
     Text,
     func,
-    inspect as sa_inspect,
     text,
+)
+from sqlalchemy import (
+    inspect as sa_inspect,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -82,9 +84,7 @@ class SessionRow(Base):
     user_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
     # Missing from the old DDL entirely, so every read resurrected the model's
     # default and a renamed session forgot its name on the next request.
-    title: Mapped[str] = mapped_column(
-        String(200), nullable=False, server_default="New session"
-    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False, server_default="New session")
 
     created_at: Mapped[datetime] = _utcnow_column()
     updated_at: Mapped[datetime] = _utcnow_column()
@@ -110,18 +110,12 @@ class ChatRow(Base):
     chunk_size: Mapped[int | None] = mapped_column(Integer)
     overlap_size: Mapped[int | None] = mapped_column(Integer)
 
-    web_search: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
-    highlight_color: Mapped[str] = mapped_column(
-        String(7), nullable=False, server_default=text("'#FFFF00'")
-    )
+    web_search: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    highlight_color: Mapped[str] = mapped_column(String(7), nullable=False, server_default=text("'#FFFF00'"))
     excluded_assets: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
-    has_documents: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    has_documents: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     created_at: Mapped[datetime] = _utcnow_column()
     updated_at: Mapped[datetime] = _utcnow_column()
@@ -136,9 +130,7 @@ class MessageRow(Base):
 
     role: Mapped[str] = mapped_column(String(50), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    citations: Mapped[list] = mapped_column(
-        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
-    )
+    citations: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
 
     created_at: Mapped[datetime] = _utcnow_column()
 
@@ -153,12 +145,8 @@ class ProjectRow(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
 
     # Lists of 24-hex row ids, as strings — ObjectId is not JSON-serialisable.
-    chunks_ids: Mapped[list] = mapped_column(
-        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
-    )
-    assets_ids: Mapped[list] = mapped_column(
-        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
-    )
+    chunks_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    assets_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
 
     created_at: Mapped[datetime] = _utcnow_column()
     updated_at: Mapped[datetime] = _utcnow_column()
@@ -175,13 +163,9 @@ class AssetRow(Base):
     asset_type: Mapped[str] = mapped_column(String(50), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
-    file_bytes: Mapped[bytes] = mapped_column(
-        LargeBinary, nullable=False, server_default=text(r"'\x'::bytea")
-    )
+    file_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, server_default=text(r"'\x'::bytea"))
     # sha256 of file_bytes, hex. Unique per project — see migration 0003.
-    content_hash: Mapped[str] = mapped_column(
-        String(64), nullable=False, server_default=""
-    )
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
 
     created_at: Mapped[datetime] = _utcnow_column()
     updated_at: Mapped[datetime] = _utcnow_column()
@@ -209,6 +193,40 @@ class ChunkRow(Base):
     updated_at: Mapped[datetime] = _utcnow_column()
 
 
+class TaskExecutionRow(Base):
+    __tablename__ = "task_executions"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    task_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+    task_name: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    project_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    # "" for a whole-project run, never NULL: TaskExecution.asset_id is `str`
+    # with a default, so a NULL would fail pydantic validation on read.
+    asset_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    stage: Mapped[str] = mapped_column(String(50), nullable=False, server_default="")
+    done: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    total: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+
+    args: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+    # sha256 over the canonical encoding of (task_name, args). "" when not
+    # computed — see Asset.content_hash for the same sentinel.
+    args_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    result: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+
+    error: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    error_type: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+
+    # Genuinely absent until they happen, so these two are the only nullable
+    # columns here — the model types them Optional to match.
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
 # Declared out here rather than in __table_args__ so they can reference the
 # mapped columns directly. Plain ascending, even where the query sorts DESC:
 # Postgres scans a btree backwards at the same cost, and a DESC index reflects
@@ -218,6 +236,24 @@ Index("idx_chats_session_id", ChatRow.session_id, ChatRow.created_at)
 Index("idx_chats_user_id", ChatRow.user_id, ChatRow.created_at)
 Index("idx_messages_chat_id", MessageRow.chat_id, MessageRow.created_at)
 Index("idx_assets_project_id", AssetRow.project_id, AssetRow.created_at)
+# One copy of a document per notebook, and the thing find_by_content_hash's
+# dedupe lookup rides on. Partial, exactly like Mongo's version: content_hash
+# defaults to "" and every row written before migration 0003 carries that
+# sentinel, so an unconditional unique index would make them all collide with
+# each other. `content_hash != ''` excludes them, so the constraint applies
+# only to rows that actually have an identity.
+#
+# Declared here as well as in migration 0007 so `alembic --autogenerate`
+# against a database at head produces nothing: this index existed in the
+# database from 0003 onward but not in the metadata, and so came back as a
+# spurious "removed index" on every autogenerate run.
+Index(
+    "uq_assets_project_content",
+    AssetRow.project_id,
+    AssetRow.content_hash,
+    unique=True,
+    postgresql_where=AssetRow.content_hash != "",
+)
 Index("idx_chunks_project_id", ChunkRow.project_id, ChunkRow.created_at)
 Index("idx_chunks_project_asset", ChunkRow.project_id, ChunkRow.asset_id)
 Index(
@@ -231,6 +267,22 @@ Index(
 # lead with. Every index above starts with project_id, so that lookup had
 # nothing to use. See migration 0004.
 Index("idx_chunks_asset_order", ChunkRow.asset_id, ChunkRow.chunk_order)
+# The progress poll: one project's most recent unfinished task.
+Index(
+    "idx_tasks_project_created",
+    TaskExecutionRow.project_id,
+    TaskExecutionRow.created_at,
+)
+# The idempotency lookup. Deliberately NOT unique: the same arguments may
+# legitimately be submitted again once the first run has finished, and a
+# unique constraint would turn a harmless concurrent double-submit into a
+# 500 rather than the second caller simply joining the first.
+Index(
+    "idx_tasks_name_hash_status",
+    TaskExecutionRow.task_name,
+    TaskExecutionRow.args_hash,
+    TaskExecutionRow.status,
+)
 
 
 def _as_objectid(value):
