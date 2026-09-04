@@ -9,7 +9,13 @@ from fastapi.responses import JSONResponse, Response
 from controllers import DataController, IdempotencyController
 from controllers.TextProcessingController import normalize_text, strip_nulls
 from enums import IN_FLIGHT, AssetType
-from exceptions import AssetNotFoundError, DuplicateAssetError, InvalidInputError
+from exceptions import (
+    CELERY_BROKER_EXCEPTIONS,
+    AssetNotFoundError,
+    CeleryBrokerError,
+    DuplicateAssetError,
+    InvalidInputError,
+)
 from models import (
     Asset,
     AssetModel,
@@ -408,7 +414,22 @@ async def attach_document(chat_id: str, file: UploadFile, http_request: Request)
         }
         process_name, index_name = chain_task_names()
 
-        result = ingestion_chain(chat_id, args, asset_id=asset.asset_id, batch_size=None).apply_async()
+        try:
+            result = ingestion_chain(chat_id, args, asset_id=asset.asset_id, batch_size=None).apply_async()
+
+        except CELERY_BROKER_EXCEPTIONS as exc:
+            # The asset row is already committed at this point, and leaving it
+            # there would be worse than the outage itself: nothing would ever
+            # ingest it, and the content-hash dedupe would answer 409 to every
+            # retry of the same file, so the document could never be added at
+            # all without deleting it by hand first. Undo the row so a retry
+            # once the broker is back behaves like a first upload.
+            # delete_asset only, matching the delete-source route: nothing in
+            # this codebase unlinks an id from project.assets_ids, and adding a
+            # one-off here would be the only place that does.
+            await asset_model.delete_asset(asset.asset_id)
+
+            raise CeleryBrokerError(f"Could not queue ingestion for {file.filename!r}") from exc
 
         for task_result, name in (
             (result.parent, process_name),

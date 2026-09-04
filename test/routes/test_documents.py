@@ -1,5 +1,7 @@
 """Attaching a document: upload, chunk, index."""
 
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -250,3 +252,59 @@ async def test_a_markdown_document_is_chunked_on_its_headings(ingest, client, se
     contents = [c.chunk_content for c in fake_db.chunks().items]
     assert any(text.startswith("# One") for text in contents)
     assert any(text.startswith("# Two") for text in contents)
+
+
+# --- when the broker is down --------------------------------------------------
+
+
+async def test_a_broker_outage_is_a_503_not_a_500(client, seed, monkeypatch):
+    """The other two enqueue routes have always mapped a broker outage to 503.
+    This one did not, so RabbitMQ being down surfaced as an opaque
+    "Internal server error" on every upload."""
+    from kombu.exceptions import OperationalError as BrokerOperationalError
+
+    import routes.chat.assets as assets_route
+
+    def refuse(*args, **kwargs):
+        raise BrokerOperationalError("broker unavailable")
+
+    monkeypatch.setattr(
+        assets_route, "ingestion_chain", lambda *a, **k: SimpleNamespace(apply_async=refuse)
+    )
+
+    response = await client.post(
+        "/chat/chats/c1/documents", files=a_text_file("unlucky.txt")
+    )
+
+    assert response.status_code == 503
+    assert "unlucky.txt" in response.json()["detail"]
+
+
+async def test_a_failed_queue_does_not_leave_the_document_unuploadable(
+    client, seed, fake_db, monkeypatch
+):
+    """The asset row is committed before the chain is queued. Left behind, it
+    would never be ingested *and* the content-hash dedupe would answer 409 to
+    every retry — so the document could not be added at all without deleting
+    it by hand first."""
+    from kombu.exceptions import OperationalError as BrokerOperationalError
+
+    import routes.chat.assets as assets_route
+
+    def refuse(*args, **kwargs):
+        raise BrokerOperationalError("broker unavailable")
+
+    monkeypatch.setattr(
+        assets_route, "ingestion_chain", lambda *a, **k: SimpleNamespace(apply_async=refuse)
+    )
+
+    files = a_text_file("retry-me.txt", b"queued while the broker was down")
+    await client.post("/chat/chats/c1/documents", files=files)
+
+    # Rolled back, so the retry below is a first upload rather than a duplicate.
+    assert not [a for a in fake_db.assets().items.values() if a.name == "retry-me.txt"]
+
+    monkeypatch.undo()
+    retry = await client.post("/chat/chats/c1/documents", files=files)
+
+    assert retry.status_code != 409, "the failed upload blocked its own retry"

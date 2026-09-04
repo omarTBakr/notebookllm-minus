@@ -43,6 +43,13 @@ _ENV = {
     "OLLAMA_PORT": "11434",
     "OLLAMA_CLOUD_BASE_URL": "http://ollama-cloud.invalid",
     "DOCUMENT_DB_BACKEND": "mongo",
+    # Unreachable for the same reason as OLLAMA_HOST above, and it was missing:
+    # CELERY_HOST defaults to localhost:5672, so on a developer's machine the
+    # suite quietly published to their *running* RabbitMQ and passed, while CI
+    # — which has no broker — failed every ingestion test with a 500. Tests must
+    # not need a broker; anything that reaches for one is faking too little.
+    "CELERY_HOST": "rabbit.invalid",
+    "CELERY_BACKEND_HOST": "redis.invalid",
     # Keep the logging config from installing a rotating file handler that
     # would fight caplog and write into the repo.
     "LOG_TO_FILE": "false",
@@ -128,16 +135,38 @@ def app(fake_db, fake_providers):
 
 
 @pytest.fixture
-def ingest(client, app):
+def ingest(client, app, monkeypatch):
     """POST a document and run the ingestion it queues.
 
     Attaching now returns 202 with the work queued, so a test that wants to
     assert on chunks or vectors has to run that work. Tests that only care
     about the upload itself keep using `client` directly.
     """
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    import routes.chat.assets as assets_route
     from test.fakes.ingest import drain_ingestion
 
+    def fake_chain(project_id, request_data, asset_id=None, batch_size=None):
+        """Stand in for the real publish. Nothing here touches a broker.
+
+        The route's own bookkeeping still runs against it — both task rows are
+        written from the ids this hands back — so what the test exercises is
+        the route, not a shortcut around it. drain_ingestion then performs the
+        work those rows describe.
+        """
+        return SimpleNamespace(
+            apply_async=lambda: SimpleNamespace(
+                id=str(uuid4()), parent=SimpleNamespace(id=str(uuid4()))
+            )
+        )
+
     async def _ingest(chat_id, files):
+        monkeypatch.setattr(assets_route, "ingestion_chain", fake_chain)
+        # Writes a marker into the result backend, which is equally absent.
+        monkeypatch.setattr(assets_route, "mark_queued", lambda task_id: None)
+
         response = await client.post(f"/chat/chats/{chat_id}/documents", files=files)
 
         if response.status_code < 400:
