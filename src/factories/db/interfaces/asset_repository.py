@@ -3,6 +3,7 @@ from typing import AsyncIterator
 
 from models.db_schema import Asset
 
+
 class AssetRepository(ABC):
     @abstractmethod
     async def create_asset(self, asset: Asset) -> str:
@@ -15,6 +16,10 @@ class AssetRepository(ABC):
     @abstractmethod
     async def get_asset(self, asset_id: str) -> Asset:
         pass
+
+    @abstractmethod
+    async def iter_project_assets(self, project_id: str) -> AsyncIterator[Asset]:
+        """Every asset in one project, oldest first, unpaginated."""
 
     @abstractmethod
     async def iter_assets_for_projects(self, project_ids: list[str]) -> AsyncIterator[Asset]:

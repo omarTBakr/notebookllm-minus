@@ -12,6 +12,40 @@
 # in src/.env picks between them. pgvector holds documents *and* vectors; mongo
 # pairs with qdrant. Start only the profile you need — see `profiles:` below.
 
+# Shared definition for the Celery workers. An extension field at the top
+# level of the document — inside `services:` Compose reads `x-celery-worker`
+# as an actual service name and starts a container from it (with no command,
+# so it runs the image's uvicorn CMD: a stray, unwanted API server).
+x-celery-worker: &celery-worker
+  build:
+    context: ..
+    dockerfile: Docker/notebookllm-minus/Dockerfile
+  image: notebookllm-minus
+  restart: unless-stopped
+  env_file:
+    - ./env/.env.app
+  networks:
+    - backend
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    pgvector:
+      condition: service_healthy
+  # The image's own HEALTHCHECK probes http://127.0.0.1:8000/base/health, which
+  # is the API. A worker serves no HTTP, so every worker inherited a probe that
+  # can only fail and sat "unhealthy" forever while processing jobs perfectly
+  # well. Ask Celery instead: `inspect ping` round-trips through the broker to
+  # this worker, so a pong means the thing that actually matters — it is
+  # connected and consuming.
+  healthcheck:
+    test: ["CMD-SHELL", "celery -A celery_app:celery_app inspect ping -d celery@$$HOSTNAME | grep -q pong"]
+    interval: 30s
+    timeout: 15s
+    retries: 3
+    start_period: 40s
+
 services:
 
   # --- the application --------------------------------------------------------
@@ -49,6 +83,111 @@ services:
     # service_healthy honours it. Repeating it here was the same probe twice,
     # in two files that could drift.
 
+  celery-process:
+    <<: *celery-worker
+    container_name: celery-process
+    command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.process_data_task\" --loglevel=INFO --concurrency=2"]
+
+  celery-index:
+    <<: *celery-worker
+    container_name: celery-index
+    command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.index_project_task\" --loglevel=INFO --concurrency=1"]
+
+  # Consumes the periodic sweep of task_executions. Concurrency 1: there is
+  # one scheduled job and running two copies of a sweep concurrently would
+  # have them contend over the same rows for no gain.
+  celery-maintenance:
+    <<: *celery-worker
+    container_name: celery-maintenance
+    command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.maintenance_task\" --loglevel=INFO --concurrency=1"]
+
+  # The scheduler. Publishes the sweep on CELERY_MAINTENANCE_INTERVAL_HOURS and
+  # runs no tasks itself, which is why it gets no queue and no concurrency.
+  #
+  # Exactly one replica, always: beat is a publisher, and a second one would
+  # publish the same scheduled job again. Its schedule file goes in a volume so
+  # a restart does not re-fire a job it had already sent — beat records the
+  # last run time there, and without it every deploy would trigger a sweep.
+  celery-beat:
+    <<: *celery-worker
+    container_name: celery-beat
+    command: ["sh", "-c", "celery -A celery_app:celery_app beat --loglevel=INFO --schedule=/app/celerybeat/schedule"]
+    volumes:
+      - celerybeat:/app/celerybeat
+    # The worker healthcheck inherited from the anchor pings a *worker*, and
+    # beat is not one — it would fail forever. Checking that the scheduler
+    # process is alive is the honest check.
+    #
+    # Reading /proc rather than pgrep, which python:3.12-slim does not ship
+    # (procps is not installed) — the same trap the Flower probe fell into.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys; sys.exit(0 if any('beat' in open('/proc/%s/cmdline' % p, 'rb').read().decode('utf-8','ignore') for p in os.listdir('/proc') if p.isdigit()) else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # celery-chat is intentionally absent: `answer_chat_task` is named in the
+  # queue enum and routed to, but no such task exists in src/tasks/. A worker
+  # for it would consume a queue nothing can publish to and appear in Flower
+  # as capacity that is not there. Restore it in the commit that adds the task.
+  #
+  #   celery-chat:  -Q ${CELERY_PROJECT_NAME}.answer_chat_task
+
+  # --- Celery dashboard -------------------------------------------------------
+
+  # Reads the broker and the result backend directly; it is not a worker and
+  # runs no tasks. Task history depends on events, which are enabled once in
+  # celery_app.py (worker_send_task_events / task_send_sent_event) rather than
+  # as -E on each worker command, so the four worker commands cannot drift out
+  # of sync with it. task_send_sent_event is the one that matters most here:
+  # it is what makes a task that *no worker ever picked up* visible, which is
+  # the failure this dashboard is being added to catch.
+  flower:
+    # The application image, not mher/flower: Flower is started with
+    # `--app celery_app:celery_app`, which needs this project's code on the
+    # path so it reads the same broker and backend URLs config.py builds from
+    # CELERY_*. The stock image carries neither, and would need the DSN
+    # duplicated here as a literal.
+    build:
+      context: ..
+      dockerfile: Docker/notebookllm-minus/Dockerfile
+    image: notebookllm-minus
+    container_name: flower
+    restart: unless-stopped
+    env_file:
+      - ./env/.env.app
+    # No --port here: FLOWER_PORT in env/.env.app is the single source, and a
+    # flag would silently outrank it. Every other Flower option is configured
+    # the same way (FLOWER_BASIC_AUTH, FLOWER_PERSISTENT, FLOWER_MAX_TASKS...).
+    command: ["celery", "--app", "celery_app:celery_app", "flower"]
+    working_dir: /app
+    ports:
+      # Literal, and must match FLOWER_PORT: a ports: mapping cannot read a
+      # value out of env_file.
+      - "5555:5555"
+    volumes:
+      # FLOWER_PERSISTENT writes its task history here. Without the volume the
+      # dashboard forgets every task on restart, which is precisely when the
+      # failures it exists to show are worth looking at.
+      - flower:/app/flower
+    networks:
+      - backend
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # python, not wget or curl: python:3.12-slim ships neither, so a probe
+      # using them fails forever while the service itself is fine. Same
+      # reasoning as the app's own HEALTHCHECK in the Dockerfile.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5555/healthcheck', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   # --- reverse proxy ----------------------------------------------------------
 
   nginx:
@@ -61,7 +200,11 @@ services:
       # nginx.conf and the other services expect.
       - "8080:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # proxy.conf, not nginx.conf: Docker Desktop's file sharing cached the
+      # old path as missing after an in-place replace on this external drive,
+      # and every container mounting it saw an empty file. A fresh path is the
+      # reliable way out; the contents are unchanged.
+      - ./nginx/proxy.conf:/etc/nginx/nginx.conf:ro
     networks:
       - backend
     depends_on:
@@ -145,6 +288,8 @@ services:
       - "5672:5672"
       # Management web UI — browse to http://localhost:15672
       - "15672:15672"
+      # Prometheus exporter endpoint used by the Grafana RabbitMQ dashboard.
+      - "15692:15692"
     volumes:
       # Durable queue/exchange definitions and messages survive restarts.
       - rabbitmq:/var/lib/rabbitmq
@@ -153,13 +298,12 @@ services:
     networks:
       - backend
     healthcheck:
-      # Management plugin exposes /api/health/check/aliveness on 15672.
-      # Requires wget (present in the alpine image).
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 15s
       timeout: 10s
       retries: 6
       start_period: 30s
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && exec rabbitmq-server"]
 
   # --- cache / session store ---------------------------------------------------
 
@@ -174,18 +318,21 @@ services:
       # Exposed on the host for local tooling (redis-cli, RedisInsight).
       - "6379:6379"
     volumes:
-      # Named volume so RDB snapshots / AOF log survive container recreation.
+      # Named volume so RDB snapshots / AOF survive container recreation.
       - redis:/data
-      # Our redis.conf overrides the image defaults (password, maxmemory, …).
+      # Our redis.conf overrides the image defaults (password, maxmemory…).
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     # Pass the config file explicitly; the image default CMD ignores custom
-    # conf files placed in the container without this override.
+    # conf files without this override.
     command: redis-server /usr/local/etc/redis/redis.conf
     networks:
       - backend
     healthcheck:
-      # redis-cli ping returns PONG when the server is ready. Use -a to
-      # authenticate when requirepass is set.
+      # redis-cli PING returns PONG when the server is up and authenticated.
+      # $$REDIS_PASSWORD (double $): compose passes this to the container shell
+      # as $REDIS_PASSWORD, which is set via env_file: ./env/.env.redis.
+      # Single ${REDIS_PASSWORD} would be substituted by compose from Docker/.env
+      # (where it is not defined) → empty string → WRONGPASS → healthcheck fails.
       test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
@@ -283,6 +430,10 @@ services:
   # they used were correct, only the daemon was wrong.
 
 volumes:
+  # Flower's persistent task history (FLOWER_PERSISTENT / FLOWER_DB).
+  flower:
+  # celery beat's last-run record, so a restart does not re-fire the sweep.
+  celerybeat:
   pgvector:
   mongodb:
   qdrant:

@@ -18,12 +18,16 @@ so `catalogue` merges them without knowing which is which.
 
 import asyncio
 import re
+import time
 
 import httpx  # ty: ignore[unresolved-import]
 
+from enums import ModelCapability, NvidiaSafetyModelMarker
 from exceptions import LLMProviderError
 from utils import (
+    ANTHROPIC,
     CLOUD,
+    GOOGLE,
     LOCAL,
     NVIDIA,
     default_chat_model,
@@ -34,12 +38,11 @@ from utils import (
 
 from .BaseController import BaseController
 
-
 # Ollama's capability names, as /api/show reports them. A model may hold
 # several ("completion", "tools", "vision", "thinking"); only these two decide
 # which list it belongs in.
-COMPLETION = "completion"
-EMBEDDING = "embedding"
+COMPLETION = ModelCapability.COMPLETION.value
+EMBEDDING = ModelCapability.EMBEDDING.value
 
 
 def _can(model: dict, capability: str) -> bool:
@@ -79,6 +82,48 @@ class ModelController(BaseController):
     # first call slow and every later one instant.
     _embedding_cache: dict[str, int | None] = {}
 
+    # qualified model id -> why it cannot be used, or None when it answered.
+    #
+    # A class attribute for the same reason as _embedding_cache: the routes
+    # build a fresh controller per request, so an instance cache would re-probe
+    # every vendor on every catalogue call.
+    _configured_cache: dict[str, str | None] = {}
+
+    # Deliberately too small to answer with. The probe asks "will this model
+    # take my request", not "what does it say", and on a thinking model those
+    # have very different prices: Gemini 3.x reasons before it writes, so a
+    # budget big enough for real text costs 30 seconds, while one too small
+    # comes back in about a second having proved everything that matters —
+    # the key authenticated, the model exists, the account may call it, and
+    # generation started. Truncation *is* the pass; see _reached_generation.
+    _CONFIGURED_PROBE_MAX_TOKENS = 16
+
+    _CONFIGURED_PROBE_TIMEOUT = 10
+
+    # How long to leave a model alone after a probe that settled nothing.
+    _PROBE_COOLDOWN = 300
+
+    # Model ids whose probe has not come back yet, so two catalogue calls in
+    # the same second do not both pay for one.
+    _probes_in_flight: dict[str, "asyncio.Task"] = {}
+
+    # Model id -> monotonic time before which not to probe again.
+    _probe_cooldown: dict[str, float] = {}
+
+    # Matched against the provider's error text, longest-lived cause first. The
+    # vendor sentences are long and change wording; the picker needs a phrase
+    # short enough to sit in a row.
+    _UNAVAILABLE_REASONS = (
+        ("credit balance", "No API credit"),
+        ("no longer available", "Retired by the vendor"),
+        ("quota", "Quota exceeded"),
+        ("workspace", "Workspace id required"),
+        ("api key", "API key rejected"),
+        ("unauthenticated", "API key rejected"),
+        ("permission", "Key not permitted"),
+        ("not found", "Not available to this key"),
+    )
+
     def __init__(self, base_url: str | None = None, source: str = LOCAL) -> None:
 
         super().__init__()
@@ -101,8 +146,7 @@ class ModelController(BaseController):
 
         except Exception as exc:
             raise LLMProviderError(
-                f"Could not list Ollama models at {self.base_url}: {exc} "
-                "(is `ollama serve` running?)"
+                f"Could not list Ollama models at {self.base_url}: {exc} " "(is `ollama serve` running?)"
             ) from exc
 
         models = []
@@ -150,18 +194,14 @@ class ModelController(BaseController):
 
             async def ask(model: dict) -> None:
                 try:
-                    response = await client.post(
-                        f"{self.base_url}/api/show", json={"model": model["tag"]}
-                    )
+                    response = await client.post(f"{self.base_url}/api/show", json={"model": model["tag"]})
                     if response.status_code == 200:
                         model["capabilities"] = response.json().get("capabilities")
 
                 except Exception as exc:
                     # Still None afterwards, which reads as "unknown" — and an
                     # unknown model is offered for chat rather than hidden.
-                    self.logger.debug(
-                        "Could not read capabilities for %r: %s", model["id"], exc
-                    )
+                    self.logger.debug("Could not read capabilities for %r: %s", model["id"], exc)
 
             await asyncio.gather(*(ask(model) for model in unknown))
 
@@ -201,9 +241,7 @@ class ModelController(BaseController):
             return await self.list_models()
 
         except LLMProviderError as exc:
-            self.logger.warning(
-                "Skipping %s Ollama at %s: %s", self.source, self.base_url, exc
-            )
+            self.logger.warning("Skipping %s Ollama at %s: %s", self.source, self.base_url, exc)
             return []
 
     async def embedding_dimensions(self, tag: str) -> int | None:
@@ -250,13 +288,15 @@ class ModelController(BaseController):
         that clears only this one leaks an access verdict into the next.
         """
         cls._embedding_cache.clear()
+        cls._configured_cache.clear()
+        cls._probe_cooldown.clear()
 
         for subclass in cls.__subclasses__():
             cache = getattr(subclass, "_access_cache", None)
             if cache is not None:
                 cache.clear()
 
-    def _hosts(self) -> list["ModelController"]:
+    def _hosts(self, sources: list[str] | None = None) -> list["ModelController"]:
         """Every source we are configured to talk to.
 
         A source that is not configured is left out rather than listed and
@@ -271,9 +311,174 @@ class ModelController(BaseController):
         if self.settings.NVIDIA_API_KEY:
             hosts.append(for_source(NVIDIA))
 
+        if sources is not None:
+            hosts = [host for host in hosts if host.source in sources]
+
         return hosts
 
-    async def catalogue(self, probe_embeddings: bool = True) -> dict:
+    def configured_chat_models(self) -> list[dict]:
+        """Configured hosted chat models, without any network discovery.
+
+        Carries a cached usability verdict when one exists, so the instant
+        slice of the picker is not only fast but honest about a model already
+        known to be uncallable. Nothing here probes: an unknown model reports
+        ``available: None`` and :meth:`catalogue` is what goes and asks.
+        """
+        models = []
+        configured = (
+            (ANTHROPIC, self.settings.ANTHROPIC_API_KEY, self.settings.ANTHROPIC_MODEL_ID, "Anthropic"),
+            (GOOGLE, self.settings.GOOGLE_API_KEY, self.settings.GOOGLE_MODEL_ID, "Google"),
+        )
+        for source, api_key, model_id, family in configured:
+            if not api_key:
+                continue
+            models.append(
+                {
+                    "id": qualify(source, model_id),
+                    "tag": model_id,
+                    "source": source,
+                    "size_gb": None,
+                    "family": family,
+                    "parameters": None,
+                    "capabilities": [COMPLETION],
+                }
+            )
+            self._apply_verdict(models[-1])
+
+        return models
+
+    @staticmethod
+    def _rate_limited(exc: Exception) -> bool:
+        """Whether the vendor refused because the account is over its rate."""
+        text = str(exc).lower()
+
+        return "429" in text or "too many requests" in text or "rate limit" in text
+
+    @staticmethod
+    def _reached_generation(exc: Exception) -> bool:
+        """Whether this failure happened *after* the model accepted the call.
+
+        A model that ran out of output budget got further than any check here
+        cares about, so the truncation counts as a pass. Both halves are
+        required: "finish_reason" pins it to a response the vendor actually
+        produced, so a 400 complaining about the max_tokens *field* — a request
+        that never reached the model — is not mistaken for one.
+        """
+        text = str(exc).lower()
+
+        return "finish_reason" in text and "max_tokens" in text
+
+    @classmethod
+    def _unavailable_reason(cls, exc: Exception) -> str:
+        """A row-sized phrase for why a vendor refused the probe."""
+        text = str(exc).lower()
+
+        for needle, reason in cls._UNAVAILABLE_REASONS:
+            if needle in text:
+                return reason
+
+        # Nothing recognised. Better to show the vendor's own first sentence,
+        # trimmed, than to invent a category for it.
+        first = str(exc).split(".")[0].strip()
+
+        return (first[:77] + "...") if len(first) > 80 else (first or "Unavailable")
+
+    def _apply_verdict(self, model: dict) -> bool:
+        """Attach what is already known about *model*. True if a probe is due.
+
+        ``available`` is deliberately three-valued. ``None`` means nobody has
+        asked yet — which the picker must render differently from ``False``,
+        because "we have not checked" and "your account cannot call this" are
+        not the same claim to make about a model the user configured.
+        """
+        cached = self._configured_cache.get(model["id"], ...)
+
+        if cached is not ...:
+            model["available"] = cached is None
+            model["unavailable_reason"] = cached
+            return False
+
+        model["available"] = None
+        model["unavailable_reason"] = None
+
+        return time.monotonic() >= self._probe_cooldown.get(model["id"], 0.0)
+
+    def _schedule_verification(self, models: list[dict]) -> None:
+        """Probe, in the background, whichever models have no verdict yet.
+
+        Never awaited, and that is the whole point. A key in .env proves only
+        that a key was typed: not that the model still exists (Gemini 2.5 now
+        answers 404 "no longer available to new users"), that the account has
+        credit, or that the key carries the header the vendor wants. All three
+        used to reach the user as a failed generation *after* they had chosen
+        the model and asked a question.
+
+        But checking cannot sit in front of the picker. Measured against the
+        real vendors, one probe takes anywhere from 0.2 to 30 seconds — the
+        variance is Gemini's own, not the SDK's — and it spends live quota, so
+        a probe on every catalogue call would both stall the list the user is
+        waiting on and burn the allowance it is reporting. Instead the verdict
+        lands in the cache and the next catalogue call reads it.
+
+        Marked, not filtered — the opposite of the NVIDIA path. There the
+        catalogue is eighty models the user never asked for and dropping the
+        unusable ones is a kindness. Here there are two, both named explicitly
+        in .env, so a model that silently disappeared would read as the bug
+        this is meant to prevent: "Anthropic is missing despite my API key".
+        """
+        for model in models:
+            if model["id"] in self._probes_in_flight:
+                continue
+
+            task = asyncio.create_task(self._probe_configured(model["id"]))
+
+            # Held so the loop cannot garbage-collect a running task, and
+            # cleared on completion so a later call can probe again.
+            self._probes_in_flight[model["id"]] = task
+            task.add_done_callback(lambda _, key=model["id"]: self._probes_in_flight.pop(key, None))
+
+    async def _probe_configured(self, model_id: str) -> None:
+        """Ask *model_id* for one token, and write down what happened."""
+        from factories.provider_cache import ProviderCache
+
+        client = None
+        reason: str | None = None
+
+        try:
+            client = ProviderCache(self.settings).chatting(model_id)
+            await asyncio.wait_for(
+                client.generate_text("hi", max_tokens=self._CONFIGURED_PROBE_MAX_TOKENS),
+                timeout=self._CONFIGURED_PROBE_TIMEOUT,
+            )
+
+        except (asyncio.TimeoutError, TimeoutError):
+            # No verdict: a slow vendor is not a broken one, and Gemini can
+            # take half a minute over a request it then answers correctly.
+            self._probe_cooldown[model_id] = time.monotonic() + self._PROBE_COOLDOWN
+            return
+
+        except Exception as exc:
+            if self._rate_limited(exc):
+                # Also no verdict, and the most important one not to record.
+                # A 429 says the account is busy, not that the model is
+                # unusable — and since the probe itself consumes quota,
+                # caching this would let the check condemn the model on
+                # evidence it manufactured.
+                self._probe_cooldown[model_id] = time.monotonic() + self._PROBE_COOLDOWN
+                self.logger.debug("Probe for %r rate-limited; no verdict", model_id)
+                return
+
+            if not self._reached_generation(exc):
+                reason = self._unavailable_reason(exc)
+                self.logger.info("%s unusable: %s", model_id, str(exc)[:200])
+
+        finally:
+            if client is not None:
+                await client.aclose()
+
+        self._configured_cache[model_id] = reason
+
+    async def catalogue(self, probe_embeddings: bool = True, sources: list[str] | None = None) -> dict:
         """Installed models split into what they can be used for.
 
         Spans every configured source regardless of which one this instance
@@ -288,23 +493,37 @@ class ModelController(BaseController):
         `capabilities` decides instead; a model that reports neither is
         offered for chat, since that is the only thing every model can do.
         """
-        hosts = self._hosts()
+        hosts = self._hosts(sources)
 
         listings = await asyncio.gather(*(host._safe_list() for host in hosts))
 
         models = [model for listing in listings for model in listing]
+
+        # Configured hosted models need no *discovery* call, so they belong to
+        # whichever slice asked for them — and to the unfiltered catalogue.
+        # They do need a usability probe, which is why they are collected
+        # first rather than appended one by one.
+        configured = [
+            model
+            for model in self.configured_chat_models()
+            if (sources is None or model["source"] in sources)
+            and not any(existing["id"] == model["id"] for existing in models)
+        ]
+
+        # Reading the cache is free; filling it is not, so the probe runs
+        # detached and this call returns with whatever is already known.
+        self._schedule_verification([model for model in configured if self._apply_verdict(model)])
+
+        models.extend(configured)
+
         models.sort(key=lambda m: m["id"])
 
         embedding = []
 
         if probe_embeddings:
-            by_host = [
-                [m for m in models if m["source"] == host.source] for host in hosts
-            ]
+            by_host = [[m for m in models if m["source"] == host.source] for host in hosts]
 
-            probed = await asyncio.gather(
-                *(host._probe_all(mine) for host, mine in zip(hosts, by_host))
-            )
+            probed = await asyncio.gather(*(host._probe_all(mine) for host, mine in zip(hosts, by_host)))
 
             embedding = [
                 {**model, "dimensions": width}
@@ -376,6 +595,10 @@ class NvidiaModelController(ModelController):
     # longer — and excluding them is the point rather than a side effect.
     _PROBE_TIMEOUT = 20
 
+    # Safety classifiers and guardrails are not general chat or embedding
+    # models for this application, so keep them out of the catalogue entirely.
+    _SAFETY_MODEL_MARKERS = tuple(marker.value for marker in NvidiaSafetyModelMarker)
+
     def __init__(self, base_url: str | None = None) -> None:
         super().__init__(base_url=base_url, source=NVIDIA)
 
@@ -390,16 +613,13 @@ class NvidiaModelController(ModelController):
         """Every model NVIDIA publishes, ids qualified with the vendor."""
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.get(
-                    f"{self.base_url}/models", headers=self._headers
-                )
+                response = await client.get(f"{self.base_url}/models", headers=self._headers)
                 response.raise_for_status()
                 payload = response.json()
 
         except Exception as exc:
             raise LLMProviderError(
-                f"Could not list NVIDIA models at {self.base_url}: {exc} "
-                "(is NVIDIA_API_KEY valid?)"
+                f"Could not list NVIDIA models at {self.base_url}: {exc} " "(is NVIDIA_API_KEY valid?)"
             ) from exc
 
         models = []
@@ -425,7 +645,15 @@ class NvidiaModelController(ModelController):
 
         models.sort(key=lambda m: m["id"])
 
+        models = [model for model in models if not self._is_safety_model(model["tag"])]
+
         return await self._only_usable(models)
+
+    @classmethod
+    def _is_safety_model(cls, tag: str) -> bool:
+        """Whether an NVIDIA model is a safety classifier or guard model."""
+        normalized = tag.lower().replace("/", "-")
+        return any(marker in normalized for marker in cls._SAFETY_MODEL_MARKERS)
 
     async def _only_usable(self, models: list[dict]) -> list[dict]:
         """*models*, minus what this account cannot call, each one classified.
@@ -444,9 +672,7 @@ class NvidiaModelController(ModelController):
 
         # The width probe is the access test as well — and it populates
         # _embedding_cache, so the later _probe_all pass costs nothing.
-        widths = await asyncio.gather(
-            *(self.embedding_dimensions(m["tag"]) for m in hinted)
-        )
+        widths = await asyncio.gather(*(self.embedding_dimensions(m["tag"]) for m in hinted))
 
         embedders = []
 
@@ -557,7 +783,7 @@ class NvidiaModelController(ModelController):
                     )
 
                     if status is None:
-                        return False      # same reasoning: no verdict recorded
+                        return False  # same reasoning: no verdict recorded
 
                     ok = status == 200
 
@@ -596,9 +822,7 @@ class NvidiaModelController(ModelController):
         widths = dict(
             zip(
                 (m["tag"] for m in candidates),
-                await asyncio.gather(
-                    *(self.embedding_dimensions(m["tag"]) for m in candidates)
-                ),
+                await asyncio.gather(*(self.embedding_dimensions(m["tag"]) for m in candidates)),
             )
         )
 

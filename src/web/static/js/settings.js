@@ -43,7 +43,13 @@ const SIZE = /\d/;
 /** Mirrors SOURCES in utils/model_ids.py. Order does not matter; being the
  *  single list does — the prefix regex, the name cleaner and the badge all
  *  read from here, so teaching the UI about a new source is one edit. */
-const SOURCES = ["local", "cloud", "nvidia"];
+const SOURCES = ["local", "cloud", "nvidia", "anthropic", "google"];
+const enabledProviders = new Map(PICKERS.map((id) => [id, new Set(SOURCES)]));
+
+/** Sources whose discovery call has come back. Empty until the first slice
+ *  lands. A model from a source that is still loading is pending, not gone —
+ *  the difference between "your provider is slow" and "your model vanished". */
+const loadedSources = new Set();
 const QUALIFIED = new RegExp(`^(?:${SOURCES.join("|")})/`);
 const SOURCE_PREFIX = new RegExp(`^(${SOURCES.join("|")})/`);
 
@@ -77,9 +83,19 @@ export function prettyModel(id) {
   const words = name
     .split(/[-_]/)
     .filter(Boolean)
-    // "llama3.1" is written "Llama 3.1" everywhere but in the tag.
-    .flatMap((word) => word.split(/(?<=[a-z])(?=\d)/i))
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+    // A hosted model often carries a release date — claude-sonnet-4-20250514.
+    // It is not part of the name a human reads, and rendered as a word it is
+    // just eight digits of noise on the end of every Anthropic entry.
+    .filter((word) => !/^\d{6,8}$/.test(word))
+    // "llama3.1" is written "Llama 3.1" everywhere but in the tag. Split only
+    // where a real word meets a number: "a12b" is one token (a mixture-of-
+    // experts active-parameter count), and splitting it produced "A 12b".
+    .flatMap((word) => (/^[a-z]\d/i.test(word) ? [word] : word.split(/(?<=[a-z])(?=\d)/i)))
+    // 8b, 120b, e4b, a12b — a size, and sizes read as B not b. Anything else
+    // is a word and only wants its first letter capitalised.
+    .map((word) => (/^[a-z]?\d+(\.\d+)?b$/i.test(word)
+      ? word.toUpperCase()
+      : word.charAt(0).toUpperCase() + word.slice(1)));
 
   // ":latest" says nothing; any other variant is the useful half of the tag.
   if (variant && variant !== "latest") {
@@ -99,9 +115,12 @@ export function prettyModel(id) {
  * chat says so instead of silently reading as local.
  */
 const SOURCE_BADGES = {
+  pending: ["pending", "modelLoading"],
   local: ["local", "modelLocal"],
   cloud: ["web", "modelWeb"],
   nvidia: ["vendor", "modelNvidia"],
+  anthropic: ["anthropic", "modelAnthropic"],
+  google: ["google", "modelGoogle"],
   missing: ["missing", "modelMissing"],
 };
 
@@ -142,6 +161,18 @@ function togglePicker(picker) {
   openPicker = picker;
 }
 
+/** What to badge an id the catalogue does not (yet) contain.
+ *
+ * "missing" only once the source it names has actually answered. Providers
+ * load independently, so before this existed a configured NVIDIA model was
+ * badged MISSING for the tens of seconds that discovery takes — telling the
+ * user their model was gone when it was merely slow.
+ */
+function absentBadge(id) {
+  return loadedSources.has(sourceOf(id)) ? "missing" : "pending";
+}
+
+
 /** The button face: the chosen model's name and where it lives. */
 function paintCurrent(picker, model, selected) {
   const face = picker.querySelector(".picker__current");
@@ -152,7 +183,7 @@ function paintCurrent(picker, model, selected) {
   name.textContent = selected ? prettyModel(selected) : "—";
   face.append(name);
 
-  if (selected) face.append(badge(model ? model.source : "missing"));
+  if (selected) face.append(badge(model ? model.source : absentBadge(selected)));
 }
 
 /** Is *id* anywhere in the catalogue, even in the other list? */
@@ -225,6 +256,49 @@ function groupHeading(source) {
   return heading;
 }
 
+function capabilityTag(capability) {
+  const tag = document.createElement("span");
+  tag.className = "pill model-capability";
+  // Ollama reports more than these — "audio", "insert" — and an unmapped one
+  // used to fall through as the raw lowercase string, so a Gemma 4 row read
+  // "Text Image audio Tools Thinking". Capitalise the fallback so a capability
+  // nobody has translated yet still looks like the others.
+  tag.textContent = {
+    completion: t("capabilityText"),
+    embedding: t("capabilityEmbedding"),
+    vision: t("capabilityImage"),
+    tools: t("capabilityTools"),
+    thinking: t("capabilityThinking"),
+  }[capability] ?? capability.charAt(0).toUpperCase() + capability.slice(1);
+  return tag;
+}
+
+function providerToggles(picker, options) {
+  const controls = document.createElement("div");
+  controls.className = "picker__providers segmented";
+
+  for (const source of SOURCES) {
+    if (!options.some((model) => model.source === source)) continue;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn--seg picker__provider";
+    button.textContent = SOURCE_BADGES[source]?.[1] ? t(SOURCE_BADGES[source][1]) : source;
+    button.setAttribute("aria-pressed", String(enabledProviders.get(picker.id).has(source)));
+    button.classList.toggle("is-active", enabledProviders.get(picker.id).has(source));
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const enabled = enabledProviders.get(picker.id);
+      if (enabled.has(source)) enabled.delete(source);
+      else enabled.add(source);
+      fill(picker, options, picker.dataset.selected);
+    });
+    controls.append(button);
+  }
+
+  return controls;
+}
+
 /** Rebuild one picker from the catalogue, one group per source.
  *
  * *selected* is a qualified id. Groups appear in SOURCES order and an empty
@@ -234,11 +308,24 @@ function groupHeading(source) {
 function fill(picker, options, selected) {
   const list = picker.querySelector(".picker__list");
   list.replaceChildren();
+  picker.dataset.selected = selected ?? "";
+
+  const enabled = enabledProviders.get(picker.id);
+  list.append(providerToggles(picker, options));
 
   const wanted = selected ? qualifyId(selected) : null;
   const chosen = options.find((m) => m.id === wanted);
 
-  let rows = options;
+  let rows = options.filter((model) => enabled.has(model.source));
+
+  // The model this notebook is actually using stays in the list even when its
+  // provider is filtered out. Without this, toggling off "Local" hid the very
+  // row marked active while the button above still read "Gemma 4 E4B Local" —
+  // the list contradicting the face. `chosen` is found in the *unfiltered*
+  // options, so the not-in-catalogue branch below never covered this case.
+  if (chosen && !rows.some((model) => model.id === wanted)) {
+    rows = [chosen, ...rows];
+  }
 
   if (wanted && !chosen) {
     if (knownElsewhere(wanted)) {
@@ -247,11 +334,13 @@ function fill(picker, options, selected) {
       // `completion`, so it is no longer offered for embedding. The notebook
       // using it still works, so it stays selectable in its own group.
       // Calling that "Missing" would tell the user something untrue.
-      rows = [{ id: wanted, source: sourceOf(wanted) }, ...options];
+      rows = [{ id: wanted, source: sourceOf(wanted) }, ...rows];
     } else {
-      // Genuinely gone: deleted, or on a host that is unreachable right now.
-      // Flagged, above the groups, exactly as before.
-      list.append(row({ id: wanted, source: "missing" }, picker, true));
+      // Not in the catalogue. That is only "missing" once the source it names
+      // has actually answered — providers load independently and NVIDIA's
+      // discovery takes tens of seconds, during which the configured embedding
+      // model was being badged MISSING purely for being slow.
+      list.append(row({ id: wanted, source: absentBadge(wanted) }, picker, true));
     }
   }
 
@@ -297,6 +386,24 @@ function row(model, picker, active) {
 
   option.append(name, badge(model.source));
 
+  // available === false is a checked "your account cannot call this"; null is
+  // "not checked yet" and must look like any other row, since most models are
+  // never probed at all. Still selectable on purpose: the verdict is cached
+  // for the life of the process, so a user who tops up their credit or waits
+  // out a quota window must not be locked out of a model that now works.
+  if (model.available === false) {
+    option.classList.add("is-unavailable");
+    option.title = model.unavailable_reason ?? "";
+
+    const why = document.createElement("span");
+    why.className = "pill model-tag model-tag--unavailable";
+    why.textContent = model.unavailable_reason ?? t("modelUnavailable");
+    option.append(why);
+  }
+
+  const capabilities = model.capabilities ?? (picker.dataset.kind === "chat" ? ["completion"] : ["embedding"]);
+  capabilities.forEach((capability) => option.append(capabilityTag(capability)));
+
   if (model.parameters) {
     const size = document.createElement("span");
     size.className = "picker__params";
@@ -327,17 +434,57 @@ function choose(picker, id) {
   }
 }
 
+/** Fold one provider's slice into what is already on screen.
+ *
+ * Union by id rather than replace: each request answers for its own sources
+ * only, so the slow one must not drop what the fast ones already delivered.
+ */
+function mergeCatalogue(partial) {
+  const union = (existing, incoming) => {
+    const byId = new Map((existing ?? []).map((m) => [m.id, m]));
+    for (const model of incoming ?? []) byId.set(model.id, model);
+    return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+  };
+
+  catalogue = {
+    chat: union(catalogue?.chat, partial.chat),
+    embedding: union(catalogue?.embedding, partial.embedding),
+    // Every slice reports the same configured defaults; keep the first.
+    current: catalogue?.current ?? partial.current,
+  };
+
+  if (state.notebook) showFor(state.notebook);
+}
+
 export async function loadCatalogue() {
-  try {
-    catalogue = await api.listModels();
+  catalogue = null;
+  loadedSources.clear();
 
-    // It arrives after the first paint, so whatever is on screen was drawn
-    // without it. Redraw rather than leaving the pickers showing a bare id.
-    if (state.notebook) showFor(state.notebook);
+  // Discovery cost is wildly uneven: the configured hosted models need no
+  // network call at all, an Ollama host answers in well under a second, and
+  // NVIDIA's two-pass entitlement check walks eighty models and takes tens of
+  // seconds on a cold cache. Waiting for all of it meant an empty picker for
+  // the length of the slowest provider. These run together and each paints the
+  // moment it lands.
+  const slices = [
+    [["anthropic", "google"], () => api.quickModels()],
+    [["local", "cloud"], () => api.listModels(true, "local,cloud")],
+    [["nvidia"], () => api.listModels(true, "nvidia")],
+  ];
 
-  } catch (error) {
-    status(error.message);
-  }
+  await Promise.all(
+    slices.map(async ([sources, slice]) => {
+      try {
+        const partial = await slice();
+        sources.forEach((source) => loadedSources.add(source));
+        mergeCatalogue(partial);
+      } catch (error) {
+        // One provider being unreachable must not blank the others, so this
+        // reports and returns instead of rejecting the whole load.
+        status(error.message);
+      }
+    })
+  );
 }
 
 // --- painting the active notebook's values ------------------------------------

@@ -7,6 +7,7 @@ model belongs in the embedding list, and for a long time the picker offered
 nomic-embed-text for chat and llama3.1:8b for embedding on exactly that basis.
 """
 
+import asyncio
 import httpx
 import pytest
 
@@ -50,6 +51,11 @@ def catalogue_of(monkeypatch):
 
     async def build(models, widths):
         host = ModelController(source=LOCAL)
+        # These tests exercise the fake Ollama catalogue only. Do not let
+        # optional developer credentials from src/.env add hosted models to
+        # exact-list assertions.
+        monkeypatch.setattr(host.settings, "ANTHROPIC_API_KEY", None)
+        monkeypatch.setattr(host.settings, "GOOGLE_API_KEY", None)
 
         async def listing():
             return models
@@ -59,7 +65,9 @@ def catalogue_of(monkeypatch):
 
         monkeypatch.setattr(host, "list_models", listing)
         monkeypatch.setattr(host, "_probe_all", probe)
-        monkeypatch.setattr(ModelController, "_hosts", lambda self: [host])
+        # _hosts now takes an optional source filter, so the stand-in has to
+        # accept it too — the fixture drives the real catalogue() code path.
+        monkeypatch.setattr(ModelController, "_hosts", lambda self, sources=None: [host])
 
         return await ModelController().catalogue()
 
@@ -365,3 +373,209 @@ async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(
 ])
 def test_parameters_are_read_from_the_tag(tag, parameters):
     assert NvidiaModelController._parameters_of(tag) == parameters
+
+
+# --- configured hosted models: listed is not the same as callable -------------
+#
+# A key in .env proves only that a key was typed. Gemini 2.5 answers 404 "no
+# longer available to new users", an Anthropic key with no credit answers 400,
+# and both used to reach the user as a failed generation *after* they had
+# chosen the model and asked a question.
+
+
+class _FakeChat:
+    """A chat client that fails however the test says, and records closing."""
+
+    def __init__(self, error=None, delay=0):
+        self.error = error
+        self.delay = delay
+        self.closed = False
+        self.max_tokens = None
+
+    async def generate_text(self, prompt, max_tokens=None, **kwargs):
+        self.max_tokens = max_tokens
+
+        if self.delay:
+            await asyncio.sleep(self.delay)
+
+        if self.error:
+            raise self.error
+
+        return "hi"
+
+    async def aclose(self):
+        self.closed = True
+
+
+@pytest.fixture
+def configured(monkeypatch):
+    """A controller with both hosted keys set and no host discovery."""
+    ModelController.forget_probes()
+    ModelController._probes_in_flight.clear()
+
+    controller = ModelController(source=LOCAL)
+    monkeypatch.setattr(controller.settings, "ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setattr(controller.settings, "ANTHROPIC_MODEL_ID", "claude-x")
+    monkeypatch.setattr(controller.settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(controller, "_hosts", lambda sources=None: [])
+
+    def install(client):
+        monkeypatch.setattr(
+            "factories.provider_cache.ProviderCache.chatting",
+            lambda self, model_id=None: client,
+        )
+        return client
+
+    yield controller, install
+
+    ModelController.forget_probes()
+    ModelController._probes_in_flight.clear()
+
+
+@pytest.mark.parametrize("message, reason", [
+    ("Your credit balance is too low to access the Anthropic API.", "No API credit"),
+    ("This model models/gemini-2.5-flash is no longer available to new users.",
+     "Retired by the vendor"),
+    ("anthropic-workspace-id is required when authenticating", "Workspace id required"),
+    ("API key not valid. Please pass a valid API key.", "API key rejected"),
+    ("You exceeded your current quota, please check your plan", "Quota exceeded"),
+])
+def test_a_refusal_is_reduced_to_a_phrase_that_fits_a_row(message, reason):
+    """The vendor sentences are long and their wording changes; the picker has
+    room for a few words."""
+    assert ModelController._unavailable_reason(Exception(message)) == reason
+
+
+def test_an_unrecognised_refusal_keeps_the_vendors_own_words():
+    """Better a trimmed sentence the user can search for than a category
+    invented to cover something nobody has seen before."""
+    reason = ModelController._unavailable_reason(Exception("Teapot mode engaged. Retry."))
+
+    assert reason == "Teapot mode engaged"
+
+
+def test_running_out_of_budget_counts_as_reaching_the_model():
+    """The probe asks whether a model takes the request, not what it says. On
+    a thinking model a budget too small to answer with is the *fast* path —
+    about a second, against thirty for one big enough to produce text."""
+    truncated = Exception(
+        "Google returned no text (model='gemini-3.6-flash', "
+        "finish_reason=<FinishReason.MAX_TOKENS: 'MAX_TOKENS'>)"
+    )
+
+    assert ModelController._reached_generation(truncated)
+
+
+def test_a_complaint_about_the_max_tokens_field_is_not_a_pass():
+    """That request never reached the model, so it says nothing about access.
+    Both halves of the test matter, which is why finish_reason is required."""
+    rejected = Exception("400 invalid_request_error: max_tokens: must be >= 1")
+
+    assert not ModelController._reached_generation(rejected)
+
+
+async def test_a_refused_model_is_marked_rather_than_dropped(configured):
+    """The opposite of the NVIDIA path. There, dropping unusable models from a
+    catalogue of eighty is a kindness; here there are two, both named in .env,
+    so one that vanished would read as the bug this prevents — "Anthropic is
+    missing despite my API key"."""
+    controller, install = configured
+    client = install(_FakeChat(Exception("Your credit balance is too low")))
+
+    await controller._probe_configured("anthropic/claude-x")
+
+    catalogue = await controller.catalogue(probe_embeddings=False)
+    listed = [m for m in catalogue["chat"] if m["source"] == "anthropic"]
+
+    assert len(listed) == 1
+    assert listed[0]["available"] is False
+    assert listed[0]["unavailable_reason"] == "No API credit"
+    assert client.closed
+
+
+async def test_the_catalogue_does_not_wait_for_the_probe(configured):
+    """One probe measured against the real vendors takes 0.2 to 30 seconds.
+    Blocking on it would stall the very list the user is waiting for."""
+    controller, install = configured
+    install(_FakeChat(delay=30))
+
+    catalogue = await asyncio.wait_for(
+        controller.catalogue(probe_embeddings=False), timeout=1
+    )
+
+    listed = [m for m in catalogue["chat"] if m["source"] == "anthropic"][0]
+
+    # Three-valued on purpose: "nobody has asked yet" is not the same claim as
+    # "your account cannot call this", and must not be painted like it.
+    assert listed["available"] is None
+    assert controller._probes_in_flight
+
+    for task in list(controller._probes_in_flight.values()):
+        task.cancel()
+
+
+async def test_a_rate_limited_probe_records_no_verdict(configured):
+    """The probe spends the same quota it reports on. Caching a 429 would let
+    the check condemn a working model on evidence it manufactured."""
+    controller, install = configured
+    install(_FakeChat(Exception("Error code: 429 - Too Many Requests")))
+
+    await controller._probe_configured("google/gemini-x")
+
+    assert "google/gemini-x" not in controller._configured_cache
+    assert controller._probe_cooldown["google/gemini-x"] > 0
+
+
+async def test_a_slow_probe_is_not_remembered_as_a_no(configured):
+    """Same reasoning as the NVIDIA timeout: a slow vendor is not a broken
+    one, and Gemini can take half a minute over a request it then answers."""
+    controller, install = configured
+    monkey = _FakeChat(delay=5)
+    install(monkey)
+    controller._CONFIGURED_PROBE_TIMEOUT = 0.05
+
+    await controller._probe_configured("google/gemini-x")
+
+    assert "google/gemini-x" not in controller._configured_cache
+
+
+async def test_the_probe_is_not_repeated_while_one_is_in_flight(configured):
+    """Two catalogue calls in the same second must not both pay for it."""
+    controller, install = configured
+    install(_FakeChat(delay=30))
+
+    controller._schedule_verification([{"id": "anthropic/claude-x"}])
+    first = dict(controller._probes_in_flight)
+    controller._schedule_verification([{"id": "anthropic/claude-x"}])
+
+    assert controller._probes_in_flight == first
+
+    for task in list(controller._probes_in_flight.values()):
+        task.cancel()
+
+
+async def test_a_settled_verdict_is_not_probed_again(configured):
+    """Reading the cache is free; filling it is not."""
+    controller, install = configured
+    install(_FakeChat(Exception("Your credit balance is too low")))
+
+    await controller._probe_configured("anthropic/claude-x")
+
+    model = {"id": "anthropic/claude-x"}
+
+    assert controller._apply_verdict(model) is False
+    assert model["available"] is False
+
+
+async def test_forget_probes_clears_the_configured_verdicts(configured):
+    """A newly funded account must not stay greyed out until a restart."""
+    controller, install = configured
+    install(_FakeChat(Exception("Your credit balance is too low")))
+
+    await controller._probe_configured("anthropic/claude-x")
+    assert controller._configured_cache
+
+    ModelController.forget_probes()
+
+    assert not controller._configured_cache
+    assert not controller._probe_cooldown

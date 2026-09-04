@@ -22,3 +22,13 @@ skills/
 
 # AWS SSH private keys — see private_ssh_aws.example/ for the expected layout
 private_ssh_aws/
+*.pem
+
+# Real environment files. `.env` above only matches a file named exactly that,
+# which is not enough: the per-service files are named .env.app, .env.redis and
+# so on, and would have been committed by any `git add -A`. The *.example
+# copies are the ones that belong in a public repository.
+.env.*
+!.env.example
+Docker/env/
+!Docker/env.example/

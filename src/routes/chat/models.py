@@ -6,25 +6,62 @@ from fastapi.responses import JSONResponse
 from controllers import ModelController, for_source
 from exceptions import InvalidInputError
 from models import ChatModel, ChunkModel, ProjectModel
+from utils import (
+    default_chat_model,
+    default_embedding_model,
+    get_settings,
+    split_source,
+)
 
 from ..schemas import ChatSettingsRequest, SetModelsRequest
-from ._helpers import _nlp_controller, CHAT_CHUNK_SIZE, CHAT_CHUNK_OVERLAP
-from utils import default_chat_model, default_embedding_model, get_settings, split_source
+from ._helpers import CHAT_CHUNK_OVERLAP, CHAT_CHUNK_SIZE, _nlp_controller
 
 models_router = APIRouter()
 
 
 @models_router.get("/models")
-async def list_models(http_request: Request):
+async def list_models(
+    http_request: Request,
+    probe_embeddings: bool = True,
+    sources: str | None = None,
+):
     """Installed models, split by what each can actually do.
 
     Embedding capability is probed rather than assumed — Ollama's tag list does
     not say, and the probe also reports the vector width a collection built
     with that model needs.
+
+    `sources` narrows the discovery to a comma-separated subset ("local",
+    "nvidia", ...). Discovery cost is wildly uneven — the local host answers in
+    under a second without embedding probes, while NVIDIA's two-pass entitlement
+    check walks eighty models — so the picker asks for the cheap sources first
+    and merges the slow ones in as they land, instead of showing nothing until
+    the slowest provider has finished.
     """
-    catalogue = await ModelController().catalogue()
+    wanted = [s.strip() for s in sources.split(",") if s.strip()] if sources is not None else None
+
+    catalogue = await ModelController().catalogue(probe_embeddings=probe_embeddings, sources=wanted)
 
     return JSONResponse(status_code=200, content=catalogue)
+
+
+@models_router.get("/models/quick")
+async def list_quick_models(http_request: Request):
+    """Return configured hosted chat models without provider network calls."""
+    controller = ModelController()
+    settings = get_settings()
+    return JSONResponse(
+        status_code=200,
+        content={
+            "chat": controller.configured_chat_models(),
+            "embedding": [],
+            "current": {
+                "chat": default_chat_model(settings),
+                "embedding": default_embedding_model(settings),
+                "embedding_dimensions": settings.EMBEDDING_MODEL_SIZE,
+            },
+        },
+    )
 
 
 @models_router.patch("/chats/{chat_id}/models")
@@ -72,9 +109,7 @@ async def set_chat_models(chat_id: str, request: SetModelsRequest, http_request:
         # reset=True drops the old collection so the new one is created at the
         # new width. Without it every insert would be rejected for a dimension
         # mismatch — the failure mode EMBEDDING_MODEL_SIZE exists to prevent.
-        result = await _nlp_controller(
-            http_request, await chat_model.get_chat(chat_id)
-        ).index_chunks(
+        result = await _nlp_controller(http_request, await chat_model.get_chat(chat_id)).index_chunks(
             chunk_model=chunk_model,
             project_object_id=project.id,
             project_id=chat_id,
@@ -83,6 +118,7 @@ async def set_chat_models(chat_id: str, request: SetModelsRequest, http_request:
         reindexed = result["chunks_indexed"]
 
         from ._helpers import logger
+
         logger.info(
             "Re-indexed chat %r under %r: %d chunk(s)",
             chat_id,
@@ -99,9 +135,7 @@ async def set_chat_models(chat_id: str, request: SetModelsRequest, http_request:
             "chat_id": chat_id,
             "generation_model": updated.generation_model or default_chat_model(settings),
             "embedding_model": updated.embedding_model or default_embedding_model(settings),
-            "embedding_dimensions": (
-                updated.embedding_dimensions or settings.EMBEDDING_MODEL_SIZE
-            ),
+            "embedding_dimensions": (updated.embedding_dimensions or settings.EMBEDDING_MODEL_SIZE),
             "reindexed_chunks": reindexed,
         },
     )
@@ -130,15 +164,11 @@ async def set_chat_settings(chat_id: str, request: ChatSettingsRequest, http_req
         content={
             "chat_id": chat_id,
             "temperature": (
-                chat.temperature
-                if chat.temperature is not None
-                else settings.GENERATION_DEFAULT_TEMPERATURE
+                chat.temperature if chat.temperature is not None else settings.GENERATION_DEFAULT_TEMPERATURE
             ),
             "max_tokens": chat.max_tokens or settings.GENERATION_DEFAULT_MAX_TOKENS,
             "chunk_size": chat.chunk_size or CHAT_CHUNK_SIZE,
-            "overlap_size": (
-                chat.overlap_size if chat.overlap_size is not None else CHAT_CHUNK_OVERLAP
-            ),
+            "overlap_size": (chat.overlap_size if chat.overlap_size is not None else CHAT_CHUNK_OVERLAP),
             "web_search": chat.web_search,
             "highlight_color": chat.highlight_color,
             "applied": sorted(changes),

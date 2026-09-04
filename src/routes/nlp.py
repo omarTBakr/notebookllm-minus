@@ -3,10 +3,18 @@ from time import perf_counter
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from controllers import NLPController
-from enums import EmbeddingInputType, ProcessStatus
-from exceptions import ChatNotFoundError, ProjectNotFoundError
+from controllers import IdempotencyController, NLPController
+from enums import CeleryTaskFunction, EmbeddingInputType
+from exceptions import (
+    CELERY_BROKER_EXCEPTIONS,
+    CeleryBrokerError,
+    ChatNotFoundError,
+    ProjectNotFoundError,
+)
 from models import ChatModel, ChunkModel, ProjectModel
+from tasks import index_project_task
+from tasks.index import get_index_task
+from tasks.status import mark_queued
 from utils import get_logger, get_settings
 
 from .schemas import PushRequest, SearchRequest
@@ -41,9 +49,7 @@ async def _controller(request: Request, project_id: str | None = None) -> NLPCon
             chat = None
 
         if chat is not None:
-            embedding_client = request.app.providers.embedding(
-                chat.embedding_model, chat.embedding_dimensions
-            )
+            embedding_client = request.app.providers.embedding(chat.embedding_model, chat.embedding_dimensions)
 
     return NLPController(
         embedding_client=embedding_client,
@@ -51,9 +57,9 @@ async def _controller(request: Request, project_id: str | None = None) -> NLPCon
     )
 
 
-@nlp_router.post("/index/push/{project_id}")
+@nlp_router.post("/index/push/{project_id}", status_code=202)
 async def push_index(project_id: str, request: PushRequest, http_request: Request):
-    """Embed a project's chunks and push them into the vector store.
+    """Queue embedding and vector writes on the dedicated index worker.
 
     Idempotent: re-running without ``reset`` overwrites the same points rather
     than duplicating them, because each one is keyed on its chunk's Mongo _id.
@@ -68,59 +74,78 @@ async def push_index(project_id: str, request: PushRequest, http_request: Reques
         request.batch_size,
     )
 
-    project_model = ProjectModel(http_request.app.db)
-    chunk_model = ChunkModel(http_request.app.db)
-
-    # get_project raises ProjectNotFoundError (404) itself. Unlike /process,
-    # this route must not upsert: indexing a project that was never ingested
-    # would create an empty collection and report success.
-    project = await project_model.get_project(project_id)
-
-    # Nothing to index is not a success — the same call one step earlier in the
-    # pipeline (/process) treats an empty project the same way. Counted over
-    # the same scope the push will walk, so asking for an asset that was never
-    # processed is a 404 rather than a 200 reporting zero work done.
-    chunks_found = await chunk_model.count_project_chunks(project.id, request.asset_id)
+    # Validate existence before publishing, but do not hold the request while
+    # a provider embeds every chunk.
+    project = await ProjectModel(http_request.app.db).get_project(project_id)
+    chunks_found = await ChunkModel(http_request.app.db).count_project_chunks(project.id, request.asset_id)
     if not chunks_found:
         scope = (
-            f"asset {request.asset_id!r} of project {project_id!r}"
-            if request.asset_id
-            else f"Project {project_id!r}"
+            f"asset {request.asset_id!r} of project {project_id!r}" if request.asset_id else f"Project {project_id!r}"
         )
-        raise ProjectNotFoundError(
-            f"{scope} has no chunks to index — run /process/{project_id} first"
+        raise ProjectNotFoundError(f"{scope} has no chunks to index - run /process/{project_id} first")
+
+    idempotency = IdempotencyController(http_request.app.db)
+
+    args = {
+        "project_id": project_id,
+        "asset_id": request.asset_id,
+        "reset": request.reset,
+        "batch_size": request.batch_size,
+    }
+    task_name = f"{get_settings().CELERY_PROJECT_NAME}.{CeleryTaskFunction.INDEX.value}"
+
+    existing = await idempotency.claim(task_name, args)
+
+    if existing is not None:
+        # Already running with these exact arguments. Indexing the same
+        # chunks twice concurrently is wasted embedding spend, not a
+        # correctness problem, so this joins the run in progress.
+        return JSONResponse(
+            status_code=200,
+            content={
+                "task_id": existing.task_id,
+                "project_id": project_id,
+                "status": existing.status.value,
+                "queued": False,
+                "queue": get_settings().CELERY_QUEUE_INDEX,
+            },
         )
 
-    controller = await _controller(http_request, project_id)
-    result = await controller.index_chunks(
-        chunk_model=chunk_model,
-        project_object_id=project.id,
+    try:
+        task = index_project_task.delay(
+            project_id,
+            request.asset_id,
+            request.reset,
+            request.batch_size,
+        )
+    except CELERY_BROKER_EXCEPTIONS as exc:
+        raise CeleryBrokerError("Could not queue vector indexing") from exc
+
+    mark_queued(task.id)
+    await idempotency.record(
+        task_id=task.id,
+        task_name=task_name,
         project_id=project_id,
-        asset_id=request.asset_id,
-        reset=request.reset,
-        batch_size=request.batch_size,
+        args=args,
+        asset_id=request.asset_id or "",
     )
 
     return JSONResponse(
-        status_code=200,
+        status_code=202,
         content={
+            "task_id": task.id,
             "project_id": project_id,
-            "project_db_id": str(project.id),
-            "collection": result["collection"],
-            "asset_id": request.asset_id,
-            "reset": request.reset,
-            "status": ProcessStatus.PROCESSING_SUCCESS.value,
-            # chunks_found counts the whole project; chunks_indexed counts what
-            # this call actually wrote, which is narrower when asset_id is set.
-            "chunks_found": chunks_found,
-            "chunks_indexed": result["chunks_indexed"],
-            # Points removed before re-adding, when scoped to one asset.
-            "points_cleared": result["points_cleared"],
-            "batches": result["batches"],
-            "embedding_model": http_request.app.embedding_client.model_id,
-            "vector_size": result["vector_size"],
+            "status": "queued",
+            "queued": True,
+            "queue": get_settings().CELERY_QUEUE_INDEX,
         },
     )
+
+
+@nlp_router.get("/index/tasks/{task_id}")
+async def index_task_status(task_id: str):
+    """Read the state and result of a queued indexing task."""
+    return get_index_task(task_id)
 
 
 @nlp_router.get("/index/info/{project_id}")
@@ -168,9 +193,7 @@ async def index_info(project_id: str, http_request: Request):
 @nlp_router.post("/index/search/{project_id}")
 async def search_index(project_id: str, request: SearchRequest, http_request: Request):
     """Semantic search over a project's indexed chunks."""
-    logger.debug(
-        "Index search requested for project %r (limit=%d)", project_id, request.limit
-    )
+    logger.debug("Index search requested for project %r (limit=%d)", project_id, request.limit)
 
     project_model = ProjectModel(http_request.app.db)
     await project_model.get_project(project_id)
@@ -216,16 +239,18 @@ async def nlp_health(http_request: Request):
             "backend": settings.DOCUMENT_DB_BACKEND,
         }
     except Exception as exc:
-        checks["db"] = {"status": "error", "backend": settings.DOCUMENT_DB_BACKEND, "error": str(exc)}
+        checks["db"] = {
+            "status": "error",
+            "backend": settings.DOCUMENT_DB_BACKEND,
+            "error": str(exc),
+        }
 
     # --- Embedding model ---
     # A real inference call, not a config echo: this is what catches "ollama
     # serve isn't running" and "the model was never pulled".
     started = perf_counter()
     try:
-        vectors = await http_request.app.embedding_client.embed(
-            ["ping"], EmbeddingInputType.QUERY
-        )
+        vectors = await http_request.app.embedding_client.embed(["ping"], EmbeddingInputType.QUERY)
         checks["embedding"] = {
             "status": "ok",
             "latency_ms": round((perf_counter() - started) * 1000, 1),

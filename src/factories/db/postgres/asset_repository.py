@@ -1,15 +1,15 @@
 from typing import AsyncIterator
 
 from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
-
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from exceptions import AssetNotFoundError, DbError
+from exceptions import AssetNotFoundError, DbError, DuplicateAssetError
 from models.db_schema import Asset
-from .base_repository import AssetRow, PostgresBaseRepository
+
 from ..interfaces.asset_repository import AssetRepository
+from .base_repository import AssetRow, PostgresBaseRepository
 
 
 class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
@@ -70,15 +70,26 @@ class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
             async with self.session_factory.begin() as db:
                 row_id = await db.scalar(statement)
             return ObjectId(row_id)
+
+        except IntegrityError as exc:
+            # uq_assets_project_content (migration 0007). The route checks for
+            # a duplicate before it gets here, so reaching this means two
+            # uploads of the same bytes raced past that check — the exact case
+            # the index exists to catch. It is still a duplicate, so it must
+            # answer 409 like every other one rather than the 503 a generic
+            # DbError would produce.
+            if "uq_assets_project_content" in str(exc):
+                raise DuplicateAssetError(f"{asset.name!r} is already in this notebook.") from exc
+
+            raise DbError(f"Failed to update asset: {exc}") from exc
+
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to update asset: {exc}") from exc
 
     async def get_asset(self, asset_id: str) -> Asset:
         try:
             async with self.session_factory() as db:
-                row = await db.scalar(
-                    select(AssetRow).where(AssetRow.asset_id == asset_id)
-                )
+                row = await db.scalar(select(AssetRow).where(AssetRow.asset_id == asset_id))
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to get asset: {exc}") from exc
 
@@ -87,6 +98,24 @@ class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
 
         return self._record_to_model(row, Asset)
 
+    async def iter_project_assets(self, project_id: str) -> AsyncIterator[Asset]:
+        """Every asset in one project, oldest first, unpaginated.
+
+        The Mongo backend has had this since /process was written; Postgres
+        never did, so `POST /process/{project_id}` without an asset_id failed
+        with AttributeError on the default backend. Ordered oldest-first to
+        match Mongo: process_data names the project after assets[0].
+        """
+        try:
+            async with self.session_factory() as db:
+                result = await db.stream_scalars(
+                    select(AssetRow).where(AssetRow.project_id == project_id).order_by(AssetRow.created_at.asc())
+                )
+                async for row in result:
+                    yield self._record_to_model(row, Asset)
+        except SQLAlchemyError as exc:
+            raise DbError(f"Could not read assets for project {project_id!r}: {exc}") from exc
+
     async def iter_assets_for_projects(self, project_ids: list[str]) -> AsyncIterator[Asset]:
         if not project_ids:
             return
@@ -94,9 +123,7 @@ class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
         try:
             async with self.session_factory() as db:
                 result = await db.stream_scalars(
-                    select(AssetRow)
-                    .where(AssetRow.project_id.in_(project_ids))
-                    .order_by(AssetRow.created_at.desc())
+                    select(AssetRow).where(AssetRow.project_id.in_(project_ids)).order_by(AssetRow.created_at.desc())
                 )
                 async for row in result:
                     yield self._record_to_model(row, Asset)
@@ -134,9 +161,7 @@ class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
         try:
             async with self.session_factory.begin() as db:
                 result = await db.execute(
-                    update(AssetRow)
-                    .where(AssetRow.asset_id == asset_id)
-                    .values(name=name, updated_at=func.now())
+                    update(AssetRow).where(AssetRow.asset_id == asset_id).values(name=name, updated_at=func.now())
                 )
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to rename asset: {exc}") from exc
@@ -148,9 +173,7 @@ class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
         """Remove one asset row. The caller clears its chunks and vectors."""
         try:
             async with self.session_factory.begin() as db:
-                result = await db.execute(
-                    delete(AssetRow).where(AssetRow.asset_id == asset_id)
-                )
+                result = await db.execute(delete(AssetRow).where(AssetRow.asset_id == asset_id))
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete asset: {exc}") from exc
 
@@ -159,8 +182,6 @@ class PostgresAssetRepository(PostgresBaseRepository, AssetRepository):
     async def delete_assets_for_project(self, project_id: str) -> None:
         try:
             async with self.session_factory.begin() as db:
-                await db.execute(
-                    delete(AssetRow).where(AssetRow.project_id == project_id)
-                )
+                await db.execute(delete(AssetRow).where(AssetRow.project_id == project_id))
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete assets for project: {exc}") from exc

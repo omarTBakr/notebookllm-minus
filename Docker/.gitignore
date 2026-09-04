@@ -1,4 +1,7 @@
 mongodb
 .env
 env
-
+# Belt and braces: `env` above already covers the directory, but name the
+# per-service files too, since they are what a stray `git add` would catch.
+.env.*
+!.env.example
