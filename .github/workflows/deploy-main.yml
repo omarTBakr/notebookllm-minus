@@ -69,6 +69,12 @@ jobs:
   deploy:
     name: restart the service
     needs: test              # nothing reaches the box unless the suite is green
+    # Only the private repo has SSH_MAIN_HOST_IP and SSH_MAIN_PRIVATE_KEY, and
+    # secrets do not cross repositories. Without this the public mirror runs
+    # this job with empty strings and fails on every single push, which trains
+    # everyone to ignore a red tick. There, green after `test` is the honest
+    # result: the public repo deploys nothing.
+    if: github.repository == 'NotebookLLM-minus/notebookllm-minus'
     runs-on: ubuntu-latest
     timeout-minutes: 30      # `--build` from a cold cache is minutes, not seconds
 
@@ -115,7 +121,26 @@ jobs:
             # written, so `sudo systemctl` resolved through PATH may or may
             # not equal the /usr/bin/systemctl a NOPASSWD rule names. The
             # rule must spell this identically, argument for argument.
-            sudo -n /usr/bin/systemctl restart "$SERVICE"
+            # `set -e` would abort here on a failed restart, before any of
+            # the diagnostics below run — which is exactly what happened on the
+            # first Arabic-OCR deploy: the job reported "Job for
+            # notebookllm-minus.service failed" and nothing else, and the cause
+            # had to be chased by hand. A failed restart is the moment the logs
+            # are worth most, so they are collected before exiting.
+            if ! sudo -n /usr/bin/systemctl restart "$SERVICE"; then
+              echo "::group::journalctl -xeu $SERVICE"
+              journalctl -xeu "$SERVICE" --no-pager --lines=80 || true
+              echo "::endgroup::"
+              echo "::group::disk and memory"
+              df -h / /var/lib/docker 2>/dev/null || df -h /
+              free -m
+              echo "::endgroup::"
+              echo "::group::compose state"
+              (cd Docker && docker compose ps --all) || true
+              echo "::endgroup::"
+              echo "::error::$SERVICE failed to restart — see the groups above"
+              exit 1
+            fi
 
             # restart returns once ExecStart has finished, but "finished" for a
             # oneshot unit only means compose exited 0 — ask the unit what it
