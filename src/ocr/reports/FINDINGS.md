@@ -268,3 +268,70 @@ python -m ocr.benchmark.report results/combined-real.json --output reports/real
 
 Engines live in a separate virtualenv; the project image gains nothing. See
 `ocr/README.md` for the setup.
+
+## A hosted vision model — `openrouter` / minimax-m3 (free tier)
+
+Added after Qari proved impractical: 30 s/page on a T4, so shipping pages to a
+GPU costs more than reading them locally. A hosted model moves the compute
+somewhere it already exists, and a free tier removes the argument against
+trying it.
+
+Measured on three real book pages of `ذخائر_لبنان.pdf`, same pages both engines,
+`minimax/minimax-m3:free` against `tesseract-best`:
+
+| page | engine | chars | space ratio | usable | s/page |
+| ---: | --- | ---: | ---: | :---: | ---: |
+| 40 | openrouter | 2002 | 0.168 | yes | 11.7 |
+| 40 | `tesseract-best` | 1969 | 0.159 | yes | **2.1** |
+| 41 | openrouter | 2159 | 0.166 | yes | 16.3 |
+| 41 | `tesseract-best` | 2132 | 0.157 | yes | **2.0** |
+| 42 | openrouter | 1784 | 0.152 | yes | 9.6 |
+| 42 | `tesseract-best` | 1744 | 0.145 | yes | **1.7** |
+
+Both produce usable Arabic. The two readings agree closely on characters and
+much less on words:
+
+| page | character agreement | word overlap |
+| ---: | ---: | ---: |
+| 40 | 0.925 | 0.745 |
+| 41 | 0.930 | 0.716 |
+| 42 | 0.916 | 0.720 |
+
+**That gap is the whole finding.** ~92% of characters match and only ~73% of
+words do, which is the same CER/WER divergence this report opens with: the two
+engines are reading the same page and disagreeing about where words end. With
+no ground truth for these pages, this says they differ — not which is right.
+Spot-checking page 41 shows minimax misreading the running header
+(`ذخائر لبنان` as `نخاص لبنان`) and adding diacritics the scan does not carry,
+so its errors are at least not obviously fewer.
+
+### What it costs to run
+
+The interesting column is not the clock:
+
+| | wall | **local CPU** | peak RSS | needs |
+| --- | ---: | ---: | ---: | --- |
+| `openrouter` | 28.3 s | **0.23 s** | 170 MB | network, an API key |
+| `tesseract-best` | ~2 s | ~2 s | ~680 MB + 25 MB/page raster | 1 core, nothing else |
+
+**Local CPU is 0.8% of wall time.** A hosted extractor spends the whole page
+waiting on a socket, so it consumes almost no CPU and no memory worth counting
+— on the 2-vCPU deployment box, where OCR competes with uvicorn and four celery
+workers for two cores, that is the one thing it genuinely offers. It is also
+why its concurrency limit is the provider's rate limit rather than
+`OCR_WORKERS`: a hundred concurrent requests would cost the box nothing.
+
+### Where it lands
+
+Slower per page than `tesseract-best` even against the *server's* 5.3 s/page,
+with no accuracy advantage established. So it is not a bulk path. What it is:
+
+- **A second opinion.** Two engines disagreeing on 27% of words locates the
+  pages worth looking at, without a human reading either.
+- **CPU relief.** If the box is saturated, this trades latency for cores.
+- **A reference candidate**, if a page is ever transcribed by hand to score
+  both properly. That measurement has not been made.
+
+The free tier is rate-limited and can be withdrawn, and pages leave the
+machine — fine for a published book, worth a thought otherwise. `OCR_ENABLED`
+does not reach this: it stays a benchmark extractor, selected explicitly.

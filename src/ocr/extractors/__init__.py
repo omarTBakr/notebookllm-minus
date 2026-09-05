@@ -1,5 +1,6 @@
 """Every extractor, grouped by how it reads a page."""
 
+from .hosted import GeminiExtractor, OpenRouterExtractor
 from .remote import QariRemoteExtractor
 from .text_layer import (
     PdfPlumberExtractor,
@@ -13,7 +14,7 @@ from .traditional import (
     TesseractBestExtractor,
     TesseractExtractor,
 )
-from .vision_models import GeminiExtractor, QariExtractor
+from .vision_models import QariExtractor
 
 #: Declaration order is report order: cheapest and most conventional first, so
 #: a table reads as an escalation from "free" to "metered".
@@ -29,12 +30,14 @@ ALL_EXTRACTORS = (
     QariExtractor,
     QariRemoteExtractor,
     GeminiExtractor,
+    OpenRouterExtractor,
 )
 
 __all__ = [
     "ALL_EXTRACTORS",
     "EasyOCRExtractor",
     "GeminiExtractor",
+    "OpenRouterExtractor",
     "PaddleOCRExtractor",
     "PdfPlumberExtractor",
     "PyMuPDFRawExtractor",

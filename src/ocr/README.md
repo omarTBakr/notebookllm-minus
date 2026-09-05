@@ -137,6 +137,11 @@ retrieval works.**
 | `base.py` | the `ArabicExtractor` contract, `Page`, timing and telemetry |
 | `registry.py` | what can run here, and **why not** when it cannot |
 | `extractors/` | the engines, one file per family |
+    ├── traditional.py     CPU engines: tesseract, easyocr, paddleocr, surya
+    ├── vision_models.py   a local GPU model: qari
+    ├── hosted.py          someone else's GPU over an API: gemini, openrouter
+    ├── remote.py          your own GPU over HTTP: qari-remote
+    └── text_layer.py      what the PDF already claims to contain
 | `benchmark/fixtures.py` | pages rendered from known text, so CER/WER are exact |
 | `benchmark/metrics.py` | CER, WER, agreement, and the intrinsic signals |
 | `benchmark/runner.py` | runs the suites |

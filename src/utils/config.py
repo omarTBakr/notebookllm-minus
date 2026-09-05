@@ -92,6 +92,13 @@ class Settings(BaseSettings):
     # a plate or a chapter heading would be called unusable and re-read for
     # nothing.
     OCR_MIN_CHARS: int = 80
+    # --- hosted OCR (optional) -----------------------------------------------
+    # OpenRouter fronts many vision models behind one OpenAI-compatible API, so
+    # the model is configuration rather than code. Only used by the `openrouter`
+    # extractor, which is a benchmark candidate and not on the ingestion path:
+    # pages leave the machine, and the rate limit belongs to someone else.
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "minimax/minimax-m3:free"
     # How many pages are OCR'd at once. 0 means "every CPU this process may
     # use" — cgroup quota and affinity included, see PdfLayoutController.
     #

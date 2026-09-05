@@ -182,3 +182,128 @@ def test_plain_text_passes_through_untouched():
     plain = "اليسار حينئذ بديدو ومعناه الهاربة"
 
     assert QariExtractor._strip_markup(plain) == plain
+
+
+# --- a hosted model, over OpenRouter ------------------------------------------
+
+
+class TestOpenRouter:
+    """OpenRouter fronts many vision models behind one wire format, so the model
+    id is configuration. The class therefore has to defend against being pointed
+    at a model that cannot see."""
+
+    def _extractor(self, monkeypatch, key="k", model=""):
+        from ocr.extractors.hosted import OpenRouterExtractor
+
+        monkeypatch.setenv("OPENROUTER_API_KEY", key)
+        if model:
+            monkeypatch.setenv("OPENROUTER_MODEL", model)
+        else:
+            monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+        return OpenRouterExtractor
+
+    def test_without_a_key_it_says_so_rather_than_failing_later(self, monkeypatch):
+        """Both sources have to be empty: the extractor reads the environment
+        first and falls back to Settings, so clearing only the env var still
+        finds the key that .env supplies on a developer machine."""
+        from utils import get_settings
+
+        cls = self._extractor(monkeypatch, key="")
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.setattr(get_settings(), "OPENROUTER_API_KEY", "", raising=False)
+
+        ok, reason = cls.available()
+
+        assert not ok
+        assert "OPENROUTER_API_KEY" in reason
+
+    def test_the_default_model_is_used_when_none_is_configured(self, monkeypatch):
+        cls = self._extractor(monkeypatch)
+
+        _, model = cls._credentials()
+
+        assert model == cls.DEFAULT_MODEL
+
+    def test_a_text_only_model_is_refused(self, monkeypatch):
+        """A text-only model does not refuse an image politely — it ignores it
+        and describes a page it never saw, which scores as a bad reader rather
+        than a wrong configuration."""
+        cls = self._extractor(monkeypatch, model="some/text-only")
+        _fake_catalogue(monkeypatch, {"some/text-only": ["text"]})
+
+        ok, reason = cls.available()
+
+        assert not ok
+        assert "does not accept images" in reason
+
+    def test_a_vision_model_is_accepted(self, monkeypatch):
+        cls = self._extractor(monkeypatch, model="some/vision")
+        _fake_catalogue(monkeypatch, {"some/vision": ["text", "image"]})
+
+        ok, reason = cls.available()
+
+        assert ok, reason
+
+    def test_a_model_that_does_not_exist_is_refused(self, monkeypatch):
+        cls = self._extractor(monkeypatch, model="nobody/nothing")
+        _fake_catalogue(monkeypatch, {"some/vision": ["text", "image"]})
+
+        ok, reason = cls.available()
+
+        assert not ok
+        assert "not on OpenRouter" in reason
+
+    def test_an_unreachable_catalogue_does_not_block_the_run(self, monkeypatch):
+        """Being offline is not the same as being misconfigured. The check is a
+        courtesy; refusing to run because it failed would be worse than the
+        error it prevents."""
+        import urllib.request
+
+        cls = self._extractor(monkeypatch, model="some/vision")
+        monkeypatch.setattr(
+            urllib.request, "urlopen",
+            lambda *a, **k: (_ for _ in ()).throw(OSError("no network")),
+        )
+
+        ok, reason = cls.available()
+
+        assert ok
+        assert "could not verify" in reason
+
+    def test_a_fenced_transcription_is_unwrapped(self):
+        """Charging a markdown fence to a model's error rate measures
+        instruction-following, not reading — the mistake that cost Qari a factor
+        of four before its markup was stripped."""
+        from ocr.extractors.hosted import _strip_fences
+
+        assert _strip_fences("```\nاليسار حينئذ\n```") == "اليسار حينئذ"
+        assert _strip_fences("```text\nاليسار\n```") == "اليسار"
+        assert _strip_fences("اليسار حينئذ") == "اليسار حينئذ"
+        # A fence *inside* a page is content, not wrapping.
+        assert "```" in _strip_fences("قال\n```code```\nثم")
+
+
+def _fake_catalogue(monkeypatch, models: dict):
+    """Stand in for openrouter.ai/api/v1/models."""
+    import io
+    import json
+    import urllib.request
+
+    body = {
+        "data": [
+            {"id": name, "architecture": {"input_modalities": mods}}
+            for name, mods in models.items()
+        ]
+    }
+
+    class _Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen",
+        lambda *a, **k: _Response(json.dumps(body).encode()),
+    )
