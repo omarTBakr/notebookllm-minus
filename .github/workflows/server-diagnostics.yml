@@ -40,8 +40,12 @@ jobs:
               "$REMOTE_USER@$HOST" "REMOTE_DIR='$REMOTE_DIR' bash -euo pipefail -s" <<'REMOTE'
             cd "$REMOTE_DIR/Docker"
 
+            # Everything below redirects stdin from /dev/null. The remote
+            # script IS stdin (ssh ... bash -s <<'REMOTE'), and `docker compose
+            # exec` reads stdin even with -T, so the first one swallowed the
+            # rest of this script and the run ended after a single group.
             echo "::group::containers"
-            docker compose ps --all
+            docker compose ps --all < /dev/null
             echo "::endgroup::"
 
             echo "::group::machine"
@@ -54,13 +58,13 @@ jobs:
             # Every line stays indented: a bare column-0 line inside a YAML
             # block scalar ends the scalar and is parsed as a new key.
             # One line: a column-0 continuation would end the YAML block scalar.
-            docker compose exec -T celery-process python -c 'import sys; sys.path.insert(0,"/app"); from controllers.PdfLayoutController import _cpu_count, _available_memory_mb; from controllers import ProcessController; p = ProcessController(); mem = _available_memory_mb(); print("OCR_ENABLED", p.settings.OCR_ENABLED); print("OCR_EXTRACTOR", p.settings.OCR_EXTRACTOR); print("OCR_WORKERS set", p.settings.OCR_WORKERS); print("cpus visible", _cpu_count()); print("memory available MB", None if mem is None else round(mem)); print("workers for a 200-page doc", p._ocr_workers(200))' || echo "(celery-process not running)"
+            docker compose exec -T celery-process python -c 'import sys; sys.path.insert(0,"/app"); from controllers.PdfLayoutController import _cpu_count, _available_memory_mb; from controllers import ProcessController; p = ProcessController(); mem = _available_memory_mb(); print("OCR_ENABLED", p.settings.OCR_ENABLED); print("OCR_EXTRACTOR", p.settings.OCR_EXTRACTOR); print("OCR_WORKERS set", p.settings.OCR_WORKERS); print("cpus visible", _cpu_count()); print("memory available MB", None if mem is None else round(mem)); print("workers for a 200-page doc", p._ocr_workers(200))' < /dev/null || echo "(celery-process not running)"
             echo "::endgroup::"
 
             echo "::group::tesseract present"
             docker compose exec -T celery-process sh -c \
               'tesseract --version 2>&1 | head -2; ls /usr/share/tessdata-best 2>/dev/null' \
-              || echo "(unavailable)"
+              < /dev/null || echo "(unavailable)"
             echo "::endgroup::"
 
             echo "::group::assets and chunks"
@@ -68,18 +72,18 @@ jobs:
               "SELECT a.name, a.asset_id, a.project_id,
                       (SELECT count(*) FROM chunks c WHERE c.asset_id = a.asset_id) AS chunks,
                       a.created_at
-                 FROM assets a ORDER BY a.created_at DESC LIMIT 10;" || true
+                 FROM assets a ORDER BY a.created_at DESC LIMIT 10;" < /dev/null || true
             echo "::endgroup::"
 
             echo "::group::task executions"
             docker compose exec -T pgvector psql -U postgres -d notebookllm-minus -c \
               "SELECT task_name, status, stage, done, total, error_type,
                       left(coalesce(error,''),70) AS error, created_at
-                 FROM task_executions ORDER BY created_at DESC LIMIT 12;" || true
+                 FROM task_executions ORDER BY created_at DESC LIMIT 12;" < /dev/null || true
             echo "::endgroup::"
 
             echo "::group::recent worker log"
-            docker compose logs --no-color --tail=60 celery-process || true
+            docker compose logs --no-color --tail=60 celery-process < /dev/null || true
             echo "::endgroup::"
           REMOTE
 
