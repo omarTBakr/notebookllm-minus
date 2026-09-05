@@ -74,6 +74,56 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = 10485760  # hard ceiling on a single upload (bytes)
     MAX_FILE_CHUNK_SIZE: int  # streaming read size while uploading
 
+    # --- Arabic OCR ----------------------------------------------------------
+    # Re-read a page with OCR when its Arabic text layer cannot be searched.
+    # Off by default: it costs seconds per page, and on a well-produced PDF the
+    # text layer is already correct, so this must be a decision rather than a
+    # habit. `ocr.language.profile()` makes that decision per page and costs
+    # microseconds.
+    OCR_ENABLED: bool = False
+    # Which engine. tesseract-best measured 0.172 WER against 0.545 for the
+    # distro `ara` model and 0.167 for Gemini — see src/ocr/reports/FINDINGS.md.
+    OCR_EXTRACTOR: str = "tesseract-best"
+    # Where ara.traineddata from tessdata_best lives. The distribution package
+    # ships the *fast* model, which is a different model and three times worse
+    # on this corpus; the image downloads the better one to this path.
+    TESSDATA_BEST: str = "/usr/share/tessdata-best"
+    # A page needs this many characters before its spacing is judged. Below it,
+    # a plate or a chapter heading would be called unusable and re-read for
+    # nothing.
+    OCR_MIN_CHARS: int = 80
+    # How many pages are OCR'd at once. 0 means "every CPU this process may
+    # use" — cgroup quota and affinity included, see PdfLayoutController.
+    #
+    # Threads, not processes: a Celery prefork worker is daemonic and may not
+    # fork, and it does not need to. pytesseract runs the `tesseract` binary as
+    # a subprocess, so the GIL is released for the whole of the work and page
+    # level parallelism scales close to linearly.
+    #
+    # Each concurrent page holds a 300-dpi RGB raster — roughly 26 MB for A4 —
+    # so this is also the knob for OCR's peak memory. Lower it before lowering
+    # the DPI, which costs accuracy.
+    OCR_WORKERS: int = 0
+
+    # --- chunking ------------------------------------------------------------
+    # A chunk shorter than this is not a retrieval unit, it is debris. The
+    # recursive splitter flushes whatever short splits it has accumulated as
+    # soon as the next split is big enough to need recursion, so a running
+    # header or a page number sitting on its own line before the body becomes a
+    # standalone chunk. Measured on the 274-page Arabic book, OCR on and
+    # chunk_size 1000: 110 of 803 chunks under 50 characters, 78 under 10 —
+    # "سورية", "0/", "\u0661". The same book with OCR off is 742 chunks and
+    # only 15 under 100, because OCR recovers the running header on pages whose
+    # text layer had lost it — that is, the better the extraction, the more
+    # debris this produces. They embed to
+    # nothing in particular, and because there are so many of them one usually
+    # still lands in the top 5, which is how a grounded answer ends up citing
+    # five single words.
+    #
+    # 100 is above the debris (the largest orphan measured was 89) and well
+    # below a real paragraph, so nothing with content in it is touched.
+    MIN_CHUNK_CHARS: int = 100
+
     # --- indexing ------------------------------------------------------------
     # How many chunks are embedded per request to the model. One batch is one
     # round trip; peak memory is one batch of text plus one batch of vectors.

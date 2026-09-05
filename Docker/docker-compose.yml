@@ -88,6 +88,14 @@ services:
     container_name: celery-process
     command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.process_data_task\" --loglevel=INFO --concurrency=2"]
 
+  # Two tasks on this one queue, not one: `index_project_task` embeds the
+  # chunks and `build_vector_index_task` builds the ANN index over them. The
+  # build is a separate link of the chain so it is visible in Flower and gets
+  # its own task_executions row, but it is routed here rather than to a queue
+  # of its own — a queue absent from a -Q list has no consumer, and a task
+  # published to it sits QUEUED forever with no error to say so. Sharing this
+  # queue also puts the build on the worker that just wrote the vectors, and
+  # concurrency 1 keeps it strictly after them.
   celery-index:
     <<: *celery-worker
     container_name: celery-index

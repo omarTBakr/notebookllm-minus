@@ -5,7 +5,7 @@ from controllers import IdempotencyController
 from exceptions import CELERY_BROKER_EXCEPTIONS, CeleryBrokerError
 from tasks.process import get_process_task
 from tasks.status import mark_queued
-from tasks.workflows import chain_task_names, ingestion_chain
+from tasks.workflows import chain_results, chain_task_names, ingestion_chain
 
 from .schemas import ProcessRequest
 
@@ -24,7 +24,8 @@ async def process_data(project_id: str, request: ProcessRequest, http_request: R
     idempotency = IdempotencyController(http_request.app.db)
 
     args = request.model_dump()
-    process_name, index_name = chain_task_names()
+    task_names = chain_task_names()
+    process_name, index_name, build_name = task_names
 
     existing = await idempotency.claim(process_name, {"project_id": project_id, **args})
 
@@ -44,18 +45,15 @@ async def process_data(project_id: str, request: ProcessRequest, http_request: R
     except CELERY_BROKER_EXCEPTIONS as exc:
         raise CeleryBrokerError("Could not queue document processing") from exc
 
-    # A chain's AsyncResult names its *last* task; .parent is the one before.
-    # Both get a row, or the process half of the pipeline would be unqueryable
-    # and its id would report UNKNOWN for the whole of its run.
-    index_result = result
-    process_result = result.parent
+    # A chain's AsyncResult names only its *last* task and reaches the earlier
+    # ones through .parent. Every link gets a row, or the halves before the
+    # last would be unqueryable and report UNKNOWN for the whole of their run.
+    ids = dict(zip(task_names, (r.id for r in chain_results(result))))
 
-    for task_result, name in ((process_result, process_name), (index_result, index_name)):
-        if task_result is None:
-            continue
-        mark_queued(task_result.id)
+    for name, task_id in ids.items():
+        mark_queued(task_id)
         await idempotency.record(
-            task_id=task_result.id,
+            task_id=task_id,
             task_name=name,
             project_id=project_id,
             args={"project_id": project_id, **args},
@@ -65,8 +63,12 @@ async def process_data(project_id: str, request: ProcessRequest, http_request: R
     return JSONResponse(
         status_code=202,
         content={
-            "task_id": process_result.id if process_result else index_result.id,
-            "index_task_id": index_result.id,
+            # task_id stays the *process* id: it is what a client polls to
+            # watch an upload, and renaming it to the chain's tail would break
+            # every existing poller.
+            "task_id": ids.get(process_name) or result.id,
+            "index_task_id": ids.get(index_name),
+            "build_index_task_id": ids.get(build_name),
             "project_id": project_id,
             "status": "queued",
             "queued": True,

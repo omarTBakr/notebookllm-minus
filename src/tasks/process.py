@@ -9,29 +9,10 @@ from factories import DbFactory
 from utils import get_logger, get_settings
 
 from .process_service import process_data
-from .recorder import TaskRecorder
+from .recorder import TaskRecorder, downstream_ids
 from .status import task_status
 
 logger = get_logger(__name__)
-
-
-def _downstream_ids(request) -> list[str]:
-    """The ids of the tasks queued after this one in the same chain.
-
-    Celery hands each task the remainder of its chain, so a failing task can
-    name exactly the work its failure cancels. Read defensively: the shape is
-    an internal detail, and a task that runs outside a chain has none of it.
-    """
-    ids = []
-
-    for link in getattr(request, "chain", None) or []:
-        options = link.get("options") if isinstance(link, dict) else None
-        task_id = (options or {}).get("task_id")
-
-        if task_id:
-            ids.append(task_id)
-
-    return ids
 
 
 async def _run_process_task(
@@ -86,7 +67,7 @@ def process_data_task(self, project_id: str, request_data: dict) -> dict:
                 project_id,
                 request_data,
                 task_id=self.request.id,
-                downstream=_downstream_ids(self.request),
+                downstream=downstream_ids(self.request),
             )
         )
 

@@ -49,6 +49,19 @@ def celery_queue_config(settings) -> dict:
                 "queue": settings.CELERY_QUEUE_PROCESS
             },
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.INDEX.value}": {"queue": settings.CELERY_QUEUE_INDEX},
+            # Deliberately the *index* queue, not one of its own — the only
+            # place a task name and its queue name do not match.
+            #
+            # A queue nobody consumes leaves its tasks QUEUED forever with no
+            # error, and the worker's -Q list lives in docker-compose.yml, not
+            # here: a new queue would mean this file and that one having to be
+            # deployed together or the chain silently stops at its last link.
+            # celery-index already consumes this queue, is the worker that just
+            # wrote the vectors, and runs at concurrency 1 — so the build lands
+            # on the same worker, after the load, with nothing to configure.
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.BUILD_INDEX.value}": {
+                "queue": settings.CELERY_QUEUE_INDEX
+            },
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.CHAT.value}": {"queue": settings.CELERY_QUEUE_CHAT},
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MAINTENANCE.value}": {
                 "queue": settings.CELERY_QUEUE_MAINTENANCE

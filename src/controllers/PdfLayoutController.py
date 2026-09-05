@@ -58,9 +58,7 @@ class PageWords:
     words: list[str] = field(default_factory=list)  # the cleaned word itself, for its length
     # x0, y0, x1, y1, block_no, line_no, word_no — pymupdf's own "words" tuple,
     # minus the word text (kept separately, above).
-    boxes: list[tuple[float, float, float, float, int, int, int]] = field(
-        default_factory=list
-    )
+    boxes: list[tuple[float, float, float, float, int, int, int]] = field(default_factory=list)
 
 
 def _clean_word(word: str) -> str:
@@ -164,6 +162,58 @@ def _cgroup_quota_cores() -> float | None:
     return None
 
 
+_MEMINFO = Path("/proc/meminfo")
+_CGROUP_V2_MEM_MAX = Path("/sys/fs/cgroup/memory.max")
+_CGROUP_V1_MEM_MAX = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+
+
+def _available_memory_mb() -> float | None:
+    """Memory this process can actually take, in MB, or None if unknowable.
+
+    A container limit when there is one, the host's own `MemAvailable`
+    otherwise — an unlimited container on a busy host is not unlimited, it is
+    limited by whatever else is running, and that is the number that decides
+    whether the kernel reaches for the OOM killer.
+
+    `MemAvailable` rather than `MemFree` deliberately: the kernel will evict
+    page cache under pressure, so free memory alone understates what is
+    obtainable by several gigabytes.
+    """
+    for path in (_CGROUP_V2_MEM_MAX, _CGROUP_V1_MEM_MAX):
+        try:
+            if path.is_file():
+                raw = path.read_text().strip()
+                # v2 writes "max" for no limit; v1 writes a number near 2**63.
+                if raw != "max" and int(raw) < (1 << 62):
+                    return int(raw) / (1024 * 1024)
+        except (OSError, ValueError):
+            pass
+
+    try:
+        for line in _MEMINFO.read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) / 1024
+    except (OSError, ValueError, IndexError):
+        pass
+
+    return None
+
+
+def _is_daemonic() -> bool:
+    """Whether this process may not fork children.
+
+    True inside a Celery prefork worker. Checked rather than assumed, so the
+    same function stays parallel when called from the API process, a script or
+    a test — the constraint belongs to the caller's context, not to this module.
+    """
+    import multiprocessing
+
+    try:
+        return bool(multiprocessing.current_process().daemon)
+    except Exception:  # noqa: BLE001 - an unknown context is not a daemon
+        return False
+
+
 def _cpu_count() -> int:
     """The CPUs this process can actually use in parallel — not the host's
     total, and not only what a cpuset affinity mask reports.
@@ -228,6 +278,20 @@ def extract_pages(file_path: Path, *, max_workers: int | None = None) -> list[Pa
 
     workers = min(max_workers or _cpu_count(), total)
 
+    # A Celery prefork worker is a daemonic process, and a daemonic process is
+    # not allowed to have children: ProcessPoolExecutor raises
+    # "daemonic processes are not allowed to have children" the moment it tries
+    # to start one. Ingestion moved onto Celery, so this path now runs inside
+    # exactly such a process, and every PDF upload failed with an
+    # ExtractionError that named the temp file and not the cause.
+    #
+    # Serial rather than a thread pool, for the reason in the docstring above:
+    # pymupdf's C calls do not release the GIL for long enough to make threads
+    # worth the complexity. The concurrency that matters here is across
+    # documents — which the worker pool already provides — not within one.
+    if workers > 1 and _is_daemonic():
+        workers = 1
+
     if workers <= 1:
         doc = pymupdf.open(path)
         try:
@@ -275,11 +339,7 @@ def rects_for_range(page: PageWords, start: int, end: int) -> list[list[float]]:
     input, an empty selection, or a page that trips the cap all return ``[]``;
     the caller stores no highlight at all rather than a degenerate one.
     """
-    selected = [
-        i
-        for i in range(len(page.starts))
-        if page.starts[i] < end and _word_end(page, i) > start
-    ]
+    selected = [i for i in range(len(page.starts)) if page.starts[i] < end and _word_end(page, i) > start]
     if not selected:
         return []
 
@@ -308,14 +368,35 @@ def rects_for_range(page: PageWords, start: int, end: int) -> list[list[float]]:
     return rects
 
 
-def highlight_metadata(page: PageWords, start: int, end: int) -> dict | None:
+def highlight_metadata(page: PageWords, start: int, end: int, scale: float = 1.0) -> dict | None:
     """The full ``chunk_metadata["highlight"]`` value, or None if unavailable.
 
     ``v`` is a schema version: the one field that lets a future coordinate
     fix invalidate old rows without reading every one of them to check.
+
+    ``scale`` maps offsets from a *different* rendering of this page onto the
+    word boxes, and exists for one case: the chunk's text came from OCR because
+    the page's own text layer was unusable, so its offsets index a string that
+    is not ``page.text``. The boxes are still the best positional information
+    available — OCR produces none — and both strings describe the same page in
+    the same reading order, so a proportional map lands in the right region.
+
+    It is an approximation, and says so: the result carries ``"approx": 1`` so a
+    reader can tell a highlight that is exact from one that is merely close, and
+    so a future change can find them. With fixed-size chunks covering a good
+    fraction of a page, close is useful; character-exact was never available
+    once the text was re-read.
     """
+    if scale != 1.0:
+        start, end = int(start * scale), int(end * scale)
+
     rects = rects_for_range(page, start, end)
     if not rects:
         return None
 
-    return {"v": 1, "w": page.width, "h": page.height, "o": "tl", "r": rects}
+    highlight = {"v": 1, "w": page.width, "h": page.height, "o": "tl", "r": rects}
+
+    if scale != 1.0:
+        highlight["approx"] = 1
+
+    return highlight

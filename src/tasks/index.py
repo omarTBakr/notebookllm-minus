@@ -10,7 +10,7 @@ from factories import DbFactory, ProviderCache
 from models import ChatModel, ChunkModel, ProjectModel
 from utils import get_logger
 
-from .recorder import TaskRecorder
+from .recorder import TaskRecorder, downstream_ids
 from .status import task_status
 
 logger = get_logger(__name__)
@@ -39,6 +39,7 @@ async def _run_index_task(
     reset: bool,
     batch_size: int | None,
     task_id: str | None = None,
+    downstream: list[str] | None = None,
 ) -> dict:
     settings = SETTINGS
     db = DbFactory(settings).create()
@@ -87,6 +88,13 @@ async def _run_index_task(
 
         except BaseException as exc:
             await recorder.failed(exc)
+            # Indexing is no longer the last link: build_vector_index_task
+            # follows it, and a chain stops at its first failure, so its row
+            # would otherwise sit QUEUED forever.
+            await recorder.abandon(
+                downstream or [],
+                f"cancelled: {type(exc).__name__} while indexing {project_id!r}",
+            )
             raise
 
         await recorder.succeeded(result)
@@ -120,7 +128,16 @@ def index_project_task(
 ) -> dict:
     """Embed and index chunks without consuming an API process slot."""
     try:
-        return asyncio.run(_run_index_task(project_id, asset_id, reset, batch_size, task_id=self.request.id))
+        return asyncio.run(
+            _run_index_task(
+                project_id,
+                asset_id,
+                reset,
+                batch_size,
+                task_id=self.request.id,
+                downstream=downstream_ids(self.request),
+            )
+        )
 
     except SoftTimeLimitExceeded as exc:
         # The nested finally in _run_index_task closes the provider pools and
@@ -133,6 +150,87 @@ def index_project_task(
         )
         raise CeleryTaskError(
             f"Indexing {project_id!r} exceeded " f"{SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT}s and was stopped"
+        ) from exc
+
+
+async def _run_build_index_task(project_id: str, task_id: str | None = None) -> dict:
+    settings = SETTINGS
+    db = DbFactory(settings).create()
+    providers = None
+    try:
+        await db.connect()
+        recorder = TaskRecorder(db, task_id)
+        await recorder.started()
+        providers = ProviderCache(settings)
+
+        # The whole reason this needs a provider at all: the index has to be
+        # built at the width the *chat's* embedding model produces, which is
+        # not necessarily the .env default — the model picker writes it per
+        # chat, and building at the wrong width is what pgvector reports as
+        # "different vector dimensions".
+        try:
+            chat = await ChatModel(db).get_chat(project_id)
+        except ChatNotFoundError:
+            # Projects created through /process do not have a chat row.
+            chat = None
+
+        controller = NLPController(
+            embedding_client=providers.embedding(
+                getattr(chat, "embedding_model", None),
+                getattr(chat, "embedding_dimensions", None),
+            ),
+            vectordb_client=db.vectors(),
+        )
+
+        await recorder.stage(TaskStage.INDEXING.value, 0, 1)
+
+        try:
+            result = await controller.build_index(project_id)
+
+        except BaseException as exc:
+            await recorder.failed(exc)
+            raise
+
+        await recorder.succeeded(result)
+
+        return result
+    finally:
+        try:
+            if providers is not None:
+                await providers.aclose_all()
+        finally:
+            await db.disconnect()
+
+
+@celery_app.task(
+    # bind=True for self.request.id — see process_data_task.
+    bind=True,
+    name=f"{SETTINGS.CELERY_PROJECT_NAME}.build_vector_index_task",
+    # The index queue, not one of its own: no worker consumes a queue that is
+    # not in a compose -Q list, and a task published to one hangs in QUEUED
+    # with nothing to say so. See celery_queues.celery_queue_config.
+    queue=SETTINGS.CELERY_QUEUE_INDEX,
+)
+def build_vector_index_task(self, project_id: str) -> dict:
+    """Build the ANN index over a project's collection.
+
+    The last link of the ingestion chain, and its own task rather than the tail
+    of index_project_task so that the build is visible in Flower, gets its own
+    task_executions row, and fails as itself: a build that timed out used to be
+    reported as an indexing failure with every vector already written.
+    """
+    try:
+        return asyncio.run(_run_build_index_task(project_id, task_id=self.request.id))
+
+    except SoftTimeLimitExceeded as exc:
+        logger.error(
+            "build_vector_index_task for project %r exceeded its soft time limit of %ss",
+            project_id,
+            SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT,
+        )
+        raise CeleryTaskError(
+            f"Building the vector index for {project_id!r} exceeded "
+            f"{SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT}s and was stopped"
         ) from exc
 
 

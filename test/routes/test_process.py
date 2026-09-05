@@ -5,18 +5,22 @@ from kombu.exceptions import OperationalError as BrokerOperationalError
 from redis.exceptions import RedisError
 
 
-def _fake_chain(calls, index_id="index-1", process_id="task-123"):
+def _fake_chain(calls, build_id="build-1", index_id="index-1", process_id="task-123"):
     """Stand in for ingestion_chain, recording how it was built.
 
-    A chain's AsyncResult names its *last* task and reaches the earlier one
-    through .parent, so the fake has to reproduce that shape or the route's
-    two-row bookkeeping is not actually exercised.
+    A chain's AsyncResult names its *last* task and reaches the earlier ones
+    through .parent, so the fake reproduces that nesting or the route's
+    per-link bookkeeping is not actually exercised. Three deep since the ANN
+    build became its own task: process → index → build index.
     """
     def build(project_id, request_data, asset_id=None, batch_size=None):
         calls.append((project_id, request_data, asset_id, batch_size))
         return SimpleNamespace(
             apply_async=lambda: SimpleNamespace(
-                id=index_id, parent=SimpleNamespace(id=process_id)
+                id=build_id,
+                parent=SimpleNamespace(
+                    id=index_id, parent=SimpleNamespace(id=process_id, parent=None)
+                ),
             )
         )
 
@@ -39,8 +43,9 @@ async def test_process_queues_the_whole_chain(client, monkeypatch):
 
     assert response.status_code == 202
     body = response.json()
-    assert body["task_id"] == "task-123"          # the process half
-    assert body["index_task_id"] == "index-1"     # queued without a second call
+    assert body["task_id"] == "task-123"             # the process half
+    assert body["index_task_id"] == "index-1"        # queued without a second call
+    assert body["build_index_task_id"] == "build-1"  # and the ANN build after it
     assert body["queued"] is True
     assert calls == [
         (
@@ -52,9 +57,10 @@ async def test_process_queues_the_whole_chain(client, monkeypatch):
     ]
 
 
-async def test_both_halves_of_the_chain_get_a_row(client, monkeypatch):
-    """A chain's AsyncResult knows only its last task, so without recording
-    .parent as well the process half would report UNKNOWN for its whole run."""
+async def test_every_link_of_the_chain_gets_a_row(client, monkeypatch):
+    """A chain's AsyncResult knows only its last task, so without walking
+    .parent as well the earlier links would report UNKNOWN for their whole
+    run."""
     import routes.process as process_route
 
     monkeypatch.setattr(process_route, "ingestion_chain", _fake_chain([]))
@@ -63,10 +69,14 @@ async def test_both_halves_of_the_chain_get_a_row(client, monkeypatch):
 
     rows = client._transport.app.db.tasks().items
 
-    assert sorted(rows) == ["index-1", "task-123"]
-    assert {r.task_name.split(".")[-1] for r in rows.values()} == {
-        "process_data_task",
-        "index_project_task",
+    assert sorted(rows) == ["build-1", "index-1", "task-123"]
+    # Each id is recorded under the name of the task it actually is — pairing
+    # them the wrong way round would make every status poll answer about a
+    # different stage than the one it asked for.
+    assert {task_id: row.task_name.split(".")[-1] for task_id, row in rows.items()} == {
+        "task-123": "process_data_task",
+        "index-1": "index_project_task",
+        "build-1": "build_vector_index_task",
     }
 
 
@@ -395,14 +405,14 @@ def test_the_rest_of_a_failed_chain_is_marked_dead():
     table was added to remove."""
     from types import SimpleNamespace as NS
 
-    import tasks.process as process_tasks
+    from tasks.recorder import downstream_ids
 
     request = NS(
         id="proc-1",
         chain=[{"options": {"task_id": "index-1"}}, {"options": {"task_id": "index-2"}}],
     )
 
-    assert process_tasks._downstream_ids(request) == ["index-1", "index-2"]
+    assert downstream_ids(request) == ["index-1", "index-2"]
 
 
 def test_a_task_outside_a_chain_has_no_downstream():
@@ -410,10 +420,10 @@ def test_a_task_outside_a_chain_has_no_downstream():
     no chain at all, and must not raise on the failure path."""
     from types import SimpleNamespace as NS
 
-    import tasks.process as process_tasks
+    from tasks.recorder import downstream_ids
 
-    assert process_tasks._downstream_ids(NS(id="solo", chain=None)) == []
-    assert process_tasks._downstream_ids(NS(id="solo")) == []
+    assert downstream_ids(NS(id="solo", chain=None)) == []
+    assert downstream_ids(NS(id="solo")) == []
 
 
 async def test_abandoning_records_a_terminal_state(fake_db):

@@ -75,6 +75,41 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
     NLTK_DATA=/usr/share/nltk_data
 
+# Tesseract, for the Arabic OCR fallback. The engine is a system package and
+# cannot come from the lockfile; pytesseract is only a wrapper around this
+# binary.
+#
+# Two models are installed on purpose. The distribution's `ara` pack is the
+# *fast* traineddata (~1.4 MB); tessdata_best is a different model (~12.6 MB)
+# and measured three times better on this project's corpus — 0.172 word error
+# rate against 0.545. Downloading it here rather than at runtime keeps the
+# container able to start with no network.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         tesseract-ocr tesseract-ocr-ara curl \
+    && mkdir -p /usr/share/tessdata-best \
+    && curl -fsSL -o /usr/share/tessdata-best/ara.traineddata \
+         https://github.com/tesseract-ocr/tessdata_best/raw/main/ara.traineddata \
+    && curl -fsSL -o /usr/share/tessdata-best/eng.traineddata \
+         https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata \
+    && apt-get purge -y curl \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Where the better Arabic model landed. Set here rather than left to the env
+# file: the extractor's availability check looks for this path, and without it
+# OCR_ENABLED=true silently degrades to "cannot run" and keeps the broken text
+# layer — a feature that looks enabled and does nothing.
+ENV TESSDATA_BEST=/usr/share/tessdata-best
+
+# The application is a set of plain modules under /app, found until now only
+# because `sys.path` carries "" and the working directory happened to be /app.
+# That resolves at *import* time, not at startup, so a lazy import — the OCR
+# fallback is one — fails the moment anything has changed directory, with
+# "No module named 'ocr'" from inside a Celery task while the same import
+# succeeds under `docker exec`. An absolute entry does not move.
+ENV PYTHONPATH=/app
+
 # Unprivileged. Created before the copies so ownership is set by --chown as
 # they land, rather than by a later chown layer duplicating the whole venv.
 RUN groupadd --system --gid 1001 app \
