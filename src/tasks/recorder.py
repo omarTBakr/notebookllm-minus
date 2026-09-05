@@ -21,6 +21,30 @@ from utils.metrics import INGEST_DOCUMENTS, INGEST_STAGE_SECONDS
 logger = get_logger(__name__)
 
 
+def downstream_ids(request) -> list[str]:
+    """The ids of the tasks queued after this one in the same chain.
+
+    Celery hands each task the remainder of its chain, so a failing task can
+    name exactly the work its failure cancels — which is what abandon() below
+    then marks DEAD. Read defensively: the shape is an internal detail, and a
+    task that runs outside a chain has none of it.
+
+    Lives here rather than in one task module because every task that is not
+    the *last* link needs it, which since the index build was split out is
+    both process and index.
+    """
+    ids = []
+
+    for link in getattr(request, "chain", None) or []:
+        options = link.get("options") if isinstance(link, dict) else None
+        task_id = (options or {}).get("task_id")
+
+        if task_id:
+            ids.append(task_id)
+
+    return ids
+
+
 class TaskRecorder:
     """Progress reporting for one task run."""
 

@@ -1,17 +1,16 @@
 import re
+from time import perf_counter
 from typing import Callable
 
 from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
 
 from enums import EmbeddingInputType
 from exceptions import NotFoundError
-from factories.llmembedding import LLMEmbeddingInterface
 from factories.db.interfaces import VectorRepository
+from factories.llmembedding import LLMEmbeddingInterface
 from models import ChunkModel
-
-from time import perf_counter
-
 from utils.metrics import INGEST_CHUNKS, VECTOR_UPSERT_SECONDS
+
 from .BaseController import BaseController
 
 # Qdrant collection names are far more restricted than a URL path segment, and
@@ -148,13 +147,10 @@ class NLPController(BaseController):
             if on_progress:
                 on_progress(total, expected)
 
-        # Built once, after every chunk is in, not per collection-create:
-        # both pgvector's IVFFlat and Qdrant's HNSW build noticeably faster,
-        # and pick better parameters, once there is data to build from rather
-        # than being maintained incrementally on every insert.
-        await self.vectordb_client.create_index(
-            collection_name=collection, embedding_size=vector_size
-        )
+        # The ANN index is *not* built here — build_index() below does it, as
+        # its own link in the ingestion chain. Chunks are written and vectors
+        # are searchable the moment this returns; the index only makes the
+        # search fast.
 
         # Chunk count only. The "indexing" *duration* is observed by
         # routes/chat/_helpers when it closes the stage — recording it here as
@@ -162,9 +158,7 @@ class NLPController(BaseController):
         # halves the apparent mean and doubles the rate.
         INGEST_CHUNKS.observe(total)
 
-        self.logger.info(
-            "Indexed %d chunk(s) for project %r in %d batch(es)", total, project_id, batches
-        )
+        self.logger.info("Indexed %d chunk(s) for project %r in %d batch(es)", total, project_id, batches)
 
         return {
             "collection": collection,
@@ -173,6 +167,44 @@ class NLPController(BaseController):
             "batches": batches,
             "vector_size": vector_size,
             "collection_created": created,
+        }
+
+    async def build_index(self, project_id: str) -> dict:
+        """Build the ANN index over a project's collection.
+
+        Split out of index_chunks so it can be its own link in the ingestion
+        chain: it is the one step that is pure database work with no embedding
+        provider involved, it takes seconds where the embedding takes minutes,
+        and folding it into index_chunks meant a build that failed or timed out
+        was reported as an *indexing* failure with the vectors already written.
+
+        Always after the bulk load, never per insert: both pgvector's IVFFlat
+        and Qdrant's HNSW build faster, and pick better parameters, from data
+        that is already there than by being maintained on every row.
+
+        Not an error when the backend declines — pgvector will not index past
+        4000 dimensions, and an exact scan is a slow search, not a broken one.
+
+        Callers must not skip this: without it a pgvector collection is only
+        ever searched by exact scan, which on this project's own 2048-dim data
+        measured 120-185 ms against 0.85-0.98 ms indexed.
+        """
+        collection = self.collection_name(project_id)
+        vector_size = self.embedding_client.embedding_size
+
+        built = await self.vectordb_client.create_index(collection_name=collection, embedding_size=vector_size)
+
+        self.logger.info(
+            "Vector index for %r (%d dimensions): %s",
+            collection,
+            vector_size,
+            "built" if built else "declined by the backend, searches stay exact",
+        )
+
+        return {
+            "collection": collection,
+            "vector_size": vector_size,
+            "index_built": bool(built),
         }
 
     async def _flush(self, collection: str, batch: list) -> None:
@@ -208,9 +240,7 @@ class NLPController(BaseController):
             record_ids=[self._point_key(chunk) for chunk in batch],
         )
 
-        VECTOR_UPSERT_SECONDS.labels(type(self.vectordb_client).__name__).observe(
-            perf_counter() - _upsert_started
-        )
+        VECTOR_UPSERT_SECONDS.labels(type(self.vectordb_client).__name__).observe(perf_counter() - _upsert_started)
 
     @staticmethod
     def _point_key(chunk) -> str:
@@ -252,8 +282,7 @@ class NLPController(BaseController):
         # forgotten push behind what looks like a poor query.
         if not await self.vectordb_client.collection_exists(collection):
             raise NotFoundError(
-                f"Project {project_id!r} has no vector index yet — "
-                f"POST /nlp/index/push/{project_id} first"
+                f"Project {project_id!r} has no vector index yet — " f"POST /nlp/index/push/{project_id} first"
             )
 
         # QUERY, not DOCUMENT: asymmetric models embed the two differently, and

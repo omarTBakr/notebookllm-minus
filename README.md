@@ -66,6 +66,9 @@ startup with the full list rather than on first use. The ones worth knowing abou
 | `OLLAMA_HOST` / `OLLAMA_PORT` | where `ollama serve` is listening |
 | `OLLAMA_CLOUD_BASE_URL` | a second Ollama over the network; its models appear alongside the local ones |
 | `RETRIEVAL_TOP_K` / `RETRIEVAL_MIN_SCORE` | how many passages reach the prompt, and the floor they must clear |
+| `MIN_CHUNK_CHARS` | below this a chunk is debris, not a retrieval unit — merged into a neighbour on the same page |
+| `OCR_ENABLED` / `OCR_EXTRACTOR` | re-read Arabic pages whose text layer is unusable; `tesseract-best` by default |
+| `OCR_WORKERS` | pages OCR'd at once. `0` = every CPU the process may use, bounded by memory |
 
 Only the API key for a backend you actually selected has to be filled in, and it is checked
 during startup — a blank key means the app refuses to boot rather than failing on the first
@@ -87,9 +90,19 @@ slower, which `PdfLayoutController` offsets by extracting pages across a process
 - Ingestion is idempotent and runs on a worker, so a 200-page PDF never holds an API process
 
 **Chunking**
-- `NLTKTextSplitter` on sentence boundaries, with a `RecursiveCharacterTextSplitter` re-splitting anything still over the limit — PDF text often carries no sentence punctuation at all
+- `RecursiveCharacterTextSplitter` preferring paragraph, then line, then sentence, then word, with a size guard re-splitting anything still over the limit — PDF text often carries no sentence punctuation at all, and NLTK's sentence splitter discarded the overlap entirely whenever a trailing sentence was longer than it
+- Chunks below `MIN_CHUNK_CHARS` are merged into a neighbour **on the same page**, never dropped. The splitter emits accumulated short splits as their own chunk as soon as the next one needs recursion, so every page opening with a running header orphaned it: on a 274-page book, 110 of 803 chunks were under 50 characters and 78 under 10. They embed to nothing in particular and there are enough of them that one lands in the top 5 of an unrelated query — the visible symptom was a grounded answer citing five single Arabic words
 - Text sanitised at extraction: damaged font encodings decode to NUL bytes, which PostgreSQL refuses in both `text` and `jsonb`
 - Unicode normalised to NFKC with bidi controls stripped, so Arabic extracted as presentation forms still matches a normally typed query
+
+**Arabic OCR**
+- A scanned or badly-produced Arabic PDF often carries a text layer that *looks* fine and is unsearchable: words fragment mid-token (`اليسار` extracted as `ا ليسا ر`), so no query ever matches them
+- Detected by codepoint script analysis plus a space-ratio check, then re-read with Tesseract against the `tessdata_best` Arabic model. **Per page and only when broken** — a healthy text layer is the characters the author typed, and OCR would trade those for a guess at the pixels
+- Ten extraction paths were benchmarked on two axes, because no single corpus answers both: **accuracy** on synthetic pages whose ground truth is known (`tesseract-best` 0.172 WER against 0.545 for the distro `ara` pack — the same engine, a different model), and **cost** on real book pages (2.29 s/page pinned to two cores). `tesseract-best` ships; Qari-OCR is far more accurate at 0.063 WER but wants 5 GB of VRAM and 33.9 s per real page, so it runs as an optional remote extractor on a Colab GPU behind ngrok (`src/ocr/colab/`)
+- Word and character error rates diverge sharply on fragmented Arabic — every character survives while no word does — so both are reported. See `src/ocr/reports/FINDINGS.md`
+- Pages are read concurrently (threads, since a prefork worker cannot fork and tesseract is a subprocess anyway): **1.07 → 0.17 s/page**. The pool is bounded by available memory as well as CPU count — sizing it on CPUs alone OOM-killed a worker mid-document
+- OCR returns no coordinates, so the original word boxes are kept and offsets scaled through them: citations still highlight, marked approximate
+- `OCR_ENABLED` is **on under Docker and off by default in code**: the image installs the `tessdata_best` model, a bare `uv run` does not. With the model missing the feature logs why and keeps the text layer rather than failing the upload
 
 **Grounded chat**
 - Users → sessions → notebooks → messages, streamed token by token over SSE

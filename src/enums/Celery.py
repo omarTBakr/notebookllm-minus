@@ -8,6 +8,10 @@ class CeleryTaskFunction(StrEnum):
 
     PROCESS = "process_data_task"
     INDEX = "index_project_task"
+    # The ANN build, split out of INDEX so it is its own link in the chain,
+    # its own row in task_executions, and its own bar in Flower. It shares
+    # INDEX's queue rather than getting one of its own — see celery_queues.
+    BUILD_INDEX = "build_vector_index_task"
     CHAT = "answer_chat_task"
     MAINTENANCE = "maintenance_task"
 

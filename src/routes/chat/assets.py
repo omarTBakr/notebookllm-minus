@@ -27,7 +27,7 @@ from models import (
     UserModel,
 )
 from tasks.status import mark_queued
-from tasks.workflows import chain_task_names, ingestion_chain
+from tasks.workflows import chain_results, chain_task_names, ingestion_chain
 from utils import get_settings
 from utils.metrics import INGEST_DOCUMENTS
 
@@ -412,7 +412,7 @@ async def attach_document(chat_id: str, file: UploadFile, http_request: Request)
             "overlap_size": (chat.overlap_size if chat.overlap_size is not None else CHAT_CHUNK_OVERLAP),
             "reset": False,
         }
-        process_name, index_name = chain_task_names()
+        task_names = chain_task_names()
 
         try:
             result = ingestion_chain(chat_id, args, asset_id=asset.asset_id, batch_size=None).apply_async()
@@ -431,15 +431,14 @@ async def attach_document(chat_id: str, file: UploadFile, http_request: Request)
 
             raise CeleryBrokerError(f"Could not queue ingestion for {file.filename!r}") from exc
 
-        for task_result, name in (
-            (result.parent, process_name),
-            (result, index_name),
-        ):
-            if task_result is None:
-                continue
-            mark_queued(task_result.id)
+        # A chain's AsyncResult names only its last task and reaches the
+        # earlier ones through .parent, so every link is walked out and given
+        # its own row — otherwise the halves before the last report UNKNOWN
+        # for the whole of their run.
+        for name, task_id in zip(task_names, (r.id for r in chain_results(result))):
+            mark_queued(task_id)
             await idempotency.record(
-                task_id=task_result.id,
+                task_id=task_id,
                 task_name=name,
                 project_id=chat_id,
                 args=args,

@@ -5,6 +5,14 @@ description = "Upload documents, ask questions, get answers grounded in them —
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    # --- OCR ---
+    # Arabic PDFs in this corpus carry text layers that cannot be searched:
+    # the word-box path splits inside words and the raw path fuses them. OCR of
+    # the rendered page beats both, measured (see src/ocr/reports/FINDINGS.md).
+    # pytesseract is a thin wrapper; the engine and its ara model are installed
+    # in the image, not here.
+    "pytesseract>=0.3.13",
+
     # --- web ---
     "fastapi[standard]>=0.140.0",
     "starlette>=0.40",          # imported directly by middleware/request_logging.py
@@ -81,6 +89,11 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.11.0",
+]
+
+[project.optional-dependencies]
+ocr-benchmark = [
+    "matplotlib>=3.9",
 ]
 
 [tool.black]

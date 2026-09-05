@@ -151,16 +151,22 @@ def ingest(client, app, monkeypatch):
     def fake_chain(project_id, request_data, asset_id=None, batch_size=None):
         """Stand in for the real publish. Nothing here touches a broker.
 
-        The route's own bookkeeping still runs against it — both task rows are
+        The route's own bookkeeping still runs against it — every task row is
         written from the ids this hands back — so what the test exercises is
         the route, not a shortcut around it. drain_ingestion then performs the
         work those rows describe.
+
+        Three deep, matching ingestion_chain: process → index → build index. A
+        chain's AsyncResult names its last task and reaches the earlier ones
+        through .parent, so the fake has to reproduce that nesting or the route
+        records fewer rows than it really would.
         """
-        return SimpleNamespace(
-            apply_async=lambda: SimpleNamespace(
-                id=str(uuid4()), parent=SimpleNamespace(id=str(uuid4()))
+        def link(depth):
+            return SimpleNamespace(
+                id=str(uuid4()), parent=link(depth - 1) if depth else None
             )
-        )
+
+        return SimpleNamespace(apply_async=lambda: link(2))
 
     async def _ingest(chat_id, files):
         monkeypatch.setattr(assets_route, "ingestion_chain", fake_chain)

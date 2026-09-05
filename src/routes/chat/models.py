@@ -106,15 +106,26 @@ async def set_chat_models(chat_id: str, request: SetModelsRequest, http_request:
         chunk_model = ChunkModel(db)
         project = await ProjectModel(db).get_project(chat_id)
 
+        controller = _nlp_controller(http_request, await chat_model.get_chat(chat_id))
+
         # reset=True drops the old collection so the new one is created at the
         # new width. Without it every insert would be rejected for a dimension
         # mismatch — the failure mode EMBEDDING_MODEL_SIZE exists to prevent.
-        result = await _nlp_controller(http_request, await chat_model.get_chat(chat_id)).index_chunks(
+        result = await controller.index_chunks(
             chunk_model=chunk_model,
             project_object_id=project.id,
             project_id=chat_id,
             reset=True,
         )
+
+        # Explicitly, because index_chunks no longer does it: everywhere else
+        # the ingestion chain's last link builds the index, and this is the one
+        # path with no chain. reset=True above dropped the collection and its
+        # index with it, so skipping this would leave the new model's vectors
+        # searchable only by exact scan — slow, but not broken, and therefore
+        # silent.
+        await controller.build_index(chat_id)
+
         reindexed = result["chunks_indexed"]
 
         from ._helpers import logger

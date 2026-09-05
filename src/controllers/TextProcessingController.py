@@ -20,8 +20,9 @@ from langchain_text_splitters import (  # ty: ignore[unresolved-import]
     RecursiveCharacterTextSplitter,
 )
 
-from enums import ProcessStatus, LANGUAGE_SPLITTERS
+from enums import LANGUAGE_SPLITTERS, ProcessStatus
 from exceptions import ChunkingError
+
 from .BaseController import BaseController
 
 # Whether this process has confirmed the punkt model is on disk.
@@ -31,9 +32,7 @@ _PUNKT_READY = False
 # visual order of mixed-direction text; they carry no meaning once the text is
 # a string, and an embedding model tokenises them as noise. A 37k-character
 # sample of this project's own Arabic corpus contained 11,120 of them.
-_BIDI_CONTROLS = dict.fromkeys(
-    map(ord, "\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-)
+_BIDI_CONTROLS = dict.fromkeys(map(ord, "\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"))
 
 
 def normalize_text(value: str) -> str:
@@ -224,9 +223,7 @@ class TextProcessingController(BaseController):
         CHAT_CHUNK_OVERLAP is raised well past one sentence.
         """
         self._ensure_punkt()
-        return NLTKTextSplitter(
-            chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap
-        )
+        return NLTKTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
 
     def get_size_guard(self) -> RecursiveCharacterTextSplitter:
         """The ceiling the sentence splitter does not enforce."""
@@ -273,9 +270,7 @@ class TextProcessingController(BaseController):
                     for piece in pieces:
                         child_start = piece.metadata.get("start_index")
                         piece.metadata["start_index"] = (
-                            parent_start + child_start
-                            if child_start is not None and child_start >= 0
-                            else -1
+                            parent_start + child_start if child_start is not None and child_start >= 0 else -1
                         )
 
                 out.extend(pieces)
@@ -291,6 +286,167 @@ class TextProcessingController(BaseController):
         )
         return out
 
+    def merge_undersized(self, chunks: list[Document], docs: list[Document]) -> list[Document]:
+        """Fold debris chunks back into the page text they were cut from.
+
+        `RecursiveCharacterTextSplitter` splits on "\n\n" first, then recurses
+        into any split still too long. In langchain's `_split_text` the short
+        splits accumulated so far are flushed as a chunk of their own the
+        moment a long one needs recursion — so a page shaped like
+
+            سورية\n\n<nine hundred words of body text>
+
+        yields a five-character chunk before the body is ever split. Running
+        headers, folios and markdown headings all have that shape. Each is
+        embedded, and with enough of them one reliably scores into the top five
+        of an unrelated query: the observed symptom was a grounded answer
+        citing five single Arabic words and correctly reporting that they meant
+        nothing. Measured on this project's 274-page book at chunk_size 1000:
+        with OCR off, 15 chunks of 742 under 100 characters and 6 under 10;
+        with OCR on, 110 of 803 under 50 and 78 under 10. OCR recovers headers
+        that the broken text layer had dropped, so a better extraction produces
+        *more* debris here, not less.
+
+        Merged, never dropped, so no text leaves the index — and merged
+        **forwards** by preference, because a short chunk that precedes body
+        text is nearly always a heading for it. Falling back to backwards
+        covers the other shape, a folio or page number trailing the body.
+        Getting that order wrong moves a markdown `# Heading` onto the tail of
+        the *previous* section.
+
+        The merged text is sliced out of the original page rather than
+        concatenated, so `page_text[start_index : start_index + len(chunk)]`
+        still returns the chunk exactly. Highlights are computed from those two
+        numbers; joining with a separator guessed here would shift every
+        rectangle on the page by the difference. A chunk whose page text or
+        `start_index` is unavailable is therefore left alone rather than merged
+        approximately.
+
+        Never merges across pages: `start_index` is an offset into one page,
+        and a chunk spanning two would highlight the wrong one.
+        """
+        # Capped against chunk_size, not taken at face value. The setting is a
+        # fixed character count while chunk_size is a caller's argument, and a
+        # small chunk_size would otherwise put every legitimate chunk under the
+        # floor and merge the whole document back into one piece. Debris is by
+        # definition far smaller than a chunk; a quarter is a generous ceiling
+        # on what can be called debris, and leaves the configured 100 in force
+        # at any chunk_size of 400 or more.
+        floor = min(getattr(self.settings, "MIN_CHUNK_CHARS", 0), self.chunk_size // 4)
+
+        if floor <= 0 or len(chunks) < 2:
+            return chunks
+
+        # Bounded overflow: merging must not undo the ceiling enforce_size just
+        # imposed. One floor's worth of slack absorbs anything movable.
+        ceiling = self.chunk_size + floor
+
+        def page_of(chunk: Document):
+            meta = chunk.metadata
+            return (meta.get("source"), meta.get("page"))
+
+        pages = {}
+        for doc in docs:
+            pages.setdefault(page_of(doc), doc.page_content)
+
+        def offset(chunk: Document):
+            value = chunk.metadata.get("start_index")
+            return value if value is not None and value >= 0 else None
+
+        def span(key, first: Document, last: Document) -> str | None:
+            """The original text from where `first` starts to where `last` ends."""
+            text = pages.get(key)
+            begin, last_begin = offset(first), offset(last)
+
+            if text is None or begin is None or last_begin is None:
+                return None
+
+            merged = text[begin : last_begin + len(last.page_content)]
+
+            return merged if len(merged) <= ceiling else None
+
+        out: list[Document] = []
+        merged_count = 0
+        index = 0
+
+        while index < len(chunks):
+            chunk = chunks[index]
+
+            if len(chunk.page_content) >= floor:
+                out.append(chunk)
+                index += 1
+                continue
+
+            key = page_of(chunk)
+
+            # Which neighbour the chunk belongs to is not decidable from
+            # position — a heading and a trailing fragment are both short and
+            # both adjacent to the chunk after them. What separates them is
+            # whether the chunk *leads* something:
+            #
+            #   سورية\n\n<body>     opens the page      -> forwards
+            #   # Two\n\n<section>  opens a section     -> forwards
+            #   <body>\n\n٤٧        closes the page     -> backwards
+            #   <body tail>         continues the body  -> backwards
+            #
+            # Getting this wrong is not cosmetic: merging `# Two` backwards
+            # appends it to the end of section One, so no chunk begins with the
+            # heading and a search for it retrieves the previous section.
+            leads = not any(page_of(done) == key for done in out) or (chunk.page_content.lstrip().startswith("#"))
+
+            if leads and index + 1 < len(chunks) and page_of(chunks[index + 1]) == key:
+                successor = chunks[index + 1]
+                merged = span(key, chunk, successor)
+
+                if merged is not None:
+                    successor.page_content = merged
+                    # The pair starts where this chunk did, or the highlight
+                    # omits the heading it just absorbed.
+                    successor.metadata["start_index"] = chunk.metadata["start_index"]
+                    merged_count += 1
+                    index += 1
+                    continue
+
+            # Backwards: a folio or a trailing fragment continues what came
+            # before it. Also the fallback for a heading with nothing after it.
+            if out and page_of(out[-1]) == key:
+                previous = out[-1]
+                merged = span(key, previous, chunk)
+
+                if merged is not None:
+                    previous.page_content = merged
+                    merged_count += 1
+                    index += 1
+                    continue
+
+            # A leading chunk that could not go backwards still tries forwards,
+            # which is the page-opening header whose body was too big to take
+            # it in one piece.
+            if not leads and index + 1 < len(chunks) and page_of(chunks[index + 1]) == key:
+                successor = chunks[index + 1]
+                merged = span(key, chunk, successor)
+
+                if merged is not None:
+                    successor.page_content = merged
+                    successor.metadata["start_index"] = chunk.metadata["start_index"]
+                    merged_count += 1
+                    index += 1
+                    continue
+
+            out.append(chunk)
+            index += 1
+
+        if merged_count:
+            self.logger.info(
+                "Merged %d undersized chunk(s) below %d chars, %d -> %d total",
+                merged_count,
+                floor,
+                len(chunks),
+                len(out),
+            )
+
+        return out
+
     def split(self, docs: list[Document], extension: str | None = None) -> list[Document]:
         """Split, then enforce the size ceiling.
 
@@ -300,11 +456,13 @@ class TextProcessingController(BaseController):
         awareness.
         """
         try:
-            chunks = self.enforce_size(self.get_splitter(extension).split_documents(docs))
+            chunks = self.merge_undersized(
+                self.enforce_size(self.get_splitter(extension).split_documents(docs)),
+                docs,
+            )
         except Exception as exc:
             raise ChunkingError(
-                f"{ProcessStatus.CHUNKING_FAILED.value}: chunk_size={self.chunk_size}, "
-                f"overlap={self.chunk_overlap}"
+                f"{ProcessStatus.CHUNKING_FAILED.value}: chunk_size={self.chunk_size}, " f"overlap={self.chunk_overlap}"
             ) from exc
 
         self.logger.info(

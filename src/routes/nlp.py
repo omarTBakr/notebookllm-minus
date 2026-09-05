@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from controllers import IdempotencyController, NLPController
-from enums import CeleryTaskFunction, EmbeddingInputType
+from enums import EmbeddingInputType
 from exceptions import (
     CELERY_BROKER_EXCEPTIONS,
     CeleryBrokerError,
@@ -12,9 +12,9 @@ from exceptions import (
     ProjectNotFoundError,
 )
 from models import ChatModel, ChunkModel, ProjectModel
-from tasks import index_project_task
 from tasks.index import get_index_task
 from tasks.status import mark_queued
+from tasks.workflows import chain_results, index_chain, index_chain_task_names
 from utils import get_logger, get_settings
 
 from .schemas import PushRequest, SearchRequest
@@ -92,9 +92,13 @@ async def push_index(project_id: str, request: PushRequest, http_request: Reques
         "reset": request.reset,
         "batch_size": request.batch_size,
     }
-    task_name = f"{get_settings().CELERY_PROJECT_NAME}.{CeleryTaskFunction.INDEX.value}"
+    task_names = index_chain_task_names()
+    index_name, build_name = task_names
 
-    existing = await idempotency.claim(task_name, args)
+    # Claimed on the index task alone: it is the expensive half, it is what a
+    # duplicate submission would pay for twice, and the build that follows it
+    # is not separately submittable.
+    existing = await idempotency.claim(index_name, args)
 
     if existing is not None:
         # Already running with these exact arguments. Indexing the same
@@ -112,28 +116,39 @@ async def push_index(project_id: str, request: PushRequest, http_request: Reques
         )
 
     try:
-        task = index_project_task.delay(
+        # A chain, not a bare .delay(): building the ANN index is its own task
+        # now, and this route is the one path that never went through
+        # ingestion_chain. Queued bare it would embed every chunk and leave the
+        # collection permanently unindexed — a search that still answers, from
+        # an exact scan, so nothing would report it as broken.
+        result = index_chain(
             project_id,
             request.asset_id,
             request.reset,
             request.batch_size,
-        )
+        ).apply_async()
     except CELERY_BROKER_EXCEPTIONS as exc:
         raise CeleryBrokerError("Could not queue vector indexing") from exc
 
-    mark_queued(task.id)
-    await idempotency.record(
-        task_id=task.id,
-        task_name=task_name,
-        project_id=project_id,
-        args=args,
-        asset_id=request.asset_id or "",
-    )
+    ids = dict(zip(task_names, (r.id for r in chain_results(result))))
+
+    for name, task_id in ids.items():
+        mark_queued(task_id)
+        await idempotency.record(
+            task_id=task_id,
+            task_name=name,
+            project_id=project_id,
+            args=args,
+            asset_id=request.asset_id or "",
+        )
 
     return JSONResponse(
         status_code=202,
         content={
-            "task_id": task.id,
+            # Still the index task's id: it is what callers poll, and it is
+            # the half that takes the time.
+            "task_id": ids.get(index_name) or result.id,
+            "build_index_task_id": ids.get(build_name),
             "project_id": project_id,
             "status": "queued",
             "queued": True,
