@@ -370,17 +370,43 @@ def test_worker_count_is_capped_by_memory_not_just_cpus(controller, monkeypatch)
     assert controller._ocr_workers(222) == 10
 
 
-def test_an_explicit_worker_count_is_still_capped_by_memory(controller, monkeypatch):
-    """The setting says how much parallelism is wanted, not how much the box
-    can survive."""
+def test_an_explicit_worker_count_is_honoured_above_the_memory_bound(
+    controller, monkeypatch, caplog
+):
+    """An operator who sets this has the machine in front of them.
+
+    Capping it silently is what left a 2-vCPU server unable to use both cores:
+    OCR ran single-threaded, 214 pages cost 428s of a 540s budget, and every
+    upload of that book died on the soft time limit with the document left
+    showing zero chunks. The bound still has something to say, so it says it.
+    """
     import sys
 
     module = sys.modules["controllers.ProcessController"]
-    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 64)
+    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 4)
     monkeypatch.setattr(module, "_cpu_count", lambda: 64)
     monkeypatch.setattr(module, "_available_memory_mb", lambda: 1024.0)
 
-    assert controller._ocr_workers(222) == 2
+    with caplog.at_level("WARNING"):
+        assert controller._ocr_workers(222) == 4
+
+    assert any("above what free memory suggests" in r.message for r in caplog.records)
+
+
+def test_an_explicit_worker_count_within_the_bound_warns_about_nothing(
+    controller, monkeypatch, caplog
+):
+    import sys
+
+    module = sys.modules["controllers.ProcessController"]
+    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 2)
+    monkeypatch.setattr(module, "_cpu_count", lambda: 64)
+    monkeypatch.setattr(module, "_available_memory_mb", lambda: 4096.0)
+
+    with caplog.at_level("WARNING"):
+        assert controller._ocr_workers(222) == 2
+
+    assert not [r for r in caplog.records if "free memory" in r.message]
 
 
 def test_at_least_one_page_is_read_even_on_a_tiny_host(controller, monkeypatch):

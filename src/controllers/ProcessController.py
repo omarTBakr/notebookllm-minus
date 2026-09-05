@@ -218,11 +218,34 @@ class ProcessController(BaseController):
         much parallelism is wanted, not how much the box can survive.
         """
         configured = getattr(self.settings, "OCR_WORKERS", 0)
-        limit = configured if configured > 0 else _cpu_count()
-
         available = _available_memory_mb()
-        if available is not None:
-            limit = min(limit, int(available * 0.5 // self.OCR_PAGE_MB))
+        affordable = max(1, int(available * 0.5 // self.OCR_PAGE_MB)) if available is not None else None
+
+        if configured > 0:
+            # Honoured, even above what the memory bound would pick. An
+            # operator who sets this has a machine in front of them and may
+            # know something this does not -- that swap exists, that the
+            # monitoring stack is about to be moved off the box. Capping it
+            # silently meant a 2-vCPU server could not be told to use both
+            # cores at all: OCR ran single-threaded, a 214-page book took 428s
+            # of a 540s budget, and ingestion died on the soft time limit with
+            # the document left showing zero chunks.
+            limit = configured
+
+            if affordable is not None and configured > affordable:
+                self.logger.warning(
+                    "OCR_WORKERS=%d is above what free memory suggests (%d, from "
+                    "%d MB available at ~%d MB a page). Honouring it, but a page "
+                    "that does not fit is an OOM kill, not a slow page -- add swap "
+                    "or lower it if the worker starts dying mid-document.",
+                    configured,
+                    affordable,
+                    round(available),
+                    self.OCR_PAGE_MB,
+                )
+        else:
+            # Automatic: never more than the CPUs, never more than memory.
+            limit = _cpu_count() if affordable is None else min(_cpu_count(), affordable)
 
         return max(1, min(limit, pending))
 
