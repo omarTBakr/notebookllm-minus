@@ -51,19 +51,10 @@ jobs:
             echo "::group::what OCR would use here"
             # The three bounds that decide the pool, printed from the running
             # image so this reflects the deployed code and not the repo.
-            docker compose exec -T celery-process python -c "
-import sys; sys.path.insert(0,'/app')
-from controllers.PdfLayoutController import _cpu_count, _available_memory_mb
-from controllers import ProcessController
-p = ProcessController()
-mem = _available_memory_mb()
-print('OCR_ENABLED     ', p.settings.OCR_ENABLED)
-print('OCR_EXTRACTOR   ', p.settings.OCR_EXTRACTOR)
-print('OCR_WORKERS set ', p.settings.OCR_WORKERS)
-print('cpus visible    ', _cpu_count())
-print('memory available', None if mem is None else round(mem), 'MB')
-print('-> workers for a 200-page doc:', p._ocr_workers(200))
-" || echo "(celery-process not running)"
+            # Every line stays indented: a bare column-0 line inside a YAML
+            # block scalar ends the scalar and is parsed as a new key.
+            # One line: a column-0 continuation would end the YAML block scalar.
+            docker compose exec -T celery-process python -c 'import sys; sys.path.insert(0,"/app"); from controllers.PdfLayoutController import _cpu_count, _available_memory_mb; from controllers import ProcessController; p = ProcessController(); mem = _available_memory_mb(); print("OCR_ENABLED", p.settings.OCR_ENABLED); print("OCR_EXTRACTOR", p.settings.OCR_EXTRACTOR); print("OCR_WORKERS set", p.settings.OCR_WORKERS); print("cpus visible", _cpu_count()); print("memory available MB", None if mem is None else round(mem)); print("workers for a 200-page doc", p._ocr_workers(200))' || echo "(celery-process not running)"
             echo "::endgroup::"
 
             echo "::group::tesseract present"
