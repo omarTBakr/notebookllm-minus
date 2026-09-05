@@ -306,7 +306,21 @@ class Settings(BaseSettings):
     CELERY_ACCEPT_CONTENT: list = ["json"]
     CELERY_TIMEZONE: str = "UTC"
     CELERY_ENABLE_UTC: bool = True
-    CELERY_TASK_TIME_LIMIT: int = 600  # hard wall-clock limit per task (seconds)
+    # Sized from the slowest real ingestion measured, not from a round number.
+    # A 222-page scanned Arabic book on the 2-vCPU deployment box needs 214
+    # pages of OCR at ~5.3 s/page with two workers -- about 1136s. At the old
+    # 600/540 the task was killed at 539s every time, three uploads running,
+    # and the document was left listed with zero chunks and nothing in the UI
+    # to say why. That server's cores are ~3.4x slower than a laptop's (a
+    # fixed 8M-iteration loop: 1.48s there against 0.44s here), so the limit
+    # has to be set for the slow machine or the feature only works in
+    # development.
+    #
+    # 1800 leaves ~60% headroom over the measured worst case for a document
+    # that is entirely scanned. Ingestion is a background task nobody waits
+    # on, so a generous ceiling costs nothing; the cost of a tight one is a
+    # silently broken document.
+    CELERY_TASK_TIME_LIMIT: int = 1860  # hard wall-clock limit per task (seconds)
     # The limit that actually matters for correctness. The hard limit above is
     # a SIGKILL of the worker child: it stops the task, but it also skips every
     # `finally` on the way out — the DB disconnect in tasks/process.py and the
@@ -315,7 +329,7 @@ class Settings(BaseSettings):
     # the task instead, so cleanup runs and the failure is recorded; the hard
     # limit stays as the backstop for a task that ignores it. Must be lower
     # than CELERY_TASK_TIME_LIMIT or it can never fire.
-    CELERY_TASK_SOFT_TIME_LIMIT: int = 540
+    CELERY_TASK_SOFT_TIME_LIMIT: int = 1800
     # Report STARTED once a worker picks a task up. Off by default in Celery,
     # which is why a running task and a queued one were both PENDING — the
     # single most misleading thing the status endpoints did.
