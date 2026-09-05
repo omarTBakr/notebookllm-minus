@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, Response
 
 from controllers import DataController, IdempotencyController
 from controllers.TextProcessingController import normalize_text, strip_nulls
-from enums import IN_FLIGHT, AssetType
+from enums import IN_FLIGHT, AssetType, TaskExecutionStatus
 from exceptions import (
     CELERY_BROKER_EXCEPTIONS,
     AssetNotFoundError,
@@ -37,6 +37,7 @@ from ._helpers import (
     CHAT_CHUNK_SIZE,
     _new_id,
     _nlp_controller,
+    logger,
 )
 from ._pages import located_from_metadata
 
@@ -159,8 +160,6 @@ async def delete_asset(chat_id: str, asset_id: str, http_request: Request):
     remaining = [a async for a in AssetModel(db).iter_assets_for_projects([chat_id])]
     if not remaining:
         await ChatModel(db).set_has_documents(chat_id, False)
-
-    from ._helpers import logger
 
     logger.info(
         "Deleted asset %r from chat %r: %s chunk(s), %s vector(s)",
@@ -364,7 +363,57 @@ async def attach_document(chat_id: str, file: UploadFile, http_request: Request)
         existing = await asset_model.find_by_content_hash(chat_id, content_hash)
 
         if existing is not None:
-            raise DuplicateAssetError(f"{existing.name!r} is already in this notebook.")
+            # A duplicate is only a duplicate if the first copy actually got
+            # in. An ingestion that dies part-way -- a soft time limit, an OOM
+            # kill, a worker restart -- leaves the asset row committed with no
+            # chunks behind it, and this check would then refuse every retry of
+            # the same file. The document is listed in Sources, the model
+            # cannot see a word of it, and the only way out is deleting it by
+            # hand, with nothing anywhere saying so. That is a transient
+            # failure made permanent by its own error handling.
+            #
+            # Three uploads of one Arabic book hit exactly this on the
+            # deployment box: killed at the 540s soft limit, three asset rows,
+            # zero chunks, 409 on every retry.
+            # Positive evidence of a failed run is required, not merely an
+            # absence of chunks. Chunks appear asynchronously, so a copy
+            # uploaded seconds ago legitimately has none yet -- treating that
+            # as a husk would ingest the same document twice at once. The
+            # order below is cheapest-first.
+            task_model = TaskModel(db)
+
+            # chunks.project_id is the project's ObjectId, not the chat's uuid,
+            # so the chat id cannot be used to count them -- it matches nothing
+            # and every document would look like a husk. One extra lookup, and
+            # only on the duplicate path.
+            project = await ProjectModel(db).get_project(chat_id)
+            indexed = await ChunkModel(db).count_project_chunks(project.id, existing.asset_id)
+            in_flight = None if indexed else await task_model.find_active_for_project(chat_id)
+
+            failed = False
+            if not indexed and in_flight is None:
+                async for task in task_model.iter_project_tasks(chat_id):
+                    if task.asset_id == existing.asset_id and task.status in (
+                        TaskExecutionStatus.FAILURE.value,
+                        TaskExecutionStatus.DEAD.value,
+                    ):
+                        failed = True
+                        break
+
+            if not failed:
+                raise DuplicateAssetError(f"{existing.name!r} is already in this notebook.")
+
+            # Nothing indexed and nothing running: the previous attempt is over
+            # and it failed. Drop the husk and let this upload proceed as a
+            # first upload. delete_asset only, matching the broker-failure
+            # rollback below and the delete-source route -- nothing in this
+            # codebase unlinks an id from project.assets_ids.
+            logger.info(
+                "Replacing %r in chat %s: its previous ingestion is recorded as " "failed and left no chunks behind",
+                existing.name,
+                chat_id,
+            )
+            await asset_model.delete_asset(existing.asset_id)
 
         # The project row backs the existing chunk/vector plumbing for this
         # chat. Called for that side effect only: add_asset_id below needs the
@@ -449,8 +498,6 @@ async def attach_document(chat_id: str, file: UploadFile, http_request: Request)
         # the chat does have a document, and leaving it False until a worker
         # finishes would make the chat look empty while it ingests.
         await ChatModel(db).set_has_documents(chat_id, True)
-
-        from ._helpers import logger
 
         logger.info(
             "Queued %r for chat %r as task %r",

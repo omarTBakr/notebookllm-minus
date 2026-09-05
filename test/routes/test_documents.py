@@ -308,3 +308,109 @@ async def test_a_failed_queue_does_not_leave_the_document_unuploadable(
     retry = await client.post("/chat/chats/c1/documents", files=files)
 
     assert retry.status_code != 409, "the failed upload blocked its own retry"
+
+
+# --- retrying an ingestion that died half-way ---------------------------------
+#
+# The dedupe above is right about a document that got in. It was wrong about one
+# that did not: an ingestion killed part-way -- a soft time limit, an OOM kill, a
+# worker restart -- leaves the asset row committed with no chunks, and refusing
+# the retry made a transient failure permanent. The document sat in Sources, the
+# model could not see a word of it, and the only way out was deleting it by hand.
+#
+# Three uploads of one Arabic book hit this on the deployment box: killed at the
+# 540s soft limit, three asset rows, zero chunks, 409 on every retry.
+
+
+async def test_a_document_whose_ingestion_died_can_be_uploaded_again(
+    ingest, client, seed, fake_db
+):
+    files = a_text_file("half-ingested.txt", b"bytes that failed to ingest")
+
+    first = await ingest("c1", files)
+    assert first.status_code in (200, 201, 202), first.text
+
+    await _record_failed_ingestion(fake_db, "c1", "half-ingested.txt")
+
+    retry = await ingest("c1", files)
+
+    assert retry.status_code in (200, 201, 202), (
+        "the retry was refused, so the document can never be added without "
+        f"deleting it by hand first: {retry.text}"
+    )
+
+
+async def test_the_husk_is_replaced_rather_than_duplicated(ingest, client, seed, fake_db):
+    """One document in, one asset row -- the failed copy is dropped, not kept
+    alongside the good one."""
+    files = a_text_file("replaceme.txt", b"bytes that failed once")
+
+    await ingest("c1", files)
+    await _record_failed_ingestion(fake_db, "c1", "replaceme.txt")
+    await ingest("c1", files)
+
+    named = [
+        a async for a in fake_db.assets().iter_assets_for_projects(["c1"])
+        if a.name == "replaceme.txt"
+    ]
+    assert len(named) == 1, f"expected the husk to be replaced, found {len(named)}"
+
+
+async def test_a_document_that_did_ingest_is_still_refused(ingest, client, seed, fake_db):
+    """The guard must not become "retry anything". A document whose ingestion
+    actually ran is a real duplicate and still costs a 409 — even though a
+    later failed run for some *other* asset exists in the same notebook."""
+    files = a_text_file("indexed.txt", b"bytes that ingested fine")
+
+    first = await ingest("c1", files)
+    assert first.status_code in (200, 201, 202)
+
+    second = await ingest("c1", files)
+
+    assert second.status_code == 409, second.text
+    assert "indexed.txt" in second.json()["detail"]
+
+
+async def test_a_document_still_ingesting_is_refused(ingest, client, seed, fake_db):
+    """Zero chunks is normal while the work is still running. Only a copy with
+    nothing indexed *and* nothing in flight is a husk."""
+    files = a_text_file("inflight.txt", b"bytes mid-ingestion")
+
+    # Chunks not written yet and nothing recorded as failed: the chain is
+    # simply still going.
+    await ingest("c1", files)
+
+    second = await ingest("c1", files)
+
+    assert second.status_code == 409, (
+        "a running ingestion was mistaken for a failed one, so the same "
+        f"document is now being ingested twice at once: {second.text}"
+    )
+
+
+async def _record_failed_ingestion(fake_db, chat_id, name):
+    """What a killed ingestion leaves behind.
+
+    The `ingest` fixture drains the chain, so undo that: drop the chunks it
+    wrote and mark the recorded task failed. Driven through the repositories
+    rather than the fake's storage, so it keeps working if the fake changes.
+    """
+    asset = None
+    async for candidate in fake_db.assets().iter_assets_for_projects([chat_id]):
+        if candidate.name == name:
+            asset = candidate
+    assert asset is not None, f"no asset named {name!r} to fail"
+
+    # By asset, not through delete_chunks_for_asset: that takes the project's
+    # ObjectId rather than the chat id, which is the same confusion the route
+    # itself had to be corrected for.
+    store = fake_db.chunks()
+    store.items = [c for c in store.items if c.asset_id != asset.asset_id]
+
+    tasks = fake_db.tasks()
+    marked = 0
+    async for task in tasks.iter_project_tasks(chat_id):
+        if task.asset_id == asset.asset_id:
+            await tasks.update_status(task.task_id, "FAILURE")
+            marked += 1
+    assert marked, "no task row to mark failed; the route stopped recording them"
