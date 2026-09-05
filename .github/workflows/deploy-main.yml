@@ -138,6 +138,13 @@ jobs:
               echo "::group::compose state"
               (cd Docker && docker compose ps --all) || true
               echo "::endgroup::"
+              # The state above names the container that failed; only its logs
+              # say why. Without this the first Arabic-OCR deploy could be
+              # narrowed to "fastapi-app is unhealthy" and no further, which
+              # costs a whole deploy cycle to learn nothing.
+              echo "::group::application logs"
+              (cd Docker && docker compose logs --no-color --tail=120 fastapi celery-process) || true
+              echo "::endgroup::"
               echo "::error::$SERVICE failed to restart — see the groups above"
               exit 1
             fi
