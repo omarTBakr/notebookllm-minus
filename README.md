@@ -665,6 +665,10 @@ of a second copy of the DSN in compose that could drift. Task history needs even
 once in `celery_app.py` (`worker_send_task_events`, `task_send_sent_event`) rather than as
 `-E` on four worker commands that could fall out of step.
 
+![Flower task history](demo/Flower.png)
+Task history, paged — per-task state, runtime, and worker, so a failure is a click away instead
+of a log grep.
+
 Note that `FLOWER_BASIC_AUTH=""` does **not** mean "no authentication" — Flower reads an empty
 string as "auth is on, with no valid users" and answers `401` to every route except
 `/healthcheck`, so the container passes its health probe while the dashboard is unreachable.
@@ -682,6 +686,21 @@ being up at all.
 Grafana provisions its dashboards by scanning `Docker/grafana/dashboards/`, so a new `*.json`
 there is picked up without being listed anywhere: FastAPI observability, PostgreSQL, host, and
 RabbitMQ broker/queue health.
+
+![FastAPI dashboard](demo/GrafanaFastAPI.png)
+Request volume by method, a per-route latency heatmap, and the 2xx/5xx split that would catch
+a bad deploy.
+
+![Host dashboard](demo/GrafanaHost.png)
+The `node` job — CPU, memory, disk, and network from `node_exporter` on the host, not from a
+container.
+
+![PostgreSQL dashboard](demo/GrafanaPostgresql.png)
+Connection count, commit/rollback rates, and buffer settings from `postgres-exporter`.
+
+![RabbitMQ dashboard](demo/GrafanaRabbimq.png)
+Ready and unacknowledged messages per queue — filtered to the queues that mean something, per
+the relabeling above.
 
 ## Error handling
 
