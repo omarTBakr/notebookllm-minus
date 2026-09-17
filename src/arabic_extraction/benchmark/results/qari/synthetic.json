@@ -1,0 +1,99 @@
+{
+  "skipped": {
+    "tesseract-best": "TESSDATA_BEST is not set",
+    "paddleocr": "paddleocr is not installed",
+    "surya": "needs the NVIDIA container runtime; docker reports none (install nvidia-container-toolkit)",
+    "gemini": "GOOGLE_API_KEY is not set in the environment or .env"
+  },
+  "summary": [
+    {
+      "extractor": "qari",
+      "pages": 4,
+      "ok": 4,
+      "cer": 0.0331,
+      "wer": 0.0625,
+      "seconds": 3.29,
+      "cpu_seconds": 3.51,
+      "peak_rss_mb": 5232.18,
+      "rss_delta_mb": 43.38,
+      "peak_gpu_mb": 4756.39,
+      "space_ratio": 0.156,
+      "usable": 4,
+      "errors": []
+    }
+  ],
+  "runs": [
+    {
+      "source": "prose.pdf",
+      "source_path": "ocr/results/qari/fixtures/prose.pdf",
+      "page": 0,
+      "truth": "تقرير سنوي عن حالة المكتبة الوطنية\nهذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "qari",
+          "seconds": 5.093,
+          "cpu_seconds": 5.2771978499999985,
+          "peak_rss_mb": 5232.18359375,
+          "peak_gpu_mb": 4846.580078125,
+          "error": "",
+          "text": "تقرير سنوي عن حالة المكتبة الوطنية \n هذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية. \n تعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة. \n يهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا."
+        }
+      ]
+    },
+    {
+      "source": "non_joining.pdf",
+      "source_path": "ocr/results/qari/fixtures/non_joining.pdf",
+      "page": 0,
+      "truth": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "qari",
+          "seconds": 2.51,
+          "cpu_seconds": 2.7924991820000002,
+          "peak_rss_mb": 5232.18359375,
+          "peak_gpu_mb": 4756.3916015625,
+          "error": "",
+          "text": "الدار والدرب وزارة الأوراق زار وردة ودرس أوراد الدرس الرزق والوداد وأرواح الأردن"
+        }
+      ]
+    },
+    {
+      "source": "mixed.pdf",
+      "source_path": "ocr/results/qari/fixtures/mixed.pdf",
+      "page": 0,
+      "truth": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق (Annual Report).\nبلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "qari",
+          "seconds": 4.062,
+          "cpu_seconds": 4.236137596999999,
+          "peak_rss_mb": 5232.18359375,
+          "peak_gpu_mb": 4756.3916015625,
+          "error": "",
+          "text": "البند الأول: مراجعة البيانات المالية لعام 2025. راجع الصفحة 42 من التقرير المرفق ..... ..... ..... ..... ..... ..... ..... بلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي."
+        }
+      ]
+    },
+    {
+      "source": "diacritics.pdf",
+      "source_path": "ocr/results/qari/fixtures/diacritics.pdf",
+      "page": 0,
+      "truth": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\nالْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "qari",
+          "seconds": 2.455,
+          "cpu_seconds": 2.619076659000001,
+          "peak_rss_mb": 5232.18359375,
+          "peak_gpu_mb": 4649.6494140625,
+          "error": "",
+          "text": "بِسْمِ اللَّهِ الرَّحْمُنِ الرَّحِيمِ الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "skipped": {
+    "tesseract-best": "TESSDATA_BEST is not set",
+    "paddleocr": "paddleocr is not installed",
+    "gemini": "GOOGLE_API_KEY is not set in the environment or .env"
+  },
+  "summary": [
+    {
+      "extractor": "surya",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 0.08,
+      "cpu_seconds": 0.06,
+      "peak_rss_mb": 783.94,
+      "rss_delta_mb": 20.02,
+      "peak_gpu_mb": 0.0,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": [
+        "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "source": "prose.pdf",
+      "source_path": "ocr/results/surya/fixtures/prose.pdf",
+      "page": 0,
+      "truth": "تقرير سنوي عن حالة المكتبة الوطنية\nهذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "surya",
+          "seconds": 0.756,
+          "cpu_seconds": 0.6543882119999997,
+          "peak_rss_mb": 753.671875,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "non_joining.pdf",
+      "source_path": "ocr/results/surya/fixtures/non_joining.pdf",
+      "page": 0,
+      "truth": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "surya",
+          "seconds": 0.072,
+          "cpu_seconds": 0.05407816299999979,
+          "peak_rss_mb": 775.3125,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "mixed.pdf",
+      "source_path": "ocr/results/surya/fixtures/mixed.pdf",
+      "page": 0,
+      "truth": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق (Annual Report).\nبلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "surya",
+          "seconds": 0.083,
+          "cpu_seconds": 0.06348547899999879,
+          "peak_rss_mb": 792.5625,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "diacritics.pdf",
+      "source_path": "ocr/results/surya/fixtures/diacritics.pdf",
+      "page": 0,
+      "truth": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\nالْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "surya",
+          "seconds": 0.057,
+          "cpu_seconds": 0.03957569099999958,
+          "peak_rss_mb": 796.6875,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}

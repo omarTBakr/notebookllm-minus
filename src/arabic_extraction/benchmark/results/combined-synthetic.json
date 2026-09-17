@@ -1,0 +1,554 @@
+{
+  "suite": "synthetic",
+  "skipped": {},
+  "summary": [
+    {
+      "extractor": "qari",
+      "pages": 4,
+      "ok": 4,
+      "cer": 0.0331,
+      "wer": 0.0625,
+      "seconds": 3.29,
+      "cpu_seconds": 3.51,
+      "peak_rss_mb": 5232.18,
+      "rss_delta_mb": 43.38,
+      "peak_gpu_mb": 4756.39,
+      "space_ratio": 0.156,
+      "usable": 4,
+      "errors": []
+    },
+    {
+      "extractor": "gemini",
+      "pages": 4,
+      "ok": 1,
+      "cer": 0.1081,
+      "wer": 0.1667,
+      "seconds": 0.99,
+      "cpu_seconds": 0.09,
+      "peak_rss_mb": 686.8,
+      "rss_delta_mb": 18.52,
+      "peak_gpu_mb": null,
+      "space_ratio": 0.155,
+      "usable": 1,
+      "errors": [
+        "HTTPError: HTTP Error 429: Too Many Requests"
+      ]
+    },
+    {
+      "extractor": "tesseract-best",
+      "pages": 4,
+      "ok": 4,
+      "cer": 0.1304,
+      "wer": 0.1717,
+      "seconds": 0.26,
+      "cpu_seconds": 0.09,
+      "peak_rss_mb": 680.86,
+      "rss_delta_mb": 18.64,
+      "peak_gpu_mb": null,
+      "space_ratio": 0.158,
+      "usable": 4,
+      "errors": []
+    },
+    {
+      "extractor": "easyocr",
+      "pages": 4,
+      "ok": 4,
+      "cer": 0.0989,
+      "wer": 0.3164,
+      "seconds": 0.42,
+      "cpu_seconds": 0.5,
+      "peak_rss_mb": 1342.95,
+      "rss_delta_mb": 30.42,
+      "peak_gpu_mb": 1444.11,
+      "space_ratio": 0.161,
+      "usable": 4,
+      "errors": []
+    },
+    {
+      "extractor": "tesseract",
+      "pages": 4,
+      "ok": 4,
+      "cer": 0.3158,
+      "wer": 0.545,
+      "seconds": 0.2,
+      "cpu_seconds": 0.09,
+      "peak_rss_mb": 682.13,
+      "rss_delta_mb": 18.64,
+      "peak_gpu_mb": null,
+      "space_ratio": 0.162,
+      "usable": 4,
+      "errors": []
+    },
+    {
+      "extractor": "paddleocr",
+      "pages": 4,
+      "ok": 4,
+      "cer": 0.4327,
+      "wer": 0.6796,
+      "seconds": 16.09,
+      "cpu_seconds": 96.08,
+      "peak_rss_mb": 13208.43,
+      "rss_delta_mb": 93.95,
+      "peak_gpu_mb": null,
+      "space_ratio": 0.148,
+      "usable": 4,
+      "errors": []
+    },
+    {
+      "extractor": "pdfplumber",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 0.0,
+      "cpu_seconds": 0.0,
+      "peak_rss_mb": 613.67,
+      "rss_delta_mb": 0.02,
+      "peak_gpu_mb": null,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": []
+    },
+    {
+      "extractor": "pymupdf-raw",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 0.0,
+      "cpu_seconds": 0.0,
+      "peak_rss_mb": 642.32,
+      "rss_delta_mb": 0.0,
+      "peak_gpu_mb": null,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": []
+    },
+    {
+      "extractor": "pymupdf-words",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 0.0,
+      "cpu_seconds": 0.0,
+      "peak_rss_mb": 644.68,
+      "rss_delta_mb": 0.0,
+      "peak_gpu_mb": null,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": []
+    },
+    {
+      "extractor": "surya",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 0.08,
+      "cpu_seconds": 0.06,
+      "peak_rss_mb": 783.94,
+      "rss_delta_mb": 20.02,
+      "peak_gpu_mb": 0.0,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": [
+        "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "source": "diacritics.pdf",
+      "source_path": "ocr/results/paddleocr/fixtures/diacritics.pdf",
+      "page": 0,
+      "truth": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\nالْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+      "extractions": [
+        {
+          "extractor": "paddleocr",
+          "seconds": 13.089,
+          "cpu_seconds": 79.948987654,
+          "peak_rss_mb": 13208.43359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "بِسم الَ لَخمِ لرّحيِ\nالحمَد َِهِرَبّ اْعَمِينَ"
+        },
+        {
+          "extractor": "pymupdf-raw",
+          "seconds": 0.0,
+          "cpu_seconds": 0.00031383699999976145,
+          "peak_rss_mb": 642.32421875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "pymupdf-words",
+          "seconds": 0.0,
+          "cpu_seconds": 0.00029157499999987735,
+          "peak_rss_mb": 644.68359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "pdfplumber",
+          "seconds": 0.001,
+          "cpu_seconds": 0.0007969449999998268,
+          "peak_rss_mb": 613.671875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "tesseract",
+          "seconds": 0.136,
+          "cpu_seconds": 0.0607754530000002,
+          "peak_rss_mb": 694.97265625,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "5 شي ج هط َه\nبِسْم الله الرحمن الرَحِيعم\nالْحَمْدُ لِلَّهِ رَبّ الْعَالْمِينَ\n"
+        },
+        {
+          "extractor": "tesseract-best",
+          "seconds": 0.192,
+          "cpu_seconds": 0.061478960000000527,
+          "peak_rss_mb": 693.70703125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "‎1١ 0 8‏ 0\nبسع اللهِ الرحمّن الرجيع\nالْحَمْدُلِلَّهِ رَبٌّ الْعَالَمِينَ\n"
+        },
+        {
+          "extractor": "easyocr",
+          "seconds": 0.279,
+          "cpu_seconds": 0.29651469499999994,
+          "peak_rss_mb": 1347.7890625,
+          "peak_gpu_mb": 1224.0146484375,
+          "error": "",
+          "text": "بسم الله الدًحمن الرحيدم\nالحمد للًه ربً العالمين"
+        },
+        {
+          "extractor": "gemini",
+          "seconds": 0.961,
+          "cpu_seconds": 0.08178391900000026,
+          "peak_rss_mb": 701.0546875,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        },
+        {
+          "extractor": "surya",
+          "seconds": 0.057,
+          "cpu_seconds": 0.03957569099999958,
+          "peak_rss_mb": 796.6875,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        },
+        {
+          "extractor": "qari",
+          "seconds": 2.455,
+          "cpu_seconds": 2.619076659000001,
+          "peak_rss_mb": 5232.18359375,
+          "peak_gpu_mb": 4649.6494140625,
+          "error": "",
+          "text": "بِسْمِ اللَّهِ الرَّحْمُنِ الرَّحِيمِ الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ"
+        }
+      ]
+    },
+    {
+      "source": "mixed.pdf",
+      "source_path": "ocr/results/paddleocr/fixtures/mixed.pdf",
+      "page": 0,
+      "truth": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق (Annual Report).\nبلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي.",
+      "extractions": [
+        {
+          "extractor": "paddleocr",
+          "seconds": 16.696,
+          "cpu_seconds": 100.84885363500001,
+          "peak_rss_mb": 13208.43359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "البيانات المالية لعام\nلبند الأول مراجعة\nالمرفق\nالصفحة  من التقرير\nراجع\nالنسبةمقارنة في\nالعام الماضي\nبلغت"
+        },
+        {
+          "extractor": "pymupdf-raw",
+          "seconds": 0.0,
+          "cpu_seconds": 0.00032868800000018794,
+          "peak_rss_mb": 642.32421875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "pymupdf-words",
+          "seconds": 0.0,
+          "cpu_seconds": 0.00031042800000014026,
+          "peak_rss_mb": 644.68359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "pdfplumber",
+          "seconds": 0.001,
+          "cpu_seconds": 0.0008365480000001035,
+          "peak_rss_mb": 613.671875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "tesseract",
+          "seconds": 0.226,
+          "cpu_seconds": 0.10101950600000009,
+          "peak_rss_mb": 690.66015625,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق [ |||[ ال الالانا لالالالالالانا\nبلغت النسبة 87.5[] مقارنة ب 63.2[] في العام الماضي.\n"
+        },
+        {
+          "extractor": "tesseract-best",
+          "seconds": 0.301,
+          "cpu_seconds": 0.09931647199999993,
+          "peak_rss_mb": 689.39453125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق لالالالاتاثاناً تاتالالانانان.\nبلغت النسبة 87.5[] مقارنة ب 63.2[] في العام الماضي.\n"
+        },
+        {
+          "extractor": "easyocr",
+          "seconds": 0.435,
+          "cpu_seconds": 0.577553548,
+          "peak_rss_mb": 1347.7890625,
+          "peak_gpu_mb": 1444.1083984375,
+          "error": "",
+          "text": "البند الأول : مراجعة البيانات المالية لعام 2025\nراجع الصفحة 42 من التقرير المرفق\nبلغت النسبة 875[ مقارنة ب 632[ في العام الما ضي"
+        },
+        {
+          "extractor": "gemini",
+          "seconds": 13.375,
+          "cpu_seconds": 0.10158744399999975,
+          "peak_rss_mb": 694.6796875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق ▯▯▯▯▯▯▯ ▯▯▯▯▯▯▯.\nبلغت النسبة 87.5▯ مقارنة بـ 63.2▯ في العام الماضي."
+        },
+        {
+          "extractor": "surya",
+          "seconds": 0.083,
+          "cpu_seconds": 0.06348547899999879,
+          "peak_rss_mb": 792.5625,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        },
+        {
+          "extractor": "qari",
+          "seconds": 4.062,
+          "cpu_seconds": 4.236137596999999,
+          "peak_rss_mb": 5232.18359375,
+          "peak_gpu_mb": 4756.3916015625,
+          "error": "",
+          "text": "البند الأول: مراجعة البيانات المالية لعام 2025. راجع الصفحة 42 من التقرير المرفق ..... ..... ..... ..... ..... ..... ..... بلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي."
+        }
+      ]
+    },
+    {
+      "source": "non_joining.pdf",
+      "source_path": "ocr/results/paddleocr/fixtures/non_joining.pdf",
+      "page": 0,
+      "truth": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن",
+      "extractions": [
+        {
+          "extractor": "paddleocr",
+          "seconds": 15.489,
+          "cpu_seconds": 91.32044797800002,
+          "peak_rss_mb": 13208.43359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن"
+        },
+        {
+          "extractor": "pymupdf-raw",
+          "seconds": 0.001,
+          "cpu_seconds": 0.00043066699999982916,
+          "peak_rss_mb": 642.32421875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "pymupdf-words",
+          "seconds": 0.001,
+          "cpu_seconds": 0.0003630889999999276,
+          "peak_rss_mb": 644.68359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "pdfplumber",
+          "seconds": 0.001,
+          "cpu_seconds": 0.0009155349999998563,
+          "peak_rss_mb": 613.671875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "tesseract",
+          "seconds": 0.174,
+          "cpu_seconds": 0.08302602599999975,
+          "peak_rss_mb": 673.59765625,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن\n"
+        },
+        {
+          "extractor": "tesseract-best",
+          "seconds": 0.217,
+          "cpu_seconds": 0.08149547299999993,
+          "peak_rss_mb": 672.33203125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن\n"
+        },
+        {
+          "extractor": "easyocr",
+          "seconds": 0.397,
+          "cpu_seconds": 0.4150932559999996,
+          "peak_rss_mb": 1338.1171875,
+          "peak_gpu_mb": 1444.1083984375,
+          "error": "",
+          "text": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن"
+        },
+        {
+          "extractor": "gemini",
+          "seconds": 0.779,
+          "cpu_seconds": 0.08392158500000013,
+          "peak_rss_mb": 678.9296875,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        },
+        {
+          "extractor": "surya",
+          "seconds": 0.072,
+          "cpu_seconds": 0.05407816299999979,
+          "peak_rss_mb": 775.3125,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        },
+        {
+          "extractor": "qari",
+          "seconds": 2.51,
+          "cpu_seconds": 2.7924991820000002,
+          "peak_rss_mb": 5232.18359375,
+          "peak_gpu_mb": 4756.3916015625,
+          "error": "",
+          "text": "الدار والدرب وزارة الأوراق زار وردة ودرس أوراد الدرس الرزق والوداد وأرواح الأردن"
+        }
+      ]
+    },
+    {
+      "source": "prose.pdf",
+      "source_path": "ocr/results/paddleocr/fixtures/prose.pdf",
+      "page": 0,
+      "truth": "تقرير سنوي عن حالة المكتبة الوطنية\nهذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا.",
+      "extractions": [
+        {
+          "extractor": "paddleocr",
+          "seconds": 20.366,
+          "cpu_seconds": 116.498422853,
+          "peak_rss_mb": 13208.43359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "سنوي عن حالة المكتبة\nالوطنية\nتقرير\nلاختبار دقة التعرف\nالضوئي على الحروف العربية\nتجريبي\nهذا مستند\nالخط\nتعتمد جودة الاستخراج على\nالمستخدم وعلى دقة الصورة الممسوحة\nالحروف والكلمات معًا\nc\nالخطاً\nقياس نسبة\nإلى\nيهدف هذا الاختبار\nفي"
+        },
+        {
+          "extractor": "pymupdf-raw",
+          "seconds": 0.093,
+          "cpu_seconds": 0.04861279199999968,
+          "peak_rss_mb": 642.32421875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "pymupdf-words",
+          "seconds": 0.042,
+          "cpu_seconds": 0.04094648500000009,
+          "peak_rss_mb": 644.68359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "pdfplumber",
+          "seconds": 0.007,
+          "cpu_seconds": 0.006855880999999897,
+          "peak_rss_mb": 613.671875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        },
+        {
+          "extractor": "tesseract",
+          "seconds": 0.274,
+          "cpu_seconds": 0.17320212000000001,
+          "peak_rss_mb": 669.76953125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "تعتمد جودة الاستخراج على الخط المستخدح وعلى دقة الصورة الممسوحة.\n"
+        },
+        {
+          "extractor": "tesseract-best",
+          "seconds": 0.511,
+          "cpu_seconds": 0.16956409799999994,
+          "peak_rss_mb": 668.453125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "تقرير سنوي عن حالة المكتبة الوطنية\n\nهذا مستند تجريبى لاختبار دقة التعرف الضوئى على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأً فى الحروف والكلمات معا.\n"
+        },
+        {
+          "extractor": "easyocr",
+          "seconds": 1.08,
+          "cpu_seconds": 0.923864612,
+          "peak_rss_mb": 1245.44921875,
+          "peak_gpu_mb": 1657.7568359375,
+          "error": "",
+          "text": "تقريل سنوي عن حالة المكتبة الوطنية\nهذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية .\nتعتمد جودة الا ستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة .\nيهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا"
+        },
+        {
+          "extractor": "gemini",
+          "seconds": 1.02,
+          "cpu_seconds": 0.17963592700000008,
+          "peak_rss_mb": 672.04296875,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        },
+        {
+          "extractor": "surya",
+          "seconds": 0.756,
+          "cpu_seconds": 0.6543882119999997,
+          "peak_rss_mb": 753.671875,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        },
+        {
+          "extractor": "qari",
+          "seconds": 5.093,
+          "cpu_seconds": 5.2771978499999985,
+          "peak_rss_mb": 5232.18359375,
+          "peak_gpu_mb": 4846.580078125,
+          "error": "",
+          "text": "تقرير سنوي عن حالة المكتبة الوطنية \n هذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية. \n تعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة. \n يهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "skipped": {
+    "tesseract-best": "no ara.traineddata under /usr/share/tessdata-best",
+    "easyocr": "easyocr is not installed",
+    "paddleocr": "paddleocr is not installed",
+    "surya": "surya-ocr is not installed",
+    "qari": "transformers/torch are not installed",
+    "qari-remote": "QARI_REMOTE_URL is not set (start arabic_extraction/benchmark/colab/qari_server.ipynb)",
+    "openrouter": "'minimax/minimax-m3:free' is not on OpenRouter"
+  },
+  "summary": [
+    {
+      "extractor": "qalam",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 0.0,
+      "cpu_seconds": 0.0,
+      "peak_rss_mb": 137.39,
+      "rss_delta_mb": null,
+      "peak_gpu_mb": null,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": []
+    }
+  ],
+  "runs": [
+    {
+      "source": "prose.pdf",
+      "source_path": "/run/media/omar/My Passport/ubuntu Files/code/Projects/notebookllm-minus/src/arabic_extraction/benchmark/results/fixtures/prose.pdf",
+      "page": 0,
+      "truth": "تقرير سنوي عن حالة المكتبة الوطنية\nهذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "qalam",
+          "seconds": 0.002,
+          "cpu_seconds": 0.005112641999999834,
+          "peak_rss_mb": 137.390625,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "non_joining.pdf",
+      "source_path": "/run/media/omar/My Passport/ubuntu Files/code/Projects/notebookllm-minus/src/arabic_extraction/benchmark/results/fixtures/non_joining.pdf",
+      "page": 0,
+      "truth": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "qalam",
+          "seconds": 0.001,
+          "cpu_seconds": 0.001189848999999743,
+          "peak_rss_mb": 137.390625,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "mixed.pdf",
+      "source_path": "/run/media/omar/My Passport/ubuntu Files/code/Projects/notebookllm-minus/src/arabic_extraction/benchmark/results/fixtures/mixed.pdf",
+      "page": 0,
+      "truth": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق (Annual Report).\nبلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "qalam",
+          "seconds": 0.001,
+          "cpu_seconds": 0.0012885890000000622,
+          "peak_rss_mb": 137.390625,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "diacritics.pdf",
+      "source_path": "/run/media/omar/My Passport/ubuntu Files/code/Projects/notebookllm-minus/src/arabic_extraction/benchmark/results/fixtures/diacritics.pdf",
+      "page": 0,
+      "truth": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\nالْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "qalam",
+          "seconds": 0.001,
+          "cpu_seconds": 0.00082598700000025,
+          "peak_rss_mb": 137.390625,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}

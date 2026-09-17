@@ -1,0 +1,96 @@
+{
+  "skipped": {
+    "paddleocr": "paddleocr is not installed"
+  },
+  "summary": [
+    {
+      "extractor": "tesseract-best",
+      "pages": 4,
+      "ok": 4,
+      "cer": 0.1304,
+      "wer": 0.1717,
+      "seconds": 0.26,
+      "cpu_seconds": 0.09,
+      "peak_rss_mb": 680.86,
+      "rss_delta_mb": 18.64,
+      "peak_gpu_mb": null,
+      "space_ratio": 0.158,
+      "usable": 4,
+      "errors": []
+    }
+  ],
+  "runs": [
+    {
+      "source": "prose.pdf",
+      "source_path": "ocr/results/tesseract-best/fixtures/prose.pdf",
+      "page": 0,
+      "truth": "تقرير سنوي عن حالة المكتبة الوطنية\nهذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "tesseract-best",
+          "seconds": 0.511,
+          "cpu_seconds": 0.16956409799999994,
+          "peak_rss_mb": 668.453125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "تقرير سنوي عن حالة المكتبة الوطنية\n\nهذا مستند تجريبى لاختبار دقة التعرف الضوئى على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأً فى الحروف والكلمات معا.\n"
+        }
+      ]
+    },
+    {
+      "source": "non_joining.pdf",
+      "source_path": "ocr/results/tesseract-best/fixtures/non_joining.pdf",
+      "page": 0,
+      "truth": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "tesseract-best",
+          "seconds": 0.217,
+          "cpu_seconds": 0.08149547299999993,
+          "peak_rss_mb": 672.33203125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن\n"
+        }
+      ]
+    },
+    {
+      "source": "mixed.pdf",
+      "source_path": "ocr/results/tesseract-best/fixtures/mixed.pdf",
+      "page": 0,
+      "truth": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق (Annual Report).\nبلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "tesseract-best",
+          "seconds": 0.301,
+          "cpu_seconds": 0.09931647199999993,
+          "peak_rss_mb": 689.39453125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق لالالالاتاثاناً تاتالالانانان.\nبلغت النسبة 87.5[] مقارنة ب 63.2[] في العام الماضي.\n"
+        }
+      ]
+    },
+    {
+      "source": "diacritics.pdf",
+      "source_path": "ocr/results/tesseract-best/fixtures/diacritics.pdf",
+      "page": 0,
+      "truth": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\nالْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "tesseract-best",
+          "seconds": 0.192,
+          "cpu_seconds": 0.061478960000000527,
+          "peak_rss_mb": 693.70703125,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "‎1١ 0 8‏ 0\nبسع اللهِ الرحمّن الرجيع\nالْحَمْدُلِلَّهِ رَبٌّ الْعَالَمِينَ\n"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1190 @@
+{
+  "pdf": "/home/omar/Downloads/Testing Rag Docs/ذخائر_لبنان.pdf",
+  "total_pages": 222,
+  "patch_size": 30,
+  "model": "minimax/minimax-m3:free",
+  "pages": [
+    {
+      "page": 0,
+      "chars": 26,
+      "empty": false
+    },
+    {
+      "page": 1,
+      "chars": 34,
+      "empty": false
+    },
+    {
+      "page": 2,
+      "chars": 657,
+      "empty": false
+    },
+    {
+      "page": 3,
+      "chars": 36,
+      "empty": false
+    },
+    {
+      "page": 4,
+      "chars": 1,
+      "empty": false
+    },
+    {
+      "page": 5,
+      "chars": 1540,
+      "empty": false
+    },
+    {
+      "page": 6,
+      "chars": 1633,
+      "empty": false
+    },
+    {
+      "page": 7,
+      "chars": 1301,
+      "empty": false
+    },
+    {
+      "page": 8,
+      "chars": 1989,
+      "empty": false
+    },
+    {
+      "page": 9,
+      "chars": 2014,
+      "empty": false
+    },
+    {
+      "page": 10,
+      "chars": 1866,
+      "empty": false
+    },
+    {
+      "page": 11,
+      "chars": 2377,
+      "empty": false
+    },
+    {
+      "page": 12,
+      "chars": 4079,
+      "empty": false
+    },
+    {
+      "page": 13,
+      "chars": 2821,
+      "empty": false
+    },
+    {
+      "page": 14,
+      "chars": 2483,
+      "empty": false
+    },
+    {
+      "page": 15,
+      "chars": 1392,
+      "empty": false
+    },
+    {
+      "page": 16,
+      "chars": 2279,
+      "empty": false
+    },
+    {
+      "page": 17,
+      "chars": 860,
+      "empty": false
+    },
+    {
+      "page": 18,
+      "chars": 1627,
+      "empty": false
+    },
+    {
+      "page": 19,
+      "chars": 1014,
+      "empty": false
+    },
+    {
+      "page": 20,
+      "chars": 1972,
+      "empty": false
+    },
+    {
+      "page": 21,
+      "chars": 1866,
+      "empty": false
+    },
+    {
+      "page": 22,
+      "chars": 4,
+      "empty": false
+    },
+    {
+      "page": 23,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 24,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 25,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 26,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 27,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 28,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 29,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 30,
+      "chars": 2079,
+      "empty": false
+    },
+    {
+      "page": 31,
+      "chars": 1980,
+      "empty": false
+    },
+    {
+      "page": 32,
+      "chars": 1994,
+      "empty": false
+    },
+    {
+      "page": 33,
+      "chars": 1464,
+      "empty": false
+    },
+    {
+      "page": 34,
+      "chars": 1831,
+      "empty": false
+    },
+    {
+      "page": 35,
+      "chars": 1305,
+      "empty": false
+    },
+    {
+      "page": 36,
+      "chars": 2640,
+      "empty": false
+    },
+    {
+      "page": 37,
+      "chars": 1774,
+      "empty": false
+    },
+    {
+      "page": 38,
+      "chars": 1761,
+      "empty": false
+    },
+    {
+      "page": 39,
+      "chars": 1865,
+      "empty": false
+    },
+    {
+      "page": 40,
+      "chars": 1079,
+      "empty": false
+    },
+    {
+      "page": 41,
+      "chars": 1108,
+      "empty": false
+    },
+    {
+      "page": 42,
+      "chars": 1111,
+      "empty": false
+    },
+    {
+      "page": 43,
+      "chars": 2267,
+      "empty": false
+    },
+    {
+      "page": 44,
+      "chars": 57681,
+      "empty": false
+    },
+    {
+      "page": 45,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 46,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 47,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 48,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 49,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 50,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 51,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 52,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 53,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 54,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 55,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 56,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 57,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 58,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 59,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 60,
+      "chars": 2099,
+      "empty": false
+    },
+    {
+      "page": 61,
+      "chars": 2055,
+      "empty": false
+    },
+    {
+      "page": 62,
+      "chars": 2246,
+      "empty": false
+    },
+    {
+      "page": 63,
+      "chars": 2053,
+      "empty": false
+    },
+    {
+      "page": 64,
+      "chars": 2109,
+      "empty": false
+    },
+    {
+      "page": 65,
+      "chars": 1766,
+      "empty": false
+    },
+    {
+      "page": 66,
+      "chars": 1927,
+      "empty": false
+    },
+    {
+      "page": 67,
+      "chars": 1789,
+      "empty": false
+    },
+    {
+      "page": 68,
+      "chars": 2029,
+      "empty": false
+    },
+    {
+      "page": 69,
+      "chars": 661,
+      "empty": false
+    },
+    {
+      "page": 70,
+      "chars": 1027,
+      "empty": false
+    },
+    {
+      "page": 71,
+      "chars": 729,
+      "empty": false
+    },
+    {
+      "page": 72,
+      "chars": 140208,
+      "empty": false
+    },
+    {
+      "page": 73,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 74,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 75,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 76,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 77,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 78,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 79,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 80,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 81,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 82,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 83,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 84,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 85,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 86,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 87,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 88,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 89,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 90,
+      "chars": 168295,
+      "empty": false
+    },
+    {
+      "page": 91,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 92,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 93,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 94,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 95,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 96,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 97,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 98,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 99,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 100,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 101,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 102,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 103,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 104,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 105,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 106,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 107,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 108,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 109,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 110,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 111,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 112,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 113,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 114,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 115,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 116,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 117,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 118,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 119,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 120,
+      "chars": 2180,
+      "empty": false
+    },
+    {
+      "page": 121,
+      "chars": 456,
+      "empty": false
+    },
+    {
+      "page": 122,
+      "chars": 1605,
+      "empty": false
+    },
+    {
+      "page": 123,
+      "chars": 2056,
+      "empty": false
+    },
+    {
+      "page": 124,
+      "chars": 2916,
+      "empty": false
+    },
+    {
+      "page": 125,
+      "chars": 2638,
+      "empty": false
+    },
+    {
+      "page": 126,
+      "chars": 1757,
+      "empty": false
+    },
+    {
+      "page": 127,
+      "chars": 3023,
+      "empty": false
+    },
+    {
+      "page": 128,
+      "chars": 1437,
+      "empty": false
+    },
+    {
+      "page": 129,
+      "chars": 1751,
+      "empty": false
+    },
+    {
+      "page": 130,
+      "chars": 176649,
+      "empty": false
+    },
+    {
+      "page": 131,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 132,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 133,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 134,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 135,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 136,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 137,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 138,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 139,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 140,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 141,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 142,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 143,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 144,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 145,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 146,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 147,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 148,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 149,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 150,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 151,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 152,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 153,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 154,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 155,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 156,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 157,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 158,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 159,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 160,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 161,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 162,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 163,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 164,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 165,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 166,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 167,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 168,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 169,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 170,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 171,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 172,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 173,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 174,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 175,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 176,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 177,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 178,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 179,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 180,
+      "chars": 2207,
+      "empty": false
+    },
+    {
+      "page": 181,
+      "chars": 2124,
+      "empty": false
+    },
+    {
+      "page": 182,
+      "chars": 2654,
+      "empty": false
+    },
+    {
+      "page": 183,
+      "chars": 439240,
+      "empty": false
+    },
+    {
+      "page": 184,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 185,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 186,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 187,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 188,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 189,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 190,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 191,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 192,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 193,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 194,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 195,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 196,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 197,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 198,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 199,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 200,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 201,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 202,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 203,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 204,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 205,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 206,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 207,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 208,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 209,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 210,
+      "chars": 2253,
+      "empty": false
+    },
+    {
+      "page": 211,
+      "chars": 1798,
+      "empty": false
+    },
+    {
+      "page": 212,
+      "chars": 1926,
+      "empty": false
+    },
+    {
+      "page": 213,
+      "chars": 1891,
+      "empty": false
+    },
+    {
+      "page": 214,
+      "chars": 1878,
+      "empty": false
+    },
+    {
+      "page": 215,
+      "chars": 2104,
+      "empty": false
+    },
+    {
+      "page": 216,
+      "chars": 1899,
+      "empty": false
+    },
+    {
+      "page": 217,
+      "chars": 2040,
+      "empty": false
+    },
+    {
+      "page": 218,
+      "chars": 2067,
+      "empty": false
+    },
+    {
+      "page": 219,
+      "chars": 1693,
+      "empty": false
+    },
+    {
+      "page": 220,
+      "chars": 6,
+      "empty": false
+    },
+    {
+      "page": 221,
+      "chars": 0,
+      "empty": true
+    }
+  ],
+  "patches": [
+    {
+      "start_page": 0,
+      "end_page": 29,
+      "pages_in_patch": 30,
+      "render_secs": 4.87,
+      "call_secs": 278.44,
+      "error": ""
+    },
+    {
+      "start_page": 30,
+      "end_page": 59,
+      "pages_in_patch": 30,
+      "render_secs": 4.81,
+      "call_secs": 493.78,
+      "error": ""
+    },
+    {
+      "start_page": 60,
+      "end_page": 89,
+      "pages_in_patch": 30,
+      "render_secs": 4.85,
+      "call_secs": 573.25,
+      "error": ""
+    },
+    {
+      "start_page": 90,
+      "end_page": 119,
+      "pages_in_patch": 30,
+      "render_secs": 4.84,
+      "call_secs": 560.28,
+      "error": ""
+    },
+    {
+      "start_page": 120,
+      "end_page": 149,
+      "pages_in_patch": 30,
+      "render_secs": 4.88,
+      "call_secs": 417.68,
+      "error": ""
+    },
+    {
+      "start_page": 150,
+      "end_page": 179,
+      "pages_in_patch": 30,
+      "render_secs": 4.96,
+      "call_secs": 129.82,
+      "error": "RuntimeError: OpenRouter error: {'message': 'Provider returned error', 'code': 429}"
+    },
+    {
+      "start_page": 180,
+      "end_page": 209,
+      "pages_in_patch": 30,
+      "render_secs": 4.99,
+      "call_secs": 412.09,
+      "error": ""
+    },
+    {
+      "start_page": 210,
+      "end_page": 221,
+      "pages_in_patch": 12,
+      "render_secs": 1.78,
+      "call_secs": 106.52,
+      "error": ""
+    }
+  ],
+  "errors": [
+    {
+      "patch_start": 150,
+      "error": "RuntimeError: OpenRouter error: {'message': 'Provider returned error', 'code': 429}"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+117
+
+دليلك للدراسات العليا بالخارج - الإصدار الثاني
+مؤسسة علماء مصر
+
+● تحويل **التجارب البحثية** من تجارب معملية إلى أخرى حاسوبية بسبب جائحة كورونا هي ثغلة ليست بالسهلة، ويجب إبراز هذا الأمر كبطلٍ على مرونة الطالبة وتأقلمها مع الأزمات.
+● **عند التعليق** على إنجازات الطالبة، **يُفَضّل** استخدام **أوصاف محددة** مثل: كونها تجيد العمل ضمن فريق، وإنها **تُقَدّم** الدعم والمساعدة لآقرانها في الفريق، إلى جانب أي نشاطات قيادية كتدريس باحثين أقل خبرة، أو نشاطات للتعاون مع أساتذة من أقسام أو جامعات مختلفة، وهذا ضمنًا يَرهن على شخصيتها. أما كلمة «مُوهِبَة» فهي وصف عام جدًا **لا يضيف** شيئًا على الخطاب.
+● **يُفَضّل** الخطاب كل **على أمثلة** تُبرهن على جودة عملها البحثي والمهارات التي اكتسبتها.
+● **ذكر** في الفقرة الأخيرة **أن** المشرف **يوصي** بالطالبة **بالتقدم لمنظمة معينة**، وفي بداية الخطاب أنه يدعمها **للترشح** لجائزة **أفضل** رسالة علمية. هذا الاختلاف سيؤثّر سليًا على الخطاب، كما يعطي انطباعًا أن الخطاب **شُيخ نسخًا من قوالب** جاهزة.
+
+**بعد المراجعة:**
+
+Dear Admission committee,
+
+It is my great pleasure to support the nomination of Ms. XXX to your Ph.D. program. I have supervised the MSc in Chemistry thesis of XXX at XXX University. I came to know XXX when I was giving a lecture in the graduate seminar course. The course introduced the graduate students to the concepts of writing research proposals, through which they can apply for research grants. XXX distinguished herself by submitting an exceptionally well-researched, thoughtful, and interesting master's research proposal. Her first attempt to submit a research proposal on XXX was accepted, and she was granted the full amount of the graduate research grant.
+
+She started working on her research topic with full energy, passion, and determination. However, due to Covid-19 lockdown and limited access to research laboratories, she had to switch her wet lab project, midway, to an *in silico* project. I could say she was smart and flexible enough to deal with the situation and get into a new project that required new and different skills. In around 6 months, XXX has gained extensive experience in using several docking tools such as XXX, XXX, and XXX. In the end, her master's thesis was well-written, clear, and comprehensive, and she was able to address my comments successfully.
+
+She successfully defended her thesis titled "XXX". She has excellent presentation skills and with her knowledge, she was able to argue with the examiners and answer their questions clearly and concisely. I am impressed by XXX's work ethic, dedication to her work, and ability to master new skills in a very short time. I would rank her in the top 1% of students that I have supervised in the past five years with respect to her writing ability and research skills. Her work has been accepted for publication in the journal "XXX". I met XXX recently and I knew that she joined XXX as a research assistant to gain hands-on experience concerning organic and medicinal chemistry wet lab techniques. Her determination, passion and hard work to reach her goals are exemplary.
+
+As a department chair, I can tell that XXX has splendid teaching skills. She has been working as a teaching assistant at XXX since 2017, and she never fails to have exceptional evaluation scores from the students. She knows how to communicate clearly with the students to handle their questions and deliver the information in a very simple way.

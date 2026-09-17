@@ -1,0 +1,98 @@
+{
+  "skipped": {
+    "paddleocr": "paddleocr is not installed"
+  },
+  "summary": [
+    {
+      "extractor": "gemini",
+      "pages": 4,
+      "ok": 1,
+      "cer": 0.1081,
+      "wer": 0.1667,
+      "seconds": 0.99,
+      "cpu_seconds": 0.09,
+      "peak_rss_mb": 686.8,
+      "rss_delta_mb": 18.52,
+      "peak_gpu_mb": null,
+      "space_ratio": 0.155,
+      "usable": 1,
+      "errors": [
+        "HTTPError: HTTP Error 429: Too Many Requests"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "source": "prose.pdf",
+      "source_path": "ocr/results/gemini/fixtures/prose.pdf",
+      "page": 0,
+      "truth": "تقرير سنوي عن حالة المكتبة الوطنية\nهذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "gemini",
+          "seconds": 1.02,
+          "cpu_seconds": 0.17963592700000008,
+          "peak_rss_mb": 672.04296875,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "non_joining.pdf",
+      "source_path": "ocr/results/gemini/fixtures/non_joining.pdf",
+      "page": 0,
+      "truth": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "gemini",
+          "seconds": 0.779,
+          "cpu_seconds": 0.08392158500000013,
+          "peak_rss_mb": 678.9296875,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "mixed.pdf",
+      "source_path": "ocr/results/gemini/fixtures/mixed.pdf",
+      "page": 0,
+      "truth": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق (Annual Report).\nبلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "gemini",
+          "seconds": 13.375,
+          "cpu_seconds": 0.10158744399999975,
+          "peak_rss_mb": 694.6796875,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق ▯▯▯▯▯▯▯ ▯▯▯▯▯▯▯.\nبلغت النسبة 87.5▯ مقارنة بـ 63.2▯ في العام الماضي."
+        }
+      ]
+    },
+    {
+      "source": "diacritics.pdf",
+      "source_path": "ocr/results/gemini/fixtures/diacritics.pdf",
+      "page": 0,
+      "truth": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\nالْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "gemini",
+          "seconds": 0.961,
+          "cpu_seconds": 0.08178391900000026,
+          "peak_rss_mb": 701.0546875,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}

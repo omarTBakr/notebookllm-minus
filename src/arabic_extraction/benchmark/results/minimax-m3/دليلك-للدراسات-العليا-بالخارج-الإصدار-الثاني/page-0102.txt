@@ -1,0 +1,24 @@
+102
+
+دليلك للدراسات العليا بالخارج - الإصدار الثاني
+مؤسسة علماء مصر
+
+to the XXX Master's fellowship and I was accepted in the XXX department, to start a new chapter of my academic life.
+
+**تعليقات المراجع:**
+
+● **لاحظ** تصحيح الكلمات التي تحتها خط وحذف بعض العبارات التي بها إسهاب غير ضروري.
+● **أضاف المراجع** كلمة (Valedictorian) لتوضيح أن الطالب حصل على المركز الأول على دفعته.
+● **نصح المراجع** بتوضيح ما إذا كان القبول في برنامج الماجستير بناءً على منحة، وتوضيح مدى التنافس عليها لتوضيح مدى تميز الطالب.
+
+<u>By the end of 2020</u>, I had an accident that lead to a fracture in my cervical bones. The toughest part was that this happened two weeks before my 9th-semester finals, meaning that I had to postpone my exams for the following year to have an urgent surgery, which meant I would postpone my graduation and my future plans as well. I decided not to give up on my aspiration or waste the effort of the past years. I studied my courses till the last minute before my surgery and continued studying <u>until</u> the moment I left the ICU. At that moment, I didn't care about the outcome as much as I cared about doing all I can. As a result, I graduated <u>a valedictorian</u> in 2021 with an overall grade of excellent with the highest honors. <u>I decided</u> to keep doing the thing I love, research. I applied to the XXX Master's fellowship, and I was accepted <u>into</u> the XXX department, to start a new chapter of my academic life.
+
+**الفقرة السابعة:**
+
+I was chosen to do my master's on a project supervised by Prof. XXX and Prof. XXX funded by the XXX. My thesis focuses on investigating XXX. Although the expression and regulation of XXX and XXX enzymes are well studied, the expression profile of XXX is barely investigated in breast cancer (BC). In addition, the intricate crosstalk among the three enzymes and other gas-transmitter-synthesizing enzymes is not understood yet. This prompted us to explore the role of XXX in BC. The project stages are investigating the expression of XXX on the gene and protein levels in BC tissues compared to non-cancerous counterpart, followed by evaluating the effect of the molecular regulation of XXX on cancer hallmarks in-vitro. For further understanding of the crosstalk among gas-transmitter-synthesizing enzymes, I am performing dual and multi-molecular targeting for these enzymes to understand their impact on cancer hallmarks and tumor microenvironment.
+
+**تعليقات المراجع:**
+
+لاحظ تصحيح الكلمات التي تحتها خط وحذف العبارة في الجملة الأولى التي بها إسهاب غير ضروري.
+
+I was chosen to do my master's on a project supervised by <u>Prof. XXX and Prof. XXX.</u> My thesis focuses on investigating XXX. Although the expression and regulation of XXX and XXX enzymes are well studied, the expression profile of XXX is barely investigated in breast cancer (BC). In addition, the intricate crosstalk among the three enzymes and other gas-transmitter-synthesizing enzymes is not understood yet. This prompted us to explore the role of XXX in BC. The project stages are investigating the expression of XXX on the gene and protein levels in BC tissues compared to non-cancerous <u>counterparts</u>, followed by evaluating the effect of the molecular regulation of XXX on cancer hallmarks in-vitro. For further understanding of the crosstalk among gas-transmitter-synthesizing enzymes, I am performing dual and multi-molecular targeting for these enzymes to understand their impact on cancer hallmarks and tumor microenvironment.

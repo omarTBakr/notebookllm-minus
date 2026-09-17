@@ -1,0 +1,33 @@
+116
+
+دليلك للدراسات العليا بالخارج - الإصدار الثاني
+مؤسسة علماء مصر
+
+**نموذج لكتابة خطاب التوصية:**
+
+**قبل المراجعة:**
+
+May X, 20XX
+
+To Whom It May Concern,
+
+It is my great pleasure to support the nomination of Ms. XXX for XXX.
+
+I have supervised the MSc in Chemistry thesis of XXX at the XXX University in XXX. Initially XXX planned to work on Chemical Modifications and Synthesis of Novel Therapeutic XXX Analogues and their Biological Assessment. However, due to Covid-19 lockdown and limited access to research laboratories she had to switch her wet lab project, midway, to an in silico project. In around 6 months XXX has gained extensive experience in using several docking tools such as XXX, XXX and XXX. She has successfully defended her thesis titled "XXX" last month. Her work has recently been accepted for publication (2 days ago) in the journal "XXX" https://www.journals.elsevier.com/computers-in-biology-and-medicine (Elsevier, Q1, IF 3.4). I am very impressed by XXX's work ethics, dedication to her work and ability to master new skills in very short time.
+
+At the personal level, XXX is respectful, polite, and a pleasure to work with. I have no doubt that XXX will successfully achieve her professional goals and would be a great addition to your organization.
+
+If you require any further information, please feel free to contact me. Sincerely,
+
+XXX, PhD, SC(ASCP), DABCC, FACB
+
+Professor & Chairman, Department of XXX & Leader, XXX Research Group, School of XXX, The XXX University In XXX
+
+E-mail: <u>XXX@XXX.edu</u>; Office: +2 XXX; Cell: +2 XXX
+
+**تعليقات المراجع:**
+
+● **الخطاب** متوقع **أن يكون أطول**؛ نظرًا **لكونه** من المشرف الرئيسي **على الطالبة** في الماجستير.
+● **لم يُذكَر** في الخطاب **المدى الزمني** لعلاقة **المشرف بالطالبة**، ولم تُذكَر المقررات الدراسية التي درّسها للطالبة في الماجستير ولم يَرِدها ضمن أوراقها من الطالب.
+● **لآ** أهمية لوضع رابط المجلة البحثية.
+● **كون الطالبة نشرت بحثًا مع هذا المشرف**؛ فهذه فرصة لذكر مهاراتها في الكتابة الأكاديمية والتزامها بالخطة الزمنية لنشر الورقة البحثية.

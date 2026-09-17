@@ -1,0 +1,98 @@
+{
+  "skipped": {
+    "paddleocr": "paddleocr is not installed"
+  },
+  "summary": [
+    {
+      "extractor": "gemini",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 2.45,
+      "cpu_seconds": 0.7,
+      "peak_rss_mb": 792.52,
+      "rss_delta_mb": 36.99,
+      "peak_gpu_mb": null,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": [
+        "HTTPError: HTTP Error 429: Too Many Requests"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "source": "دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+      "source_path": "/home/omar/Downloads/Testing Rag Docs/دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+      "page": 91,
+      "truth": null,
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "gemini",
+          "seconds": 3.191,
+          "cpu_seconds": 1.644755773,
+          "peak_rss_mb": 753.4921875,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+      "source_path": "/home/omar/Downloads/Testing Rag Docs/دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+      "page": 182,
+      "truth": null,
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "gemini",
+          "seconds": 4.841,
+          "cpu_seconds": 1.2196516439999998,
+          "peak_rss_mb": 792.3359375,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "ذخائر_لبنان.pdf",
+      "source_path": "/home/omar/Downloads/Testing Rag Docs/ذخائر_لبنان.pdf",
+      "page": 74,
+      "truth": null,
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "gemini",
+          "seconds": 1.585,
+          "cpu_seconds": 0.1659355370000002,
+          "peak_rss_mb": 792.7109375,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "ذخائر_لبنان.pdf",
+      "source_path": "/home/omar/Downloads/Testing Rag Docs/ذخائر_لبنان.pdf",
+      "page": 148,
+      "truth": null,
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "gemini",
+          "seconds": 1.704,
+          "cpu_seconds": 0.17197880199999993,
+          "peak_rss_mb": 808.0859375,
+          "peak_gpu_mb": null,
+          "error": "HTTPError: HTTP Error 429: Too Many Requests",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}

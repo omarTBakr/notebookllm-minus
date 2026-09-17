@@ -1,0 +1,1462 @@
+{
+  "pdf": "/home/omar/Downloads/Testing Rag Docs/دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+  "total_pages": 274,
+  "patch_size": 30,
+  "model": "minimax/minimax-m3:free",
+  "pages": [
+    {
+      "page": 0,
+      "chars": 1439,
+      "empty": false
+    },
+    {
+      "page": 1,
+      "chars": 1441,
+      "empty": false
+    },
+    {
+      "page": 2,
+      "chars": 246,
+      "empty": false
+    },
+    {
+      "page": 3,
+      "chars": 1043,
+      "empty": false
+    },
+    {
+      "page": 4,
+      "chars": 3231,
+      "empty": false
+    },
+    {
+      "page": 5,
+      "chars": 4309,
+      "empty": false
+    },
+    {
+      "page": 6,
+      "chars": 88,
+      "empty": false
+    },
+    {
+      "page": 7,
+      "chars": 3387,
+      "empty": false
+    },
+    {
+      "page": 8,
+      "chars": 3259,
+      "empty": false
+    },
+    {
+      "page": 9,
+      "chars": 3625,
+      "empty": false
+    },
+    {
+      "page": 10,
+      "chars": 3301,
+      "empty": false
+    },
+    {
+      "page": 11,
+      "chars": 3817,
+      "empty": false
+    },
+    {
+      "page": 12,
+      "chars": 2246,
+      "empty": false
+    },
+    {
+      "page": 13,
+      "chars": 3001,
+      "empty": false
+    },
+    {
+      "page": 14,
+      "chars": 3479,
+      "empty": false
+    },
+    {
+      "page": 15,
+      "chars": 3117,
+      "empty": false
+    },
+    {
+      "page": 16,
+      "chars": 3250,
+      "empty": false
+    },
+    {
+      "page": 17,
+      "chars": 3726,
+      "empty": false
+    },
+    {
+      "page": 18,
+      "chars": 2867,
+      "empty": false
+    },
+    {
+      "page": 19,
+      "chars": 3055,
+      "empty": false
+    },
+    {
+      "page": 20,
+      "chars": 2999,
+      "empty": false
+    },
+    {
+      "page": 21,
+      "chars": 98122,
+      "empty": false
+    },
+    {
+      "page": 22,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 23,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 24,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 25,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 26,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 27,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 28,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 29,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 30,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 31,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 32,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 33,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 34,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 35,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 36,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 37,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 38,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 39,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 40,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 41,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 42,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 43,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 44,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 45,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 46,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 47,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 48,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 49,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 50,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 51,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 52,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 53,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 54,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 55,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 56,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 57,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 58,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 59,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 60,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 61,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 62,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 63,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 64,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 65,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 66,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 67,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 68,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 69,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 70,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 71,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 72,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 73,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 74,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 75,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 76,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 77,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 78,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 79,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 80,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 81,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 82,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 83,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 84,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 85,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 86,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 87,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 88,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 89,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 90,
+      "chars": 3225,
+      "empty": false
+    },
+    {
+      "page": 91,
+      "chars": 2613,
+      "empty": false
+    },
+    {
+      "page": 92,
+      "chars": 3275,
+      "empty": false
+    },
+    {
+      "page": 93,
+      "chars": 2851,
+      "empty": false
+    },
+    {
+      "page": 94,
+      "chars": 1506,
+      "empty": false
+    },
+    {
+      "page": 95,
+      "chars": 2641,
+      "empty": false
+    },
+    {
+      "page": 96,
+      "chars": 2458,
+      "empty": false
+    },
+    {
+      "page": 97,
+      "chars": 2209,
+      "empty": false
+    },
+    {
+      "page": 98,
+      "chars": 2151,
+      "empty": false
+    },
+    {
+      "page": 99,
+      "chars": 3408,
+      "empty": false
+    },
+    {
+      "page": 100,
+      "chars": 3329,
+      "empty": false
+    },
+    {
+      "page": 101,
+      "chars": 3486,
+      "empty": false
+    },
+    {
+      "page": 102,
+      "chars": 3507,
+      "empty": false
+    },
+    {
+      "page": 103,
+      "chars": 2983,
+      "empty": false
+    },
+    {
+      "page": 104,
+      "chars": 887,
+      "empty": false
+    },
+    {
+      "page": 105,
+      "chars": 3288,
+      "empty": false
+    },
+    {
+      "page": 106,
+      "chars": 2598,
+      "empty": false
+    },
+    {
+      "page": 107,
+      "chars": 227,
+      "empty": false
+    },
+    {
+      "page": 108,
+      "chars": 1654,
+      "empty": false
+    },
+    {
+      "page": 109,
+      "chars": 3144,
+      "empty": false
+    },
+    {
+      "page": 110,
+      "chars": 3278,
+      "empty": false
+    },
+    {
+      "page": 111,
+      "chars": 3297,
+      "empty": false
+    },
+    {
+      "page": 112,
+      "chars": 1293,
+      "empty": false
+    },
+    {
+      "page": 113,
+      "chars": 447,
+      "empty": false
+    },
+    {
+      "page": 114,
+      "chars": 2105,
+      "empty": false
+    },
+    {
+      "page": 115,
+      "chars": 2035,
+      "empty": false
+    },
+    {
+      "page": 116,
+      "chars": 3374,
+      "empty": false
+    },
+    {
+      "page": 117,
+      "chars": 1869,
+      "empty": false
+    },
+    {
+      "page": 118,
+      "chars": 3726,
+      "empty": false
+    },
+    {
+      "page": 119,
+      "chars": 3124,
+      "empty": false
+    },
+    {
+      "page": 120,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 121,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 122,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 123,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 124,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 125,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 126,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 127,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 128,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 129,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 130,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 131,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 132,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 133,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 134,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 135,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 136,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 137,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 138,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 139,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 140,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 141,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 142,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 143,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 144,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 145,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 146,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 147,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 148,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 149,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 150,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 151,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 152,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 153,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 154,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 155,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 156,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 157,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 158,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 159,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 160,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 161,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 162,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 163,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 164,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 165,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 166,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 167,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 168,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 169,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 170,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 171,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 172,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 173,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 174,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 175,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 176,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 177,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 178,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 179,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 180,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 181,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 182,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 183,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 184,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 185,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 186,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 187,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 188,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 189,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 190,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 191,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 192,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 193,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 194,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 195,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 196,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 197,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 198,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 199,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 200,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 201,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 202,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 203,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 204,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 205,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 206,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 207,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 208,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 209,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 210,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 211,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 212,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 213,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 214,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 215,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 216,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 217,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 218,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 219,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 220,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 221,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 222,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 223,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 224,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 225,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 226,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 227,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 228,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 229,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 230,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 231,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 232,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 233,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 234,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 235,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 236,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 237,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 238,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 239,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 240,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 241,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 242,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 243,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 244,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 245,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 246,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 247,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 248,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 249,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 250,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 251,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 252,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 253,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 254,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 255,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 256,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 257,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 258,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 259,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 260,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 261,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 262,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 263,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 264,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 265,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 266,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 267,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 268,
+      "chars": 0,
+      "empty": true
+    },
+    {
+      "page": 269,
+      "chars": 0,
+      "empty": true
+    }
+  ],
+  "patches": [
+    {
+      "start_page": 0,
+      "end_page": 29,
+      "pages_in_patch": 30,
+      "render_secs": 64.05,
+      "call_secs": 572.58,
+      "error": ""
+    },
+    {
+      "start_page": 30,
+      "end_page": 59,
+      "pages_in_patch": 30,
+      "render_secs": 64.23,
+      "call_secs": 29.93,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "start_page": 60,
+      "end_page": 89,
+      "pages_in_patch": 30,
+      "render_secs": 64.8,
+      "call_secs": 29.6,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "start_page": 90,
+      "end_page": 119,
+      "pages_in_patch": 30,
+      "render_secs": 35.93,
+      "call_secs": 426.04,
+      "error": ""
+    },
+    {
+      "start_page": 120,
+      "end_page": 149,
+      "pages_in_patch": 30,
+      "render_secs": 76.07,
+      "call_secs": 36.62,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "start_page": 150,
+      "end_page": 179,
+      "pages_in_patch": 30,
+      "render_secs": 80.37,
+      "call_secs": 28.96,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "start_page": 180,
+      "end_page": 209,
+      "pages_in_patch": 30,
+      "render_secs": 52.14,
+      "call_secs": 28.17,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "start_page": 210,
+      "end_page": 239,
+      "pages_in_patch": 30,
+      "render_secs": 81.98,
+      "call_secs": 31.08,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "start_page": 240,
+      "end_page": 269,
+      "pages_in_patch": 30,
+      "render_secs": 82.43,
+      "call_secs": 28.84,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    }
+  ],
+  "errors": [
+    {
+      "patch_start": 30,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "patch_start": 60,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "patch_start": 120,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "patch_start": 150,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "patch_start": 180,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "patch_start": 210,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    },
+    {
+      "patch_start": 240,
+      "error": "RuntimeError: OpenRouter HTTP 413: {\"error\":{\"message\":\"Downloaded image content cannot exceed 30MB\",\"code\":413,\"metadata\":{\"provider_name\":null}}}"
+    }
+  ]
+}

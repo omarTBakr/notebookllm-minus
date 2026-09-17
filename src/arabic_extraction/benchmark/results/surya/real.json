@@ -1,0 +1,100 @@
+{
+  "skipped": {
+    "tesseract-best": "TESSDATA_BEST is not set",
+    "paddleocr": "paddleocr is not installed",
+    "gemini": "GOOGLE_API_KEY is not set in the environment or .env"
+  },
+  "summary": [
+    {
+      "extractor": "surya",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 0.64,
+      "cpu_seconds": 0.62,
+      "peak_rss_mb": 901.26,
+      "rss_delta_mb": 32.66,
+      "peak_gpu_mb": 0.0,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": [
+        "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "source": "دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+      "source_path": "/home/omar/Downloads/Testing Rag Docs/دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+      "page": 91,
+      "truth": null,
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "surya",
+          "seconds": 1.552,
+          "cpu_seconds": 1.526300418,
+          "peak_rss_mb": 862.1015625,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+      "source_path": "/home/omar/Downloads/Testing Rag Docs/دليلك-للدراسات-العليا-بالخارج-الإصدار-الثاني.pdf",
+      "page": 182,
+      "truth": null,
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "surya",
+          "seconds": 1.172,
+          "cpu_seconds": 1.150241471000001,
+          "peak_rss_mb": 901.07421875,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "ذخائر_لبنان.pdf",
+      "source_path": "/home/omar/Downloads/Testing Rag Docs/ذخائر_لبنان.pdf",
+      "page": 74,
+      "truth": null,
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "surya",
+          "seconds": 0.104,
+          "cpu_seconds": 0.08314959500000008,
+          "peak_rss_mb": 901.44921875,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "ذخائر_لبنان.pdf",
+      "source_path": "/home/omar/Downloads/Testing Rag Docs/ذخائر_لبنان.pdf",
+      "page": 148,
+      "truth": null,
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "surya",
+          "seconds": 0.106,
+          "cpu_seconds": 0.08448708099999891,
+          "peak_rss_mb": 917.01171875,
+          "peak_gpu_mb": 0.0,
+          "error": "SpawnError: docker run failed: docker: Error response from daemon: unknown or invalid runtime name: nvidia\n\nRun 'docker run --help' for more information\n",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+100
+
+دليلك للدراسات العليا بالخارج - الإصدار الثاني
+مؤسسة علماء مصر
+
+**الفقرة الثانية:**
+
+In my freshman year, I did not only have to adapt to the full independency and new culture but also to the new teaching language. As a student who used to study scientific terminologies in Arabic, I had to work harder to adapt to the completely new system where English is the only teaching language while also doing the activities I enjoy—volunteering in XXX and fencing training. My efforts paid off upon finding my name at the top of the students' ranking list the following semester. This challenge honed my learning and adaptation skills and boosted my confidence, particularly after being awarded the "Academic Excellence Award" that funded my travel for a summer elective course in XXX, and to be the youngest student accepted in this advanced course at that time.
+
+**تعليقات المراجع:**
+
+لاحظ الكلمات التي تحتها خط.
+
+In my freshman year, I did not only have to adapt to the full independency and new culture but <u>also the</u> new teaching language. As a student who used to study scientific terminologies in Arabic, I had to work harder to adapt to the completely new system where English is the only teaching language while also doing the activities I enjoy—volunteering in XXX and <u>fencing</u>. My efforts paid off upon finding my name at the top of the students' ranking list the following semester. This challenge honed my learning and adaptation skills and boosted my confidence, particularly after being awarded the "Academic Excellence Award" that funded my travel for a summer elective course in XXX.
+
+**الفقرة الثالثة:**
+
+My research experience encompasses microbiology, drug delivery, analytical chemistry, and molecular genetics. Driven by curiosity and tenacity to learn, I was determined to feed my passion by joining research groups. After my sophomore year in summer 2018, I joined the XXX lab supervised by Prof. XXX in XXX. My colleagues and I worked on XXX. I learned there the basics of research and acquired the essential characteristics that a researcher needs: resilience and persistence. Moreover, the outcome of research I have done in the lab, such as co-authorship of journal article1 and a book chapter, was not the only prize I got out of the three-month internship, but also finding my passion in doing research was my most important outcome.
+
+**تعليقات المراجع:**
+
+لاحظ الكلمات التي تحتها خط.
+
+My research experience encompasses microbiology, drug delivery, analytical chemistry, and molecular genetics. Driven by curiosity and tenacity to learn, I was determined to feed my passion by joining research groups. After my sophomore year in <u>the summer of 2018</u>, I joined the XXX lab supervised by Prof. XXX in XXX. My colleagues and I worked on XXX. I learned there the basics of research and <u>acquired essential characteristics</u> that a researcher needs: resilience and persistence. Moreover, the outcome of research <u>I performed in the lab</u>, such as co-authorship of <u>a journal article and a book chapter</u>, was not the only prize I got out of the three-month internship, but also finding my passion in doing research was my most important outcome.
+
+**الفقرة الرابعة:**
+
+The following summer I was accepted to do an internship in Prof. XXX group in XXX in XXX, whose work focuses on XXX. Thanks to the second "Academic Excellence Award", I was able to fund my

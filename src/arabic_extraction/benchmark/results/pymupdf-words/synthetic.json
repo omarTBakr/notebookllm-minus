@@ -1,0 +1,96 @@
+{
+  "skipped": {
+    "paddleocr": "paddleocr is not installed"
+  },
+  "summary": [
+    {
+      "extractor": "pymupdf-words",
+      "pages": 4,
+      "ok": 0,
+      "cer": null,
+      "wer": null,
+      "seconds": 0.0,
+      "cpu_seconds": 0.0,
+      "peak_rss_mb": 644.68,
+      "rss_delta_mb": 0.0,
+      "peak_gpu_mb": null,
+      "space_ratio": null,
+      "usable": 0,
+      "errors": []
+    }
+  ],
+  "runs": [
+    {
+      "source": "prose.pdf",
+      "source_path": "ocr/results/pymupdf-words/fixtures/prose.pdf",
+      "page": 0,
+      "truth": "تقرير سنوي عن حالة المكتبة الوطنية\nهذا مستند تجريبي لاختبار دقة التعرف الضوئي على الحروف العربية.\nتعتمد جودة الاستخراج على الخط المستخدم وعلى دقة الصورة الممسوحة.\nيهدف هذا الاختبار إلى قياس نسبة الخطأ في الحروف والكلمات معًا.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "pymupdf-words",
+          "seconds": 0.042,
+          "cpu_seconds": 0.04094648500000009,
+          "peak_rss_mb": 644.68359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "non_joining.pdf",
+      "source_path": "ocr/results/pymupdf-words/fixtures/non_joining.pdf",
+      "page": 0,
+      "truth": "الدار والدرب وزارة الأوراق\nزار وردة ودرس أوراد الدرس\nالرزق والوداد وأرواح الأردن",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "pymupdf-words",
+          "seconds": 0.001,
+          "cpu_seconds": 0.0003630889999999276,
+          "peak_rss_mb": 644.68359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "mixed.pdf",
+      "source_path": "ocr/results/pymupdf-words/fixtures/mixed.pdf",
+      "page": 0,
+      "truth": "البند الأول: مراجعة البيانات المالية لعام 2025.\nراجع الصفحة 42 من التقرير المرفق (Annual Report).\nبلغت النسبة 87.5% مقارنة بـ 63.2% في العام الماضي.",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "pymupdf-words",
+          "seconds": 0.0,
+          "cpu_seconds": 0.00031042800000014026,
+          "peak_rss_mb": 644.68359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        }
+      ]
+    },
+    {
+      "source": "diacritics.pdf",
+      "source_path": "ocr/results/pymupdf-words/fixtures/diacritics.pdf",
+      "page": 0,
+      "truth": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\nالْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+      "consensus": {},
+      "extractions": [
+        {
+          "extractor": "pymupdf-words",
+          "seconds": 0.0,
+          "cpu_seconds": 0.00029157499999987735,
+          "peak_rss_mb": 644.68359375,
+          "peak_gpu_mb": null,
+          "error": "",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}
