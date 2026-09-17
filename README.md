@@ -1,5 +1,14 @@
 # NotebookLLM⁻
 
+<div align="center">
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/omarrbakr/)
+[![Email](https://img.shields.io/badge/Email-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:bakro0298@gmail.com)
+[![LeetCode](https://img.shields.io/badge/LeetCode-FFA116?style=for-the-badge&logo=leetcode&logoColor=black)](https://leetcode.com/u/omar_bakr/)
+[![Portfolio](https://img.shields.io/badge/Portfolio-333333?style=for-the-badge&logo=googlechrome&logoColor=white)](https://omartbakr.github.io/)
+
+</div>
+
 > **NotebookLLM-minus** — NotebookLM, minus the parts that aren't built yet.
 
 Upload documents, ask questions, get answers grounded in *those* documents, with citations
@@ -13,13 +22,22 @@ are discovered from what is actually installed and reachable, never pinned in co
 - [Demo](#demo) · [Quickstart](#quickstart) · [Configuration](#configuration) · [Features](#features)
 - [Architecture](#architecture) · [Providers](#providers) · [Choosing models](#choosing-models)
 - [Database backends](#database-backends) · [Data model](#data-model) · [API](#api)
-- [Deployment](#deployment) · [Observability](#observability) · [Project structure](#project-structure)
+- [Deployment](#deployment) · [Observability](#observability) · [Error handling](#error-handling)
+- [Logging](#logging) · [Project structure](#project-structure)
 
 ## Demo
 
-<!-- Video demo goes here. -->
+![Chat UI with sources, chat, and Studio panels](demo/GeneralApp.png)
+Sources, chat, and Studio side by side. Answers that don't cite a document say so — "No
+sources attached" — instead of inventing a page reference.
 
-_Coming soon._
+![Studio flashcards generated from an uploaded source](demo/FlashCardsWithAssets.png)
+Flashcards generated in Studio from the source open in the sidebar, reviewable without leaving
+the chat.
+
+![Studio quiz generated from an uploaded source](demo/QuizeWithAssets.png)
+A Studio quiz question generated from the same source, multiple choice with one correct
+answer per card.
 
 ## Quickstart
 
