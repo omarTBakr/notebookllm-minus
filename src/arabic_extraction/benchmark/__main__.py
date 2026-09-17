@@ -27,7 +27,7 @@ from .runner import consensus, render_table, run_pages, save
 # from is one nobody finds again. Only the virtualenvs holding torch, paddle
 # and the rest stay outside the repository — those are the part that would
 # actually contaminate it.
-RESULTS_DIR = Path(__file__).parent.parent / "results"
+RESULTS_DIR = Path(__file__).parent / "results"
 
 
 def _real_pages(directory: Path, per_document: int) -> list[tuple[Page, None]]:

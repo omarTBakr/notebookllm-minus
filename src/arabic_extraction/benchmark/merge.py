@@ -22,7 +22,7 @@ import argparse
 import json
 from pathlib import Path
 
-RESULTS_DIR = Path(__file__).parent.parent / "results"
+RESULTS_DIR = Path(__file__).parent / "results"
 
 
 def _load(path: Path) -> dict | None:

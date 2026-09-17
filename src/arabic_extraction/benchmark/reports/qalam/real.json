@@ -5,7 +5,7 @@
     "paddleocr": "paddleocr is not installed",
     "surya": "surya-ocr is not installed",
     "qari": "transformers/torch are not installed",
-    "qari-remote": "QARI_REMOTE_URL is not set (start arabic_extraction/colab/qari_server.ipynb)",
+    "qari-remote": "QARI_REMOTE_URL is not set (start arabic_extraction/benchmark/colab/qari_server.ipynb)",
     "gemini": "GOOGLE_API_KEY is not set in the environment or .env",
     "openrouter": "OPENROUTER_API_KEY is not set in the environment or .env"
   },

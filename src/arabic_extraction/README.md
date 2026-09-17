@@ -83,7 +83,7 @@ than indexing imperfect text. A per-page OCR failure behaves the same way: that
 page keeps its original text, and its highlight with it.
 
 Budget **2.3–2.7 s per re-read page** on CPU (2.29 s pinned to two cores), and
-only for pages that fail the profile. See `reports/FINDINGS.md`.
+only for pages that fail the profile. See `benchmark/reports/FINDINGS.md`.
 
 ## The extractors
 
@@ -155,7 +155,7 @@ page* and it has to drop the re-read pages from `_pdf_pages`, so
 `profile()` and `registry.build()`. `ArabicOcrPipeline` remains the one-page
 form of it for anything calling this package on its own.
 
-Results land in `results/`, reports in `reports/`. Page images and raw
+Results land in `benchmark/results/`, reports in `benchmark/reports/`. Page images and raw
 transcripts are gitignored — they are renderings of copyrighted books, and a
 benchmark is no reason to commit someone else's book.
 

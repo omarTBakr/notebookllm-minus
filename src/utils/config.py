@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     OCR_ENABLED: bool = False
     # Which engine. tesseract-best measured 0.172 WER against 0.545 for the
     # distro `ara` model and 0.167 for Gemini — see
-    # src/arabic_extraction/reports/FINDINGS.md.
+    # src/arabic_extraction/benchmark/reports/FINDINGS.md.
     OCR_EXTRACTOR: str = "tesseract-best"
     # Where ara.traineddata from tessdata_best lives. The distribution package
     # ships the *fast* model, which is a different model and three times worse

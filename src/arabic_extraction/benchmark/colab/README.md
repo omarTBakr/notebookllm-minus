@@ -6,7 +6,7 @@ with no GPU — can send it a PDF and get Arabic text back.
 
 ## Why
 
-Measured against this project's own corpus (`arabic_extraction/reports/FINDINGS.md`):
+Measured against this project's own corpus (`arabic_extraction/benchmark/reports/FINDINGS.md`):
 
 | | WER | s/page (real book page) | needs |
 | --- | ---: | ---: | --- |
@@ -24,7 +24,7 @@ Qari for the documents worth re-reading properly.
 
 The first half of that is no longer hypothetical. `tesseract-best` is wired
 into ingestion behind `OCR_ENABLED`, per page and only where the Arabic text
-layer is unusable — see `arabic_extraction/README.md` and `arabic_extraction/reports/FINDINGS.md`. This
+layer is unusable — see `arabic_extraction/README.md` and `arabic_extraction/benchmark/reports/FINDINGS.md`. This
 notebook is the other half, and it stays a workbench: a Colab session and a
 free ngrok hostname are not something ingestion should depend on.
 
@@ -136,7 +136,7 @@ Two things follow from the numbers above rather than from preference:
 
 An OCR'd page loses its citation highlight — the offsets no longer match the
 word boxes the page's text was built from — and that is true of this engine as
-much as of `tesseract-best`. `arabic_extraction/reports/FINDINGS.md` has the reasoning.
+much as of `tesseract-best`. `arabic_extraction/benchmark/reports/FINDINGS.md` has the reasoning.
 
 ## The limits, before you build on it
 

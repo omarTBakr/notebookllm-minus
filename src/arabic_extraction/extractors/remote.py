@@ -4,7 +4,7 @@ The deployment target is a 2-vCPU box with no GPU. Qari reads Arabic at roughly
 a third the word error rate of anything that will run there, and needs 5 GB of
 VRAM to do it. Those two facts do not resolve locally, so the model runs on a
 Colab GPU and the server talks to it through an ngrok tunnel — see
-`arabic_extraction/colab/qari_server.ipynb` for the other end.
+`arabic_extraction/benchmark/colab/qari_server.ipynb` for the other end.
 
 That makes this the only extractor here whose failures are mostly *not* about
 Arabic: the tunnel dies when the Colab session expires, its hostname changes on
@@ -21,7 +21,7 @@ from ..base import ArabicExtractor, Page
 
 
 class QariRemoteExtractor(ArabicExtractor):
-    """Qari-OCR over HTTP, against the Colab notebook in `arabic_extraction/colab/`.
+    """Qari-OCR over HTTP, against the Colab notebook in `arabic_extraction/benchmark/colab/`.
 
     Sends one page at a time as a one-page PDF rather than posting the whole
     document and asking for a page range: the corpus that motivated this
@@ -71,7 +71,7 @@ class QariRemoteExtractor(ArabicExtractor):
         url, secret, _ = cls._config()
 
         if not url:
-            return False, "QARI_REMOTE_URL is not set (start arabic_extraction/colab/qari_server.ipynb)"
+            return False, "QARI_REMOTE_URL is not set (start arabic_extraction/benchmark/colab/qari_server.ipynb)"
 
         if not secret:
             return False, "QARI_REMOTE_SECRET is not set; the endpoint requires a bearer token"

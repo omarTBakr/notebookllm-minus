@@ -59,7 +59,7 @@ environment; see "What could not run here" below).
 | paddleocr | no | no | yes | paddleocr is not installed | PaddleOCR with the arabic recognition model |
 | surya | no | no | yes | surya-ocr is not installed | Surya detection + recognition (transformer, GPU-oriented) |
 | qari | no | no | yes | transformers/torch are not installed | Qari-OCR (Qwen-VL fine-tune, Arabic-specific, local) |
-| qari-remote | no | no | no | QARI_REMOTE_URL is not set (start arabic_extraction/colab/qari_server.ipynb) | Qari-OCR on a remote GPU (Colab + ngrok), over HTTP |
+| qari-remote | no | no | no | QARI_REMOTE_URL is not set (start arabic_extraction/benchmark/colab/qari_server.ipynb) | Qari-OCR on a remote GPU (Colab + ngrok), over HTTP |
 | gemini | no | no | no | GOOGLE_API_KEY is not set in the environment or .env | Gemini multimodal via the API (metered) |
 | openrouter | no | no | no | OPENROUTER_API_KEY is not set in the environment or .env | A vision model on OpenRouter (default: minimax-m3 free tier) |
 

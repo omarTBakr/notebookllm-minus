@@ -36,7 +36,7 @@ Docker/env/
 # Raw per-engine OCR benchmark output: 16 MB of JSON and page snapshots, with
 # the same rendered page duplicated into every engine's directory. Regenerated
 # by `python -m arabic_extraction.benchmark`, so it is derived data, not a
-# deliverable. The curated findings in src/arabic_extraction/reports/ ARE
+# deliverable. The curated findings in src/arabic_extraction/benchmark/reports/ ARE
 # tracked — that is the output worth reading, and the plots in it cannot be
 # regenerated without the corpus.
-src/arabic_extraction/results/
+src/arabic_extraction/benchmark/results/
