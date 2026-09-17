@@ -153,12 +153,14 @@ async function deleteCurrent() {
     return;
   }
 
-  // The stored id now points at nothing, which is the one state initProfile is
-  // written to recover from — so drop it and let it choose or mint the next
-  // profile rather than deciding here.
+  // The stored id now points at nothing. Forget it and mint the next
+  // profile *here*, before onSwitch runs — onSwitch is bound to
+  // enterProfile (app.js), which loads notebooks for whatever state.userId
+  // currently is; leaving it null between forgetUser() and onSwitch() sent
+  // a literal "GET /chat/users/null/chats" (state.userId stringified into
+  // the URL), 404ing every time a profile was deleted.
   forgetUser();
-  state.userId = null;
-  state.userLabel = null;
+  await createProfile();
 
   closeMenu();
   toast(t("profileDeleted").replace("{name}", name));
