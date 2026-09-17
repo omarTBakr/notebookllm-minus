@@ -2159,6 +2159,7 @@ dependencies = [
 [package.optional-dependencies]
 ocr-benchmark = [
     { name = "matplotlib" },
+    { name = "qalam" },
 ]
 
 [package.dev-dependencies]
@@ -2202,6 +2203,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=6.14.2" },
     { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "qalam", marker = "extra == 'ocr-benchmark'", specifier = ">=0.1.1" },
     { name = "qdrant-client", specifier = ">=1.12.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.51" },
     { name = "starlette", specifier = ">=0.40" },
@@ -3093,6 +3095,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/da/92/1446574745d74df0c92e6aa4a7b0b3130706a4142b2d1a5869f2eaa423c6/pyyaml-6.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:16249ee61e95f858e83976573de0f5b2893b3677ba71c9dd36b9cf8be9ac6d65", size = 829923, upload-time = "2025-09-25T21:32:54.537Z" },
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
+]
+
+[[package]]
+name = "qalam"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/86/788e565e3afdacc1a80be7c74a1f028bfe5be40ab6287aedf55b4c3ce59a/qalam-0.1.1.tar.gz", hash = "sha256:552e3078b2036c50cbeb9b9d09f0325e972f15cd5a5c06adacda062582baea24", size = 184007, upload-time = "2026-09-14T11:30:24.488Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/ef/b3ffe5ff5e91f9476df9d69313f377e4c94ee0da255b8381cfe62baba11f/qalam-0.1.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:b3078d3bbdd2d6b41f8bf6354989bcf7010919e60dc7b90f00007e0c76749fd6", size = 998068, upload-time = "2026-09-14T11:30:16.216Z" },
+    { url = "https://files.pythonhosted.org/packages/73/95/e156d08b8f8dd7f1ed71e68a6019cbf29b3769d0cb3555a0cdb83916e55d/qalam-0.1.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:86dd255985ccdb8c394ccc420c72aa952772ed5942819d4e700eb81600d4243d", size = 931158, upload-time = "2026-09-14T11:30:18.08Z" },
+    { url = "https://files.pythonhosted.org/packages/88/61/bea4052ccd971f80e8365a121642b1996f80cc5c93c1cccfe4b9490151b6/qalam-0.1.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a0ad6a47ce3fc387560209686df3a5cdd3e8e501263d72cd66c0cf7d947de757", size = 1046721, upload-time = "2026-09-14T11:30:19.811Z" },
+    { url = "https://files.pythonhosted.org/packages/31/91/5bbae2b5f1ac18fd273f5d6f18f9a6890cfb9e204c54a4282c742ac5d1b8/qalam-0.1.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0054f1086e24d63698efdbf73bde5fe3c3acc848cf10009ac7448f784dcc880b", size = 1128528, upload-time = "2026-09-14T11:30:21.55Z" },
+    { url = "https://files.pythonhosted.org/packages/25/c3/b12f46653ab875840d2a5ab96474dc77e738d8f1362cae76a2dc58ec299e/qalam-0.1.1-cp39-abi3-win_amd64.whl", hash = "sha256:9082d337417b0992fcb9cc38130608cf39882f267609b6ae3111779aeb9783c6", size = 868950, upload-time = "2026-09-14T11:30:23.046Z" },
 ]
 
 [[package]]

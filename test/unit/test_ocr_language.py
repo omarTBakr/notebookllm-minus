@@ -5,7 +5,7 @@ language detection normally answers. Every string below is real Arabic in real
 codepoints; the difference between them is whether a query would ever match.
 """
 
-from ocr.language import SPACE_RATIO_HEALTHY, is_arabic, normalize, profile
+from arabic_extraction.language import SPACE_RATIO_HEALTHY, is_arabic, normalize, profile
 
 # One line from ذخائر_لبنان.pdf, in the four states this project's extractors
 # actually produce it in. Same sentence every time.

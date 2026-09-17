@@ -1,9 +1,9 @@
 """Run the comparison.
 
-    python -m ocr.benchmark                  # synthetic + real, every available engine
-    python -m ocr.benchmark --only tesseract # narrow it
-    python -m ocr.benchmark --real-pages 3   # more pages from each real document
-    python -m ocr.benchmark --list           # what can run here, and why not
+    python -m arabic_extraction.benchmark                  # synthetic + real, every available engine
+    python -m arabic_extraction.benchmark --only tesseract # narrow it
+    python -m arabic_extraction.benchmark --real-pages 3   # more pages from each real document
+    python -m arabic_extraction.benchmark --list           # what can run here, and why not
 
 Real documents are picked up from OCR_CORPUS (a directory of PDFs) when it is
 set; the synthetic suite always runs, because it is the only part that can
@@ -57,7 +57,7 @@ def _real_pages(directory: Path, per_document: int) -> list[tuple[Page, None]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m ocr.benchmark")
+    parser = argparse.ArgumentParser(prog="python -m arabic_extraction.benchmark")
     parser.add_argument("--only", nargs="*", help="restrict to these extractors")
     parser.add_argument("--real-pages", type=int, default=2, help="pages to sample from each real document")
     corpus = os.environ.get("OCR_CORPUS")

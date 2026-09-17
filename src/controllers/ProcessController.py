@@ -276,9 +276,9 @@ class ProcessController(BaseController):
         if not self.settings.OCR_ENABLED:
             return {}
 
-        from ocr.base import Page as OcrPage
-        from ocr.language import profile
-        from ocr.registry import build
+        from arabic_extraction.base import Page as OcrPage
+        from arabic_extraction.language import profile
+        from arabic_extraction.registry import build
 
         candidates = [
             page
@@ -294,7 +294,7 @@ class ProcessController(BaseController):
         extractors = build([self.settings.OCR_EXTRACTOR])
 
         if not extractors:
-            from ocr.registry import survey
+            from arabic_extraction.registry import survey
 
             reason = {entry.name: entry.reason for entry in survey()}.get(
                 self.settings.OCR_EXTRACTOR, "unknown extractor"

@@ -106,7 +106,7 @@ ENV TESSDATA_BEST=/usr/share/tessdata-best
 # because `sys.path` carries "" and the working directory happened to be /app.
 # That resolves at *import* time, not at startup, so a lazy import — the OCR
 # fallback is one — fails the moment anything has changed directory, with
-# "No module named 'ocr'" from inside a Celery task while the same import
+# "No module named 'arabic_extraction'" from inside a Celery task while the same import
 # succeeds under `docker exec`. An absolute entry does not move.
 ENV PYTHONPATH=/app
 

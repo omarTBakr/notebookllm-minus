@@ -12,8 +12,8 @@ into the single shape `report.py` consumes, so the plots and the comparison
 table cover every engine that ran without either module knowing the runs were
 separate.
 
-    python -m ocr.benchmark.merge                    # writes results/combined-<suite>.json
-    python -m ocr.benchmark.merge --suite synthetic
+    python -m arabic_extraction.benchmark.merge                    # writes results/combined-<suite>.json
+    python -m arabic_extraction.benchmark.merge --suite synthetic
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ def merge(results: Path, suite: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m ocr.benchmark.merge")
+    parser = argparse.ArgumentParser(prog="python -m arabic_extraction.benchmark.merge")
     parser.add_argument("--results", type=Path, default=RESULTS_DIR)
     parser.add_argument("--suite", choices=("real", "synthetic", "both"), default="both")
     args = parser.parse_args(argv)

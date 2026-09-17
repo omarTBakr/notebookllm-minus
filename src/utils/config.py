@@ -78,11 +78,12 @@ class Settings(BaseSettings):
     # Re-read a page with OCR when its Arabic text layer cannot be searched.
     # Off by default: it costs seconds per page, and on a well-produced PDF the
     # text layer is already correct, so this must be a decision rather than a
-    # habit. `ocr.language.profile()` makes that decision per page and costs
-    # microseconds.
+    # habit. `arabic_extraction.language.profile()` makes that decision per
+    # page and costs microseconds.
     OCR_ENABLED: bool = False
     # Which engine. tesseract-best measured 0.172 WER against 0.545 for the
-    # distro `ara` model and 0.167 for Gemini — see src/ocr/reports/FINDINGS.md.
+    # distro `ara` model and 0.167 for Gemini — see
+    # src/arabic_extraction/reports/FINDINGS.md.
     OCR_EXTRACTOR: str = "tesseract-best"
     # Where ara.traineddata from tessdata_best lives. The distribution package
     # ships the *fast* model, which is a different model and three times worse

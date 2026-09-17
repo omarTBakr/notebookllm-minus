@@ -40,6 +40,6 @@ Roughly an order of magnitude slower per page for about three times the accuracy
 Worth it for a document you care about; not for a 200-page book in bulk. That is
 why `tesseract-best` is what ingestion runs, and Qari is the deliberate path.
 
-`src/ocr/reports/FINDINGS.md` has the full ten-engine comparison, and
-`src/ocr/colab/qari_server.ipynb` is the *other* Qari notebook — that one serves
+`src/arabic_extraction/reports/FINDINGS.md` has the full ten-engine comparison, and
+`src/arabic_extraction/colab/qari_server.ipynb` is the *other* Qari notebook — that one serves
 the model over HTTP to the running app rather than benchmarking it.

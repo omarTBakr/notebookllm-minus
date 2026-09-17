@@ -1,6 +1,7 @@
 """Every extractor, grouped by how it reads a page."""
 
 from .hosted import GeminiExtractor, OpenRouterExtractor
+from .qalam_extractor import QalamExtractor
 from .remote import QariRemoteExtractor
 from .text_layer import (
     PdfPlumberExtractor,
@@ -22,6 +23,7 @@ ALL_EXTRACTORS = (
     PyMuPDFRawExtractor,
     PyMuPDFWordsExtractor,
     PdfPlumberExtractor,
+    QalamExtractor,
     TesseractExtractor,
     TesseractBestExtractor,
     EasyOCRExtractor,
@@ -42,6 +44,7 @@ __all__ = [
     "PdfPlumberExtractor",
     "PyMuPDFRawExtractor",
     "PyMuPDFWordsExtractor",
+    "QalamExtractor",
     "QariExtractor",
     "QariRemoteExtractor",
     "SuryaExtractor",

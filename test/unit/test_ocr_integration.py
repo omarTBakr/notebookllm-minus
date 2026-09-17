@@ -33,7 +33,7 @@ def controller(monkeypatch):
 @pytest.fixture
 def fake_engine(monkeypatch):
     """Register a fake extractor so nothing here needs tesseract installed."""
-    from ocr.base import ArabicExtractor
+    from arabic_extraction.base import ArabicExtractor
 
     class Fake(ArabicExtractor):
         name = "fake-ocr"
@@ -44,7 +44,7 @@ def fake_engine(monkeypatch):
             return "نص أعيدت قراءته بواسطة محرك التعرف الضوئي على الحروف"
 
     Fake.calls = []
-    monkeypatch.setattr("ocr.registry.ALL_EXTRACTORS", (Fake,))
+    monkeypatch.setattr("arabic_extraction.registry.ALL_EXTRACTORS", (Fake,))
     return Fake
 
 
@@ -160,7 +160,7 @@ def test_a_scaled_highlight_is_marked_approximate():
 def test_a_missing_engine_keeps_the_text_layer(controller, tmp_path, monkeypatch, caplog):
     """Failing an upload because an OCR binary is absent would be a worse
     outcome than indexing imperfect text."""
-    monkeypatch.setattr("ocr.registry.ALL_EXTRACTORS", ())
+    monkeypatch.setattr("arabic_extraction.registry.ALL_EXTRACTORS", ())
 
     with caplog.at_level("WARNING"):
         replacements = controller._reread_unusable_arabic(
@@ -173,7 +173,7 @@ def test_a_missing_engine_keeps_the_text_layer(controller, tmp_path, monkeypatch
 
 def test_a_failing_engine_leaves_that_page_alone(controller, tmp_path, monkeypatch, caplog):
     """One unreadable page must not lose the rest of the document."""
-    from ocr.base import ArabicExtractor
+    from arabic_extraction.base import ArabicExtractor
 
     class Exploding(ArabicExtractor):
         name = "fake-ocr"
@@ -181,7 +181,7 @@ def test_a_failing_engine_leaves_that_page_alone(controller, tmp_path, monkeypat
         def _extract(self, page):
             raise RuntimeError("the traineddata is corrupt")
 
-    monkeypatch.setattr("ocr.registry.ALL_EXTRACTORS", (Exploding,))
+    monkeypatch.setattr("arabic_extraction.registry.ALL_EXTRACTORS", (Exploding,))
     controller._pdf_pages = {0: _page(0, ARABIC_FRAGMENTED)}
 
     with caplog.at_level("WARNING"):
@@ -293,7 +293,7 @@ def test_pages_are_read_concurrently(controller, tmp_path, monkeypatch):
     """
     import threading
 
-    from ocr.base import ArabicExtractor
+    from arabic_extraction.base import ArabicExtractor
 
     seen: set[int] = set()
     barrier = threading.Barrier(4, timeout=10)
@@ -308,7 +308,7 @@ def test_pages_are_read_concurrently(controller, tmp_path, monkeypatch):
             barrier.wait()
             return "نص أعيدت قراءته بواسطة محرك التعرف الضوئي على الحروف"
 
-    monkeypatch.setattr("ocr.registry.ALL_EXTRACTORS", (Concurrent,))
+    monkeypatch.setattr("arabic_extraction.registry.ALL_EXTRACTORS", (Concurrent,))
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 4)
 
     pages = [_page(n, ARABIC_FRAGMENTED) for n in range(4)]

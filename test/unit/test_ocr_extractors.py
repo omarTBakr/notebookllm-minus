@@ -10,8 +10,8 @@ returning a reason.
 
 import pytest
 
-from ocr.base import ArabicExtractor, Extraction, Page
-from ocr.registry import build, survey
+from arabic_extraction.base import ArabicExtractor, Extraction, Page
+from arabic_extraction.registry import build, survey
 
 
 class Working(ArabicExtractor):
@@ -115,7 +115,7 @@ def test_build_can_be_narrowed_to_named_extractors():
 def test_an_availability_check_that_raises_counts_as_unavailable(monkeypatch):
     """A probe that throws — a broken install, a missing shared library — must
     not take the whole survey down with it."""
-    import ocr.registry as registry
+    import arabic_extraction.registry as registry
 
     class Detonating(ArabicExtractor):
         name = "detonating"
@@ -137,7 +137,7 @@ def test_an_availability_check_that_raises_counts_as_unavailable(monkeypatch):
 
 def test_cli_without_corpus_does_not_scan_current_directory(monkeypatch, tmp_path):
     """An unset OCR_CORPUS means synthetic-only, not ``Path('.')``."""
-    import ocr.benchmark.__main__ as cli
+    import arabic_extraction.benchmark.__main__ as cli
 
     monkeypatch.delenv("OCR_CORPUS", raising=False)
     monkeypatch.chdir(tmp_path)
@@ -153,7 +153,7 @@ def test_qari_markup_is_stripped_before_scoring():
     feature of the model and was a bug in the comparison: measured on the raw
     output it scored 0.23 WER while its Arabic was letter-perfect, because
     every tag counted as words the reference did not contain."""
-    from ocr.extractors.vision_models import QariExtractor
+    from arabic_extraction.extractors.vision_models import QariExtractor
 
     raw = "<h1>تقرير سنوي</h1><br><h2>هذا مستند تجريبي لاختبار الدقة</h2>"
 
@@ -167,7 +167,7 @@ def test_qari_markup_is_stripped_before_scoring():
 def test_a_line_break_tag_becomes_a_line_break():
     """Not a space: the tag is where the model says one line ended and the
     next began, and collapsing that loses the page's structure entirely."""
-    from ocr.extractors.vision_models import QariExtractor
+    from arabic_extraction.extractors.vision_models import QariExtractor
 
     stripped = QariExtractor._strip_markup("<p>سطر أول</p><br><p>سطر ثان</p>")
 
@@ -177,7 +177,7 @@ def test_a_line_break_tag_becomes_a_line_break():
 def test_plain_text_passes_through_untouched():
     """Every other engine returns plain text, and must not be reshaped by a
     rule that exists for one model."""
-    from ocr.extractors.vision_models import QariExtractor
+    from arabic_extraction.extractors.vision_models import QariExtractor
 
     plain = "اليسار حينئذ بديدو ومعناه الهاربة"
 
@@ -193,7 +193,7 @@ class TestOpenRouter:
     at a model that cannot see."""
 
     def _extractor(self, monkeypatch, key="k", model=""):
-        from ocr.extractors.hosted import OpenRouterExtractor
+        from arabic_extraction.extractors.hosted import OpenRouterExtractor
 
         monkeypatch.setenv("OPENROUTER_API_KEY", key)
         if model:
@@ -274,7 +274,7 @@ class TestOpenRouter:
         """Charging a markdown fence to a model's error rate measures
         instruction-following, not reading — the mistake that cost Qari a factor
         of four before its markup was stripped."""
-        from ocr.extractors.hosted import _strip_fences
+        from arabic_extraction.extractors.hosted import _strip_fences
 
         assert _strip_fences("```\nاليسار حينئذ\n```") == "اليسار حينئذ"
         assert _strip_fences("```text\nاليسار\n```") == "اليسار"
