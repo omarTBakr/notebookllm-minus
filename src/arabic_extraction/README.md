@@ -1,4 +1,4 @@
-# `ocr` — Arabic text extraction, and choosing how to do it
+# `arabic_extraction` — Arabic text extraction, and choosing how to do it
 
 This package exists because the Arabic PDFs in this project are **not an OCR
 problem in the usual sense**. They have text layers. The text is simply wrong,
@@ -179,17 +179,17 @@ each engine.
 ## Running it
 
 ```bash
-python -m ocr.benchmark --list                     # what can run here, and why not
-python -m ocr                            # synthetic, exact CER/WER
-python -m ocr.benchmark --corpus ~/pdfs            # add real documents
-python -m ocr.benchmark --only tesseract-best qari # narrow it
+python -m arabic_extraction.benchmark --list                     # what can run here, and why not
+python -m arabic_extraction                            # synthetic, exact CER/WER
+python -m arabic_extraction.benchmark --corpus ~/pdfs            # add real documents
+python -m arabic_extraction.benchmark --only tesseract-best qari # narrow it
 ```
 
 Generate a detailed comparison report with plots:
 
 ```bash
-python -m ocr.benchmark --only tesseract --out ocr-benchmark
-python -m ocr.benchmark.report ocr-benchmark/synthetic.json --output ocr-report
+python -m arabic_extraction.benchmark --only tesseract --out ocr-benchmark
+python -m arabic_extraction.benchmark.report ocr-benchmark/synthetic.json --output ocr-report
 ```
 
 The report includes CER/WER, median page time, CPU time, peak resident memory,

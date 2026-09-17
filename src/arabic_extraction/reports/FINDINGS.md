@@ -117,7 +117,7 @@ hidden it.
 
 Qari is the better reader by a factor of nearly three on word error rate, reads
 inline English correctly, and preserves diacritics — but it needs a GPU and 5 GB
-of VRAM. Wrapping it on a Colab GPU — `ocr/colab/`, reachable as the
+of VRAM. Wrapping it on a Colab GPU — `arabic_extraction/colab/`, reachable as the
 `qari-remote` extractor — is a reasonable way to have both: `tesseract-best`
 inline for everything, Qari for documents worth re-reading properly.
 
@@ -163,7 +163,7 @@ venv; nothing of that size entered the production image.
 
 ### Per page, and only when the text layer is broken
 
-`ocr.language.profile()` makes the decision for each page, and all three of its
+`arabic_extraction.language.profile()` makes the decision for each page, and all three of its
 answers must agree before a page is re-read:
 
 - the page is **Arabic** — decided from the codepoints, not by a detector;
