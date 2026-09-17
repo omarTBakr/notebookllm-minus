@@ -8,6 +8,7 @@ key off.
 """
 
 from langchain_text_splitters import Language  # ty: ignore[unresolved-import]
+from qdrant_client import models  # ty: ignore[unresolved-import]
 
 from .db import DistanceMethod
 from .LLMChattingEnum import ChatRole, LLMChattingProvider
@@ -57,6 +58,15 @@ DISTANCE_METHOD_TO_PGVECTOR: dict[DistanceMethod, tuple[str, str]] = {
     DistanceMethod.COSINE: ("<=>", "vector_cosine_ops"),
     DistanceMethod.DOT: ("<#>", "vector_ip_ops"),
     DistanceMethod.EUCLID: ("<->", "vector_l2_ops"),
+}
+
+# Qdrant's own distance vocabulary per distance metric. Used to live as a
+# private DistanceFunction enum on QdrantVectorRepository; it lives beside
+# DISTANCE_METHOD_TO_PGVECTOR instead, same reasoning as that table.
+DISTANCE_METHOD_TO_QDRANT: dict[DistanceMethod, models.Distance] = {
+    DistanceMethod.COSINE: models.Distance.COSINE,
+    DistanceMethod.DOT: models.Distance.DOT,
+    DistanceMethod.EUCLID: models.Distance.EUCLID,
 }
 
 # provider -> the Settings attribute holding its key. Ollama is absent on

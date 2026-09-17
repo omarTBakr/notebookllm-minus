@@ -11,22 +11,13 @@ from time import perf_counter
 
 from qdrant_client import AsyncQdrantClient, models  # ty: ignore[unresolved-import]
 
-from enum import Enum
-from enums import DistanceMethod, IndexType
+from enums import DISTANCE_METHOD_TO_QDRANT, DistanceMethod, IndexType
 from exceptions import DbConnectionError, DbError, UnsupportedProviderError
 from utils import get_logger
 
 from ..interfaces.vector_repository import VectorRepository
 
 _ID_NAMESPACE = uuid.NAMESPACE_OID
-
-
-class DistanceFunction(str, Enum):
-    """Qdrant distance functions."""
-
-    COSINE  = models.Distance.COSINE
-    DOT     = models.Distance.DOT
-    EUCLID  = models.Distance.EUCLID
 
 
 class QdrantVectorRepository(VectorRepository):
@@ -42,8 +33,7 @@ class QdrantVectorRepository(VectorRepository):
     ) -> None:
         if url and path:
             raise ValueError(
-                "Qdrant takes either VECTOR_DB_URL (server mode) or "
-                "VECTOR_DB_PATH (embedded mode), not both"
+                "Qdrant takes either VECTOR_DB_URL (server mode) or " "VECTOR_DB_PATH (embedded mode), not both"
             )
         if not url and not path:
             raise ValueError("Qdrant needs one of VECTOR_DB_URL or VECTOR_DB_PATH")
@@ -113,9 +103,7 @@ class QdrantVectorRepository(VectorRepository):
             raise DbError(f"get_collection_info({collection_name!r}) failed: {exc}") from exc
         return info.model_dump()
 
-    async def create_collection(
-        self, collection_name: str, embedding_size: int, reset: bool = False
-    ) -> bool:
+    async def create_collection(self, collection_name: str, embedding_size: int, reset: bool = False) -> bool:
         client = self._require_client()
         if await self.collection_exists(collection_name):
             if not reset:
@@ -128,7 +116,7 @@ class QdrantVectorRepository(VectorRepository):
                 collection_name=collection_name,
                 vectors_config=models.VectorParams(
                     size=embedding_size,
-                    distance=DistanceFunction[self.distance_method.upper()],
+                    distance=DISTANCE_METHOD_TO_QDRANT[self.distance_method],
                 ),
                 # Indexing starts disabled — building the HNSW graph
                 # incrementally as insert_many() streams rows in is far
@@ -141,7 +129,9 @@ class QdrantVectorRepository(VectorRepository):
             raise DbError(f"create_collection({collection_name!r}) failed: {exc}") from exc
         self.logger.info(
             "Created collection %r (size=%d, distance=%s)",
-            collection_name, embedding_size, self.distance_method,
+            collection_name,
+            embedding_size,
+            self.distance_method,
         )
         return True
 
@@ -159,9 +149,7 @@ class QdrantVectorRepository(VectorRepository):
     ) -> bool:
         chosen = IndexType(index_type) if index_type is not None else self.index_type
         if chosen is not IndexType.HNSW:
-            raise UnsupportedProviderError(
-                f"Qdrant only builds HNSW indexes, got {chosen.value!r}"
-            )
+            raise UnsupportedProviderError(f"Qdrant only builds HNSW indexes, got {chosen.value!r}")
 
         client = self._require_client()
         try:
@@ -171,9 +159,7 @@ class QdrantVectorRepository(VectorRepository):
             # explicit statements.
             await client.update_collection(
                 collection_name=collection_name,
-                optimizers_config=models.OptimizersConfigDiff(
-                    indexing_threshold=self._DEFAULT_INDEXING_THRESHOLD
-                ),
+                optimizers_config=models.OptimizersConfigDiff(indexing_threshold=self._DEFAULT_INDEXING_THRESHOLD),
             )
         except Exception as exc:
             raise DbError(f"create_index({collection_name!r}) failed: {exc}") from exc
@@ -220,7 +206,7 @@ class QdrantVectorRepository(VectorRepository):
         ]
         for start in range(0, len(points), batch_size):
             try:
-                await client.upsert(collection_name=collection_name, points=points[start:start + batch_size])
+                await client.upsert(collection_name=collection_name, points=points[start : start + batch_size])
             except Exception as exc:
                 raise DbError(f"insert_many into {collection_name!r} failed at offset {start}: {exc}") from exc
         self.logger.info("Upserted %d points into %r", len(points), collection_name)
@@ -271,12 +257,20 @@ class QdrantVectorRepository(VectorRepository):
             raise DbError(f"search_by_vector in {collection_name!r} failed: {exc}") from exc
         elapsed_ms = (perf_counter() - started) * 1000
         hits = [
-            {"id": p.id, "score": p.score, "text": (p.payload or {}).get("text"), "metadata": (p.payload or {}).get("metadata", {})}
+            {
+                "id": p.id,
+                "score": p.score,
+                "text": (p.payload or {}).get("text"),
+                "metadata": (p.payload or {}).get("metadata", {}),
+            }
             for p in response.points
         ]
         self.logger.debug(
             "Searched %r: %d/%d hits in %.0f ms",
-            collection_name, len(hits), limit, elapsed_ms,
+            collection_name,
+            len(hits),
+            limit,
+            elapsed_ms,
         )
         if not hits:
             self.logger.warning("search_by_vector returned no hits from %r", collection_name)
