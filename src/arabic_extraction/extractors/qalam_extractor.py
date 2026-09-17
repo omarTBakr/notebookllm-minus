@@ -26,14 +26,21 @@ back 200-300x too long on some documents — the real page content, correct,
 with the document's own running header/footer repeated dozens to hundreds of
 times — while `.confidence` still reports 1.0 for the affected page. Not
 observed on every document (`ذخائر_لبنان.pdf` was clean throughout; see
-`reports/qalam/report/report.md`), so it is not filtered out here: doing that
-silently would hide a real upstream bug behind extractor code that looks like
-it works. A caller with a length budget should treat a page many times the
-document's median length as suspect regardless of what `.confidence` says.
+`benchmark/reports/qalam/report/report.md`), so it is not filtered out here:
+doing that silently would hide a real upstream bug behind extractor code
+that looks like it works. **A relative guard does not work**: on the one
+document this was measured against, 273 of 274 pages (99.6%) are affected,
+so the document's own median page length is itself a bloated one and a
+"many times the median" check flags zero of the corrupted pages — see the
+report for the full census. A workable guard needs an absolute bound (or a
+cross-check against a fast independent extractor such as `pymupdf-raw`),
+which this project has not implemented yet — `OCR_EXTRACTOR=qalam` runs
+without one.
 """
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 from ..base import ArabicExtractor, Page
@@ -51,6 +58,16 @@ class QalamExtractor(ArabicExtractor):
     usually asks for every page of the same file before moving to the next
     one. Reparsing the whole PDF on every page would multiply the cost by the
     page count for no reason, so the parsed document is cached by path.
+
+    The production caller (`ProcessController._reread_unusable_arabic`) is
+    not the harness: it submits every candidate page of one document to a
+    thread pool at once, so the first access to a not-yet-cached path is a
+    race between however many threads that document has candidates for. Each
+    would see the cache empty and start its own `qalam.Document(path)` --
+    every one of them a multi-second-to-minutes eager parse -- and only the
+    last write would survive. `_lock` serialises the check-and-parse so the
+    document is built once and every other thread waits for that result
+    rather than duplicating it.
     """
 
     name = "qalam"
@@ -61,6 +78,7 @@ class QalamExtractor(ArabicExtractor):
     #: model caches on the OCR engines below, so every instance in one
     #: process shares the parse rather than repeating it.
     _documents: dict[str, "qalam.Document"] = {}
+    _lock = threading.Lock()
 
     @classmethod
     def available(cls) -> tuple[bool, str]:
@@ -76,10 +94,18 @@ class QalamExtractor(ArabicExtractor):
 
         key = str(path)
 
-        if key not in cls._documents:
-            cls._documents[key] = qalam.Document(key)
+        # Fast path: no lock once the document is cached -- which is every
+        # call but the first, given a document's pages are read together.
+        if key in cls._documents:
+            return cls._documents[key]
 
-        return cls._documents[key]
+        with cls._lock:
+            # Re-check: another thread may have parsed it while this one
+            # waited for the lock.
+            if key not in cls._documents:
+                cls._documents[key] = qalam.Document(key)
+
+            return cls._documents[key]
 
     def _extract(self, page: Page) -> str:
         # qalam counts pages from 1; the harness counts from 0, as pymupdf does.

@@ -81,10 +81,16 @@ class Settings(BaseSettings):
     # habit. `arabic_extraction.language.profile()` makes that decision per
     # page and costs microseconds.
     OCR_ENABLED: bool = False
-    # Which engine. tesseract-best measured 0.172 WER against 0.545 for the
-    # distro `ara` model and 0.167 for Gemini — see
-    # src/arabic_extraction/benchmark/reports/FINDINGS.md.
-    OCR_EXTRACTOR: str = "tesseract-best"
+    # Which engine. qalam reads the PDF's own text layer in logical order
+    # rather than OCRing a rendered page — free of tesseract-best's
+    # 2.29s/page CPU cost, and it matched or beat it on the two lines checked
+    # against this corpus's ground truth. But qalam 0.1.1 has a known bug:
+    # on some documents it returns 200-300x too much text per page (a
+    # repeating header/footer), silently paired with confidence 1.0 and no
+    # guard against it yet — see
+    # src/arabic_extraction/benchmark/reports/qalam/report/report.md before
+    # changing this back, or before trusting it blindly on a new corpus.
+    OCR_EXTRACTOR: str = "qalam"
     # Where ara.traineddata from tessdata_best lives. The distribution package
     # ships the *fast* model, which is a different model and three times worse
     # on this corpus; the image downloads the better one to this path.

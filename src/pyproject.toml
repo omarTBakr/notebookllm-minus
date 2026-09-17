@@ -10,8 +10,10 @@ dependencies = [
     # the word-box path splits inside words and the raw path fuses them. OCR of
     # the rendered page beats both, measured (see src/arabic_extraction/benchmark/reports/FINDINGS.md).
     # pytesseract is a thin wrapper; the engine and its ara model are installed
-    # in the image, not here.
+    # in the image, not here. qalam is OCR_EXTRACTOR's default -- Rust
+    # bindings published on PyPI, no build toolchain or external model needed.
     "pytesseract>=0.3.13",
+    "qalam>=0.1.1",
 
     # --- web ---
     "fastapi[standard]>=0.140.0",
@@ -94,10 +96,6 @@ dev = [
 [project.optional-dependencies]
 ocr-benchmark = [
     "matplotlib>=3.9",
-    # Rust bindings, published on PyPI -- no build toolchain needed. A
-    # text-layer extractor like pymupdf/pdfplumber above, not an OCR engine:
-    # see arabic_extraction/extractors/qalam_extractor.py.
-    "qalam>=0.1.1",
 ]
 
 [tool.black]
