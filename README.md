@@ -39,6 +39,29 @@ the chat.
 A Studio quiz question generated from the same source, multiple choice with one correct
 answer per card.
 
+A reader's path through it — what [Architecture](#architecture) below breaks into requests,
+queues and prompts:
+
+```mermaid
+flowchart TD
+    reader(["Reader"])
+    upload["Upload a PDF, txt or markdown"]
+    index["Indexed: chunked and embedded —<br/>Arabic re-read if its text layer is broken"]
+    ask["Ask a question"]
+    answer["Grounded answer, citing the exact page"]
+    cite["Click the citation"]
+    open["PDF opens there, passage highlighted"]
+    studio["Generate a Studio set"]
+    cards["Flashcards or a quiz,<br/>from the same chunks"]
+    memory["Type /memory I prefer short answers"]
+    remember["Folded into every answer after"]
+
+    reader --> upload --> index
+    index --> ask --> answer --> cite --> open
+    index --> studio --> cards
+    reader --> memory --> remember --> answer
+```
+
 ## Quickstart
 
 ```bash
