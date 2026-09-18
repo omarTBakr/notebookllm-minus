@@ -13,8 +13,8 @@
       <button class="studio-card studio-card--video"  data-soon="Video Overview"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-video"/></svg></span><span data-i18n="videoOverview"></span></button>
       <button class="studio-card studio-card--mind"   data-soon="Mind Map"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-mindmap"/></svg></span><span data-i18n="mindMap"></span></button>
       <button class="studio-card studio-card--report" data-soon="Reports"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-report"/></svg></span><span data-i18n="reports"></span></button>
-      <button class="studio-card studio-card--cards"  data-soon="Flashcards"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-cards"/></svg></span><span data-i18n="flashcards"></span></button>
-      <button class="studio-card studio-card--quiz"   data-soon="Quiz"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-quiz"/></svg></span><span data-i18n="quiz"></span></button>
+      <button class="studio-card studio-card--cards" id="btn-flashcards"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-cards"/></svg></span><span data-i18n="flashcards"></span></button>
+      <button class="studio-card studio-card--quiz" id="btn-quiz"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-quiz"/></svg></span><span data-i18n="quiz"></span></button>
       <button class="studio-card studio-card--info"   data-soon="Infographic"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-info"/></svg></span><span data-i18n="infographic"></span></button>
       <button class="studio-card studio-card--table"  data-soon="Data Table"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-table"/></svg></span><span data-i18n="dataTable"></span></button>
     </div>
@@ -24,6 +24,56 @@
       <p class="empty__title" data-i18n="studioEmptyTitle"></p>
       <p class="empty__body" data-i18n="studioEmptyBody"></p>
     </div>
+
+    {# Built, unlike the tiles above. Hidden until asked for; both fill while
+       being read, so neither waits for the whole notebook. Opening one takes
+       over the whole panel -- the grid is hidden, not scrolled past -- and the
+       back button in its header is the way out. #}
+    <section class="artifact" id="flashcards" hidden>
+      <header class="artifact__head">
+        <button class="artifact__back" id="flashcards-close"><svg class="ico" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-back"/></svg><span data-i18n="backToStudio"></span></button>
+        <h3 data-i18n="flashcards"></h3>
+        <span class="artifact__count" id="flashcards-count"></span>
+      </header>
+
+      <p class="artifact__status" id="flashcards-status" hidden></p>
+
+      <div class="flashcard" id="flashcards-face"></div>
+
+      <div class="artifact__actions">
+        <button class="btn btn--ghost" id="flashcards-prev" type="button" data-i18n="previous"></button>
+        <button class="btn" id="flashcards-flip" type="button" data-i18n="flip"></button>
+        <button class="btn btn--ghost" id="flashcards-next" type="button" data-i18n="next"></button>
+      </div>
+
+      <div class="artifact__actions artifact__actions--minor">
+        <button class="btn btn--ghost" id="flashcards-cite" data-i18n="openSource" hidden></button>
+        <button class="btn btn--ghost" id="flashcards-again" data-i18n="regenerate"></button>
+      </div>
+    </section>
+
+    <section class="artifact" id="quiz" hidden>
+      <header class="artifact__head">
+        <button class="artifact__back" id="quiz-close"><svg class="ico" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-back"/></svg><span data-i18n="backToStudio"></span></button>
+        <h3 data-i18n="quiz"></h3>
+        <span class="artifact__count" id="quiz-count"></span>
+        <span class="artifact__score" id="quiz-score"></span>
+      </header>
+
+      <p class="artifact__status" id="quiz-status" hidden></p>
+
+      <div class="quiz__body" id="quiz-body"></div>
+
+      <div class="artifact__actions">
+        <button class="btn btn--ghost" id="quiz-prev" type="button" data-i18n="previous"></button>
+        <button class="btn btn--ghost" id="quiz-next" type="button" data-i18n="next"></button>
+      </div>
+
+      <div class="artifact__actions artifact__actions--minor">
+        <button class="btn btn--ghost" id="quiz-cite" data-i18n="openSource" hidden></button>
+        <button class="btn btn--ghost" id="quiz-again" data-i18n="regenerate"></button>
+      </div>
+    </section>
 
     {# The note editor takes the empty state's place rather than sitting beside
        it: the panel is one column and both want the same room. #}

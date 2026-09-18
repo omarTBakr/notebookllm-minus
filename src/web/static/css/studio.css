@@ -1,7 +1,14 @@
 /* Right panel: the generated-output cards.
  *
  * Every card is a planned feature. They keep their colour — it is the panel's
- * whole visual identity — and js/soon.js adds the badge and the refusal. */
+ * whole visual identity — and js/soon.js adds the badge and the refusal.
+ *
+ * Token names come from base.css: --border and --text-muted. This file used
+ * --line and --muted for a while, which are defined nowhere, so every border
+ * and every muted label in the Studio panel silently resolved to nothing --
+ * an invalid var() in a shorthand drops the whole declaration, so the option
+ * buttons had no border at all rather than a wrong one. It went unnoticed
+ * because it degrades quietly and the panel had never been opened. */
 
 .studio__grid {
   flex: none;
@@ -113,3 +120,362 @@
 }
 
 .note__count { font-size: 0.72rem; color: var(--text-muted); }
+
+/* --- generated sets: flashcards and quiz ---------------------------------- */
+
+/* Both replace the tile grid rather than sitting under it: the panel is narrow
+   and a card competing with nine tiles for the same column is unreadable.
+   `is-artifact` on the panel is what actually removes the grid — this comment
+   described the intent for a while before anything implemented it. */
+.artifact {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+/* The grid and the empty state go; the note button stays. It belongs to the
+   notebook rather than to whatever is open in the panel, and it sits at the
+   bottom where it always is, so it is still there to click while reading a
+   deck. */
+.panel--studio.is-artifact .studio__grid,
+.panel--studio.is-artifact .empty {
+  display: none;
+}
+
+/* Taking the whole panel means taking its height too, so the card sits in the
+   middle of the space instead of hugging the top with a screenful of nothing
+   under it. The border goes: there is no longer anything to be bordered off
+   from. */
+.panel--studio.is-artifact .artifact {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 4px 0 0;
+  background: none;
+}
+
+/* The card grows into the room the grid gave up, instead of keeping its
+   160px and leaving a screenful of nothing beneath it -- which looks like the
+   panel failed to load rather than like a card. The controls keep their own
+   height, so only the reading area stretches, and it scrolls rather than
+   pushing them off the bottom when an answer is long. */
+.panel--studio.is-artifact .flashcard,
+.panel--studio.is-artifact .quiz__body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The faces scroll, not the stage: overflow on the stage would clip the card
+   mid-turn, and a scrollbar on a rotating element is its own problem. */
+.panel--studio.is-artifact .quiz__body {
+  overflow-y: auto;
+}
+
+/* Centring a short answer in a tall card is right; a long one has to start at
+   the top or its first line scrolls out of reach. On the face now, since the
+   card itself is only the stage the face turns on. */
+.panel--studio.is-artifact .flashcard__face {
+  justify-content: safe center;
+}
+
+.artifact__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 5px;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.artifact__back:hover {
+  color: var(--text);
+  background: var(--surface-2, var(--surface));
+}
+
+/* The arrow points back, so it follows the reading direction. */
+[dir="rtl"] .artifact__back .ico {
+  transform: scaleX(-1);
+}
+
+.artifact__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.artifact__head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  flex: 1;
+}
+
+.artifact__count,
+.artifact__score {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.artifact__score { font-weight: 600; }
+
+/* Quiet, because it is true for most of a long run and shouting it for four
+   minutes would be worse than saying nothing. */
+.artifact__status {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.artifact__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.artifact__actions .btn { flex: 1; }
+
+.artifact__actions--minor .btn {
+  font-size: 0.8rem;
+  padding-block: 4px;
+}
+
+/* A fixed height, so flipping a two-word answer after a long question does not
+   collapse the panel and move every button under the cursor. */
+/* The card turns between two real sides.
+ *
+ * `.flashcard` is only the stage — it holds the perspective and no styling of
+ * its own. `.flashcard__inner` is the thing that rotates, and the two
+ * `.flashcard__face` elements sit on top of each other inside it, the back one
+ * pre-rotated a half-turn so it is the right way up when it comes round.
+ * `backface-visibility: hidden` is what keeps you from reading the far side
+ * through the near one.
+ *
+ * The previous version turned a single face to 90deg and swapped its text
+ * while edge-on. That is not a flip — nothing ever rotates past square, so
+ * there is no moment where the card reads as an object with two sides — and
+ * with reduced motion honoured it did nothing observable at all. */
+.flashcard {
+  /* Flex, so the rotating inner stretches to a real height: the two faces are
+     absolutely positioned, and without a definite height to fill they would
+     collapse to nothing. */
+  display: flex;
+  min-block-size: 190px;
+  background: none;
+  border: 0;
+  padding: 0;
+
+  /* On the stage, not the panel: the closer the origin, the more the near
+     edge grows as it swings, which is what makes it read as a turn. */
+  -webkit-perspective: 1100px;
+  perspective: 1100px;
+}
+
+.flashcard__inner {
+  position: relative;
+  flex: 1;
+  will-change: transform;
+
+  /* Prefixed for Safari, iOS in particular: without -webkit-transform-style
+     it flattens the 3D context, and a flattened flip shows both faces at once
+     or simply does not turn. The unprefixed properties are correct everywhere
+     else and this is the one place the app does 3D at all. */
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
+  transition: -webkit-transform 600ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  transition: transform 600ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.flashcard.axis-y.is-flipped .flashcard__inner { -webkit-transform: rotateY(180deg); transform: rotateY(180deg); }
+.flashcard.axis-x.is-flipped .flashcard__inner { -webkit-transform: rotateX(180deg); transform: rotateX(180deg); }
+
+/* Revealing an answer turns left-to-right (rotateY). Moving through the deck
+   is intentionally different: the old and new cards meet over their top edge
+   (rotateX), making the navigation action immediately legible. */
+.flashcard.is-changing-card .flashcard__inner {
+  -webkit-transform: rotateX(-90deg);
+  transform: rotateX(-90deg);
+}
+
+.flashcard.is-entering-card .flashcard__inner {
+  animation: flashcard-card-in 310ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes flashcard-card-in {
+  from { opacity: 0.35; -webkit-transform: rotateX(90deg); transform: rotateX(90deg); }
+  to { opacity: 1; -webkit-transform: rotateX(0); transform: rotateX(0); }
+}
+
+/* No axis chosen yet — the first render, or a card restored from a poll. */
+.flashcard.is-flipped .flashcard__inner { -webkit-transform: rotateY(180deg); transform: rotateY(180deg); }
+
+.flashcard__face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px;
+  text-align: center;
+
+  border: 2px solid var(--accent);
+  border-radius: 14px;
+  background: var(--study-face);
+
+  /* Floating: a soft shadow under the card and a tinted one in the accent, so
+     it sits above the panel rather than being drawn on it. */
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 10px 22px -8px rgb(0 0 0 / 0.18),
+    0 4px 14px -6px color-mix(in srgb, var(--accent) 35%, transparent);
+
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  overflow-y: auto;
+}
+
+/* Pre-rotated so it arrives upright rather than mirrored. The default matches
+   the default turn; the axis-x rule is more specific and wins when the card is
+   turning end over end instead. */
+.flashcard__face--back { -webkit-transform: rotateY(180deg); transform: rotateY(180deg); }
+.flashcard.axis-x .flashcard__face--back { -webkit-transform: rotateX(180deg); transform: rotateX(180deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The card still turns — it just arrives. Removing the movement is the
+     request; removing the flip would leave the button doing nothing visible. */
+  .flashcard__inner { transition: none; animation: none; }
+}
+
+.flashcard__text {
+  margin: 0;
+  font-family: var(--font-study);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.flashcard__side {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* The same face as a flashcard, for the same reason: one thing being read,
+   framed in the accent, with the tile colours left to the tiles. */
+.quiz__body {
+  min-block-size: 160px;
+  padding: 16px;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  background: var(--study-face);
+  box-shadow: 0 10px 22px -14px rgb(0 0 0 / 0.26);
+}
+
+.quiz__question,
+.quiz__option-text {
+  font-family: var(--font-study);
+}
+
+.quiz__question {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  /* Bold, so the question separates from four options of similar length --
+     without it the whole panel reads as one list. */
+  font-weight: 650;
+}
+
+.quiz__options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* text-align follows the writing direction rather than being hardcoded left:
+   the corpus this was built for is Arabic. */
+.quiz__option {
+  inline-size: 100%;
+  text-align: start;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.4;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.quiz__option:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  transform: translateX(2px);
+}
+
+[dir="rtl"] .quiz__option:hover:not(:disabled) { transform: translateX(-2px); }
+
+.quiz__option:focus-visible,
+.artifact__actions .btn:focus-visible,
+.artifact__back:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.quiz__option:disabled { cursor: default; }
+
+/* The circle that says "pick one of these". Fixed size and never allowed to
+   shrink, so a long option does not squash it into an oval. */
+.quiz__mark {
+  flex: none;
+  inline-size: 15px;
+  block-size: 15px;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+}
+
+.quiz__option-text { flex: 1; }
+
+.quiz__option:hover:not(:disabled) .quiz__mark { border-color: var(--accent); }
+
+/* Once answered, the circle carries the verdict too, so the result does not
+   rest on colour alone. */
+.quiz__option.is-correct .quiz__mark {
+  border-color: currentColor;
+  background:
+    radial-gradient(circle at center, currentColor 0 4.5px, transparent 4.5px);
+}
+
+.quiz__option.is-wrong .quiz__mark {
+  border-color: currentColor;
+  background:
+    radial-gradient(circle at center, currentColor 0 4.5px, transparent 4.5px);
+}
+
+/* Both the right answer and a wrong pick are marked. Seeing the correct one is
+   the point of taking the quiz, so it is shown even when the pick was wrong. */
+.quiz__option.is-correct {
+  border-color: #16a34a;
+  background: color-mix(in srgb, #16a34a 14%, var(--surface));
+}
+
+.quiz__option.is-wrong {
+  border-color: #dc2626;
+  background: color-mix(in srgb, #dc2626 12%, var(--surface));
+}

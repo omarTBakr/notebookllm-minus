@@ -104,6 +104,14 @@ export const api = {
     return request(`/chat/chats/${chatId}/documents`, { method: "POST", body: form });
   },
 
+  // --- studio ---
+  // A generation is started once and read many times: the set grows while the
+  // task runs, so the browser re-reads rather than waiting for a result.
+  generateArtifact: (chatId, kind) =>
+    request(`/chat/chats/${chatId}/studio/${kind}`, { method: "POST" }),
+
+  readArtifact: (chatId, kind) => request(`/chat/chats/${chatId}/studio/${kind}`),
+
   // --- conversation ---
   listMessages: (chatId) => request(`/chat/chats/${chatId}/messages`),
 
