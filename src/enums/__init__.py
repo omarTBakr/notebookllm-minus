@@ -1,3 +1,4 @@
+from .Artifacts import ArtifactKind, ArtifactStatus
 from .AssetTypes import AssetType
 from .Celery import IN_FLIGHT, CeleryTaskFunction, TaskExecutionStatus, TaskStage
 from .Datbase import DatabaseCollection
@@ -26,6 +27,8 @@ from .ProviderMappings import (
 from .responses import FileStatus
 
 __all__ = [
+    "ArtifactKind",
+    "ArtifactStatus",
     "AssetType",
     "ChatRole",
     "CeleryTaskFunction",

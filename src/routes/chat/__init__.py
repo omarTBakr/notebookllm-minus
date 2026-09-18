@@ -12,6 +12,7 @@ chats    — notebook CRUD
 assets   — document upload, source selection, asset preview
 models   — model catalogue + per-chat model / settings tuning
 messages — message listing + streaming answer endpoint
+studio   — generated study material: flashcard decks and quizzes
 """
 
 from fastapi import APIRouter
@@ -21,6 +22,7 @@ from .chats import chats_router
 from .messages import messages_router
 from .models import models_router
 from .sessions import sessions_router
+from .studio import studio_router
 from .users import users_router
 
 chat_router = APIRouter(prefix="/chat", tags=["chat"])
@@ -31,5 +33,6 @@ chat_router.include_router(chats_router)
 chat_router.include_router(assets_router)
 chat_router.include_router(models_router)
 chat_router.include_router(messages_router)
+chat_router.include_router(studio_router)
 
 __all__ = ["chat_router"]

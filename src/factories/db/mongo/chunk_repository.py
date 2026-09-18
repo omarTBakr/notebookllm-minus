@@ -1,15 +1,17 @@
 from typing import AsyncIterator, Iterable, Sequence
 
-from motor.motor_asyncio import AsyncIOMotorClient  # ty: ignore[unresolved-import]
 from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
-from pymongo import ASCENDING  # ty: ignore[unresolved-import]
+from motor.motor_asyncio import AsyncIOMotorClient  # ty: ignore[unresolved-import]
+from pymongo import ASCENDING, UpdateOne  # ty: ignore[unresolved-import]
 from pymongo.errors import PyMongoError  # ty: ignore[unresolved-import]
 
 from enums import DatabaseCollection
 from exceptions import DbError
+from models.db_schema import DataChunk
+from models.db_schema.project import utcnow
+
 from ..interfaces.chunk_repository import ChunkRepository
 from .base_model import BaseModel
-from models.db_schema import DataChunk
 
 # Documents per insert_many call. Large enough to amortise round trips, small
 # enough to stay well under MongoDB's 16 MB / 100k-document write limits even
@@ -57,8 +59,7 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
                 result = await self.collection.insert_many(documents, ordered=False)
             except PyMongoError as exc:
                 raise DbError(
-                    f"Could not insert chunks: {len(all_ids)} of {len(chunks)} "
-                    f"were written before the failure"
+                    f"Could not insert chunks: {len(all_ids)} of {len(chunks)} " f"were written before the failure"
                 ) from exc
             all_ids.extend(result.inserted_ids)
 
@@ -87,9 +88,7 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
         except PyMongoError as exc:
             raise DbError(f"Could not read chunks for project {project_id}") from exc
 
-    async def iter_project_chunks(
-        self, project_id: ObjectId, asset_id: str | None = None
-    ) -> AsyncIterator[DataChunk]:
+    async def iter_project_chunks(self, project_id: ObjectId, asset_id: str | None = None) -> AsyncIterator[DataChunk]:
         """Yield *every* chunk of a project, or of one asset within it.
 
         Unpaginated on purpose, and the counterpart to
@@ -106,25 +105,60 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
             query["asset_id"] = asset_id
 
         # find() builds a cursor synchronously — do NOT await it.
-        cursor = self.collection.find(query).sort(
-            [("asset_id", ASCENDING), ("chunk_order", ASCENDING)]
-        )
+        cursor = self.collection.find(query).sort([("asset_id", ASCENDING), ("chunk_order", ASCENDING)])
 
         try:
             async for document in cursor:
                 yield DataChunk(**document)
         except PyMongoError as exc:
-            raise DbError(
-                f"Could not read chunks for project {project_id}"
-            ) from exc
+            raise DbError(f"Could not read chunks for project {project_id}") from exc
 
-        self.logger.debug(
-            "Fetched every chunk for project %s (asset_id=%r)", project_id, asset_id
-        )
+        self.logger.debug("Fetched every chunk for project %s (asset_id=%r)", project_id, asset_id)
 
-    async def count_project_chunks(
-        self, project_id: ObjectId, asset_id: str | None = None
-    ) -> int:
+    async def set_chunk_summaries(self, summaries: dict[str, str]) -> int:
+        """Write a one-line precis onto each chunk, keyed by chunk `_id`.
+
+        One `bulk_write` rather than a call per chunk: the generation task
+        summarises a batch at a time, and a round trip per chunk over several
+        hundred of them would cost more than the model call that produced them.
+        """
+        if not summaries:
+            return 0
+
+        try:
+            result = await self.collection.bulk_write(
+                [
+                    UpdateOne(
+                        {"_id": ObjectId(chunk_id)},
+                        {"$set": {"summary": text, "updated_at": utcnow()}},
+                    )
+                    for chunk_id, text in summaries.items()
+                ],
+                ordered=False,
+            )
+
+            return result.modified_count
+        except PyMongoError as exc:
+            raise DbError("Could not write chunk summaries") from exc
+
+    async def count_unsummarised(self, project_id: ObjectId) -> int:
+        """Chunks in this project with no summary yet.
+
+        Matches a missing field as well as an empty one: documents written
+        before the field existed have no `summary` key at all, and they are
+        every bit as unsummarised as one holding "".
+        """
+        try:
+            return await self.collection.count_documents(
+                {
+                    "project_id": project_id,
+                    "$or": [{"summary": ""}, {"summary": {"$exists": False}}],
+                }
+            )
+        except PyMongoError as exc:
+            raise DbError(f"Could not count unsummarised chunks for project {project_id}") from exc
+
+    async def count_project_chunks(self, project_id: ObjectId, asset_id: str | None = None) -> int:
         """Chunks in a project, or in one asset of it.
 
         The optional narrowing exists so callers that act on a single asset can
@@ -137,9 +171,7 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
         try:
             return await self.collection.count_documents(query)
         except PyMongoError as exc:
-            raise DbError(
-                f"Could not count chunks for project {project_id}"
-            ) from exc
+            raise DbError(f"Could not count chunks for project {project_id}") from exc
 
     async def has_asset_chunks(self, project_id: ObjectId, asset_id: str) -> bool:
         """True if this asset has already been chunked into this project.
@@ -153,15 +185,11 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
                 projection={"_id": 1},
             )
         except PyMongoError as exc:
-            raise DbError(
-                f"Could not check existing chunks for asset {asset_id!r}"
-            ) from exc
+            raise DbError(f"Could not check existing chunks for asset {asset_id!r}") from exc
 
         return found is not None
 
-    async def get_chunks_by_orders(
-        self, asset_id: str, chunk_orders: list[int]
-    ) -> dict[int, DataChunk]:
+    async def get_chunks_by_orders(self, asset_id: str, chunk_orders: list[int]) -> dict[int, DataChunk]:
         """The named chunks of one asset, keyed by chunk_order.
 
         Turns a search hit back into a place in the document: the vector
@@ -178,18 +206,11 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
                     "chunk_order": {"$in": sorted(set(chunk_orders))},
                 }
             )
-            return {
-                document["chunk_order"]: DataChunk(**document)
-                async for document in cursor
-            }
+            return {document["chunk_order"]: DataChunk(**document) async for document in cursor}
         except PyMongoError as exc:
-            raise DbError(
-                f"Could not read chunks by order for asset {asset_id!r}"
-            ) from exc
+            raise DbError(f"Could not read chunks by order for asset {asset_id!r}") from exc
 
-    async def delete_chunks_for_asset(
-        self, project_id: ObjectId, asset_id: str
-    ) -> list[ObjectId]:
+    async def delete_chunks_for_asset(self, project_id: ObjectId, asset_id: str) -> list[ObjectId]:
         """Delete one asset's chunks; returns the _ids that were removed.
 
         The ids come back so the caller can pull exactly those out of the
@@ -207,9 +228,7 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
             if removed_ids:
                 await self.collection.delete_many({"_id": {"$in": removed_ids}})
         except PyMongoError as exc:
-            raise DbError(
-                f"Could not delete chunks for asset {asset_id!r}"
-            ) from exc
+            raise DbError(f"Could not delete chunks for asset {asset_id!r}") from exc
 
         self.logger.info(
             "Deleted %d chunk(s) for asset %r in project %s",
@@ -228,15 +247,10 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
         try:
             result = await self.collection.delete_many({"project_id": project_id})
         except PyMongoError as exc:
-            raise DbError(
-                f"Could not delete chunks for project {project_id}"
-            ) from exc
+            raise DbError(f"Could not delete chunks for project {project_id}") from exc
 
-        self.logger.info(
-            "Deleted %d chunk(s) for project %s", result.deleted_count, project_id
-        )
+        self.logger.info("Deleted %d chunk(s) for project %s", result.deleted_count, project_id)
         return result.deleted_count
-
 
     async def iter_chunks(self, project_object_id: ObjectId) -> AsyncIterator[DataChunk]:
         """Every chunk under a project, in the order they were split."""
@@ -245,9 +259,8 @@ class MongoChunkRepository(ChunkRepository, BaseModel):
             async for document in cursor.sort("chunk_order", 1):
                 yield DataChunk(**document)
         except PyMongoError as exc:
-            raise DbError(
-                f"Could not read chunks for project {project_object_id!r}"
-            ) from exc
+            raise DbError(f"Could not read chunks for project {project_object_id!r}") from exc
+
 
 def _batched(items: Sequence[DataChunk], size: int) -> Iterable[Sequence[DataChunk]]:
     for start in range(0, len(items), size):

@@ -13,6 +13,7 @@ class CeleryTaskFunction(StrEnum):
     # INDEX's queue rather than getting one of its own — see celery_queues.
     BUILD_INDEX = "build_vector_index_task"
     CHAT = "answer_chat_task"
+    GENERATE_ARTIFACT = "generate_artifact_task"
     MAINTENANCE = "maintenance_task"
 
 
@@ -41,14 +42,20 @@ IN_FLIGHT = (TaskExecutionStatus.QUEUED, TaskExecutionStatus.STARTED)
 
 
 class TaskStage(StrEnum):
-    """Ingestion progress, in order.
+    """Progress through a long-running job, in order.
 
-    The same four names the synchronous upload path reported through its
-    in-process dict, kept identical so the browser's progress labels and the
-    INGEST_STAGE_SECONDS metric carry over unchanged.
+    The first four are the names the synchronous upload path reported through
+    its in-process dict, kept identical so the browser's progress labels and
+    the INGEST_STAGE_SECONDS metric carry over unchanged.
+
+    The last two belong to Studio generation, which is a different pipeline
+    reusing the same row and the same poll: a set summarises chunks it has not
+    seen before, then writes items from those summaries, batch by batch.
     """
 
     EXTRACTING = "extracting"
     CHUNKING = "chunking"
     STORING = "storing"
     INDEXING = "indexing"
+    SUMMARISING = "summarising"
+    GENERATING = "generating"

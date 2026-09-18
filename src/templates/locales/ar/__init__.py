@@ -1,3 +1,3 @@
-from . import chat, rag
+from . import chat, rag, studio
 
-__all__ = ["chat", "rag"]
+__all__ = ["chat", "rag", "studio"]

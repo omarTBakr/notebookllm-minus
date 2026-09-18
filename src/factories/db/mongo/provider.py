@@ -11,6 +11,7 @@ from exceptions import DbConnectionError
 from utils import get_logger
 from utils.config import Settings
 
+from ..interfaces.artifact_repository import ArtifactRepository
 from ..interfaces.asset_repository import AssetRepository
 from ..interfaces.chat_repository import ChatRepository
 from ..interfaces.chunk_repository import ChunkRepository
@@ -21,6 +22,7 @@ from ..interfaces.session_repository import SessionRepository
 from ..interfaces.task_repository import TaskRepository
 from ..interfaces.user_repository import UserRepository
 from ..interfaces.vector_repository import VectorRepository
+from .artifact_repository import MongoArtifactRepository
 from .asset_repository import MongoAssetRepository
 from .chat_repository import MongoChatRepository
 from .chunk_repository import MongoChunkRepository
@@ -98,6 +100,14 @@ class MongoProvider(DbProvider):
             unique=True,
             partialFilterExpression={"content_hash": {"$gt": ""}},
         )
+
+        artifact_repo = MongoArtifactRepository(self.db)
+        await artifact_repo.create_index([("artifact_id", 1)], unique=True)
+        # One current set per notebook per kind, mirroring uq_artifacts_chat_kind
+        # on Postgres: a regeneration upserts into the same row instead of
+        # accumulating a history nobody asked to keep.
+        await artifact_repo.create_index([("chat_id", 1), ("kind", 1)], unique=True)
+
         await MongoUserRepository(self.db).create_index([("user_id", 1)], unique=True)
 
         session_repo = MongoSessionRepository(self.db)
@@ -138,6 +148,9 @@ class MongoProvider(DbProvider):
 
     def assets(self) -> AssetRepository:
         return MongoAssetRepository(self.db)
+
+    def artifacts(self) -> ArtifactRepository:
+        return MongoArtifactRepository(self.db)
 
     def chunks(self) -> ChunkRepository:
         return MongoChunkRepository(self.db)

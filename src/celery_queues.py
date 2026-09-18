@@ -10,6 +10,7 @@ def celery_queue_config(settings) -> dict:
         settings.CELERY_QUEUE_PROCESS,
         settings.CELERY_QUEUE_INDEX,
         settings.CELERY_QUEUE_CHAT,
+        settings.CELERY_QUEUE_STUDIO,
         settings.CELERY_QUEUE_MAINTENANCE,
     )
     # x-queue-type is what Celery's detect_quorum_queues() looks for, and
@@ -63,6 +64,14 @@ def celery_queue_config(settings) -> dict:
                 "queue": settings.CELERY_QUEUE_INDEX
             },
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.CHAT.value}": {"queue": settings.CELERY_QUEUE_CHAT},
+            # Its own queue, and its own worker in compose. Studio generation
+            # is minutes of waiting on a model API, so it must not sit behind
+            # an ingest -- and a queue declared here with no `-Q` consumer
+            # leaves tasks QUEUED silently forever, which is why the worker
+            # service ships in the same change.
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.GENERATE_ARTIFACT.value}": {
+                "queue": settings.CELERY_QUEUE_STUDIO
+            },
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MAINTENANCE.value}": {
                 "queue": settings.CELERY_QUEUE_MAINTENANCE
             },

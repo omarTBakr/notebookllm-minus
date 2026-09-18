@@ -11,6 +11,11 @@ from .db_schema import (
 )
 
 
+def ArtifactModel(db):
+    """Study material generated from a notebook's documents."""
+    return db.artifacts()
+
+
 def AssetModel(db):
     return db.assets()
 
@@ -44,6 +49,7 @@ def TaskModel(db):
 
 
 __all__ = [
+    "ArtifactModel",
     "AssetModel",
     "ChunkModel",
     "ChatModel",

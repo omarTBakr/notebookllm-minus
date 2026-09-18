@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from .artifact_repository import ArtifactRepository
 from .asset_repository import AssetRepository
 from .chat_repository import ChatRepository
 from .chunk_repository import ChunkRepository
@@ -58,6 +59,10 @@ class DbProvider(ABC):
     @abstractmethod
     def assets(self) -> AssetRepository:
         pass
+
+    @abstractmethod
+    def artifacts(self) -> ArtifactRepository:
+        """Study material generated from this notebook's documents."""
 
     @abstractmethod
     def chunks(self) -> ChunkRepository:

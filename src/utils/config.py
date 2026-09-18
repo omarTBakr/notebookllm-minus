@@ -459,6 +459,7 @@ class Settings(BaseSettings):
     CELERY_QUEUE_PROCESS: str | None = None
     CELERY_QUEUE_INDEX: str | None = None
     CELERY_QUEUE_CHAT: str | None = None
+    CELERY_QUEUE_STUDIO: str | None = None
     CELERY_QUEUE_MAINTENANCE: str | None = None
 
     # --- normalizers ---------------------------------------------------------
@@ -470,6 +471,7 @@ class Settings(BaseSettings):
             "CELERY_QUEUE_PROCESS": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.PROCESS.value}",
             "CELERY_QUEUE_INDEX": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.INDEX.value}",
             "CELERY_QUEUE_CHAT": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.CHAT.value}",
+            "CELERY_QUEUE_STUDIO": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.GENERATE_ARTIFACT.value}",
             "CELERY_QUEUE_MAINTENANCE": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MAINTENANCE.value}",
         }
         for field, value in defaults.items():

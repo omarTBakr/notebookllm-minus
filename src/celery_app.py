@@ -22,7 +22,7 @@ celery_app = Celery(
     main="notebookllm",
     broker=SETTINGS.celery_broker_url,
     backend=SETTINGS.celery_result_backend_url,
-    include=["tasks.process", "tasks.index", "tasks.maintenance"],
+    include=["tasks.process", "tasks.index", "tasks.maintenance", "tasks.studio"],
 )
 
 celery_app.conf.update(
