@@ -177,6 +177,23 @@ class LLMProviderError(NotebookLLMError):
     status_code = 502
 
 
+class StructuredOutputError(LLMProviderError):
+    """A model would not return output matching the schema it was given.
+
+    A subclass of LLMProviderError, and 502 with it, for the same reason: the
+    prompt carried the JSON Schema and asked for nothing else, so output that
+    still does not parse after a retry is the vendor failing to follow a
+    contract rather than a fault in this application.
+
+    Carries the last raw text so a log line can show what actually came back —
+    without it, "validation failed" is unactionable.
+    """
+
+    def __init__(self, message: str, raw: str = "") -> None:
+        super().__init__(message)
+        self.raw = raw
+
+
 class UnsupportedProviderError(InvalidInputError):
     """A factory was asked for a backend it has no implementation for.
 

@@ -24,5 +24,18 @@ class DataChunk(BaseModel):
     chunk_content: str = Field(...)
     chunk_metadata: dict = Field(default_factory=dict)
 
+    # A one-line precis of chunk_content, written lazily the first time a Studio
+    # feature needs it and then reused for ever.
+    #
+    # It exists because the whole notebook does not fit in a context window: 694
+    # chunks of the Arabic book is ~470k characters, while 694 summaries is
+    # ~35k tokens. Flashcards and quizzes are generated from these, never from
+    # the raw text -- the chunk itself stays behind as the citation target, so a
+    # card can be traced to a page the model never read verbatim.
+    #
+    # "" means "not summarised yet", which is what makes the generation task
+    # resumable: it skips anything already done.
+    summary: str = Field(default="")
+
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

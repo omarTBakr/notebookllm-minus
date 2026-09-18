@@ -1,12 +1,13 @@
 from typing import AsyncIterator
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from exceptions import DbError
 from models.db_schema import DataChunk
-from .base_repository import ChunkRow, PostgresBaseRepository
+
 from ..interfaces.chunk_repository import ChunkRepository
+from .base_repository import ChunkRow, PostgresBaseRepository
 
 
 class PostgresChunkRepository(PostgresBaseRepository, ChunkRepository):
@@ -64,9 +65,7 @@ class PostgresChunkRepository(PostgresBaseRepository, ChunkRepository):
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to iterate chunks: {exc}") from exc
 
-    async def iter_project_chunks(
-        self, project_id: str, asset_id: str | None = None
-    ) -> AsyncIterator[DataChunk]:
+    async def iter_project_chunks(self, project_id: str, asset_id: str | None = None) -> AsyncIterator[DataChunk]:
         """Every chunk of a project, or of one asset within it.
 
         The asset filter is what re-indexing a single upload uses; without it
@@ -74,20 +73,56 @@ class PostgresChunkRepository(PostgresBaseRepository, ChunkRepository):
         """
         try:
             async with self.session_factory() as db:
-                result = await db.stream_scalars(
-                    self._select_chunks(project_id, asset_id)
-                )
+                result = await db.stream_scalars(self._select_chunks(project_id, asset_id))
                 async for row in result:
                     yield self._record_to_model(row, DataChunk)
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to iterate project chunks: {exc}") from exc
 
-    async def count_project_chunks(self, project_id: str, asset_id: str | None = None) -> int:
+    async def set_chunk_summaries(self, summaries: dict[str, str]) -> int:
+        if not summaries:
+            return 0
+
+        try:
+            async with self.session_factory.begin() as db:
+                # One transaction and one round trip for the whole batch,
+                # rather than a conversation per chunk -- the generation task
+                # summarises ten at a time and there are hundreds of them.
+                #
+                # ORM bulk UPDATE by primary key: each mapping carries the
+                # pk, and SQLAlchemy builds one executemany from them. No
+                # explicit WHERE -- supplying one turns this into a different
+                # construct that refuses to run without a synchronize_session
+                # hint, and then rejects the rows for having no pk.
+                await db.execute(
+                    update(ChunkRow),
+                    [{"id": str(chunk_id), "summary": text} for chunk_id, text in summaries.items()],
+                )
+
+                # An ORM bulk update returns an IteratorResult with no
+                # rowcount, so the honest number is what was asked for. The
+                # transaction committing is the confirmation that matters --
+                # anything else raises.
+                return len(summaries)
+
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to write chunk summaries: {exc}") from exc
+
+    async def count_unsummarised(self, project_id: str) -> int:
         statement = (
             select(func.count())
             .select_from(ChunkRow)
-            .where(ChunkRow.project_id == str(project_id))
+            .where(ChunkRow.project_id == str(project_id), ChunkRow.summary == "")
         )
+
+        try:
+            async with self.session_factory() as db:
+                return await db.scalar(statement) or 0
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to count unsummarised chunks: {exc}") from exc
+
+    async def count_project_chunks(self, project_id: str, asset_id: str | None = None) -> int:
+        statement = select(func.count()).select_from(ChunkRow).where(ChunkRow.project_id == str(project_id))
 
         if asset_id:
             statement = statement.where(ChunkRow.asset_id == asset_id)
@@ -113,9 +148,7 @@ class PostgresChunkRepository(PostgresBaseRepository, ChunkRepository):
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to check asset chunks: {exc}") from exc
 
-    async def get_chunks_by_orders(
-        self, asset_id: str, chunk_orders: list[int]
-    ) -> dict[int, DataChunk]:
+    async def get_chunks_by_orders(self, asset_id: str, chunk_orders: list[int]) -> dict[int, DataChunk]:
         # An empty IN () is a syntax error on some drivers and a full scan on
         # others. Answering without a round trip is both safer and cheaper.
         if not chunk_orders:
@@ -132,19 +165,14 @@ class PostgresChunkRepository(PostgresBaseRepository, ChunkRepository):
                         ChunkRow.chunk_order.in_(sorted(set(chunk_orders))),
                     )
                 )
-                return {
-                    row.chunk_order: self._record_to_model(row, DataChunk)
-                    for row in rows
-                }
+                return {row.chunk_order: self._record_to_model(row, DataChunk) for row in rows}
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to fetch chunks by order: {exc}") from exc
 
     async def delete_chunks_for_project(self, project_id: str) -> None:
         try:
             async with self.session_factory.begin() as db:
-                await db.execute(
-                    delete(ChunkRow).where(ChunkRow.project_id == str(project_id))
-                )
+                await db.execute(delete(ChunkRow).where(ChunkRow.project_id == str(project_id)))
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to delete chunks for project: {exc}") from exc
 

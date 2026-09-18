@@ -22,6 +22,7 @@ from exceptions import DbConnectionError
 from utils import get_logger
 from utils.config import Settings
 
+from ..interfaces.artifact_repository import ArtifactRepository
 from ..interfaces.asset_repository import AssetRepository
 from ..interfaces.chat_repository import ChatRepository
 from ..interfaces.chunk_repository import ChunkRepository
@@ -32,6 +33,7 @@ from ..interfaces.session_repository import SessionRepository
 from ..interfaces.task_repository import TaskRepository
 from ..interfaces.user_repository import UserRepository
 from ..interfaces.vector_repository import VectorRepository
+from .artifact_repository import PostgresArtifactRepository
 from .asset_repository import PostgresAssetRepository
 from .chat_repository import PostgresChatRepository
 from .chunk_repository import PostgresChunkRepository
@@ -153,6 +155,9 @@ class PostgresProvider(DbProvider):
 
     def assets(self) -> AssetRepository:
         return PostgresAssetRepository(self._sessions())
+
+    def artifacts(self) -> ArtifactRepository:
+        return PostgresArtifactRepository(self._sessions())
 
     def chunks(self) -> ChunkRepository:
         return PostgresChunkRepository(self._sessions())

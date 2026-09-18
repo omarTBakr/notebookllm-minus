@@ -1,3 +1,4 @@
+from .artifact_repository import ArtifactRepository
 from .asset_repository import AssetRepository
 from .chat_repository import ChatRepository
 from .chunk_repository import ChunkRepository
@@ -10,6 +11,7 @@ from .user_repository import UserRepository
 from .vector_repository import VectorRepository
 
 __all__ = [
+    "ArtifactRepository",
     "AssetRepository",
     "ChatRepository",
     "ChunkRepository",

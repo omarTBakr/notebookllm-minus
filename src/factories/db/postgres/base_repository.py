@@ -188,6 +188,10 @@ class ChunkRow(Base):
     chunk_metadata: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
+    # Written lazily by the Studio generation task; "" means "not yet". Not
+    # nullable, so the "needs summarising" test is a plain equality rather than
+    # a three-valued one.
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default=text("''"))
 
     created_at: Mapped[datetime] = _utcnow_column()
     updated_at: Mapped[datetime] = _utcnow_column()
@@ -227,6 +231,32 @@ class TaskExecutionRow(Base):
     updated_at: Mapped[datetime] = _utcnow_column()
 
 
+class ArtifactRow(Base):
+    __tablename__ = "artifacts"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, unique=True)
+
+    # The notebook's business id, the string a URL carries -- the same
+    # identifier AssetRow.project_id holds, and deliberately not the project
+    # row's ObjectId that ChunkRow uses. Artifacts are reached from chat
+    # routes, and confusing those two has already cost this project a bug.
+    chat_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # A list, not an object, so append is a jsonb concatenation at the
+    # database rather than a read-modify-write from the worker.
+    items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+
+    source_task_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+    error: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
 # Declared out here rather than in __table_args__ so they can reference the
 # mapped columns directly. Plain ascending, even where the query sorts DESC:
 # Postgres scans a btree backwards at the same cost, and a DESC index reflects
@@ -254,6 +284,10 @@ Index(
     unique=True,
     postgresql_where=AssetRow.content_hash != "",
 )
+# One current set per notebook per kind. Unique rather than merely indexed:
+# regenerating replaces, and two rows for the same (notebook, kind) would make
+# "the deck for this book" ambiguous with nothing to break the tie.
+Index("uq_artifacts_chat_kind", ArtifactRow.chat_id, ArtifactRow.kind, unique=True)
 Index("idx_chunks_project_id", ChunkRow.project_id, ChunkRow.created_at)
 Index("idx_chunks_project_asset", ChunkRow.project_id, ChunkRow.asset_id)
 Index(

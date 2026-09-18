@@ -2,7 +2,7 @@
 
 `models/__init__.py` is a thin adapter — `AssetModel(db)` is literally
 `db.assets()` — and every route reaches storage through `request.app.db`.
-So one fake provider with nine accessors covers the whole route layer, with
+So one fake provider with ten accessors covers the whole route layer, with
 no patching and no mongomock.
 
 Repositories here store pydantic models in dicts and raise the same typed
@@ -108,11 +108,19 @@ class FakeChatRepository(_Store):
     async def set_has_documents(self, chat_id, value):
         self._patch(chat_id, has_documents=value)
 
-    async def set_models(self, chat_id, generation_model=None, embedding_model=None,
-                         embedding_dimensions=None):
-        self._patch(chat_id, generation_model=generation_model,
-                    embedding_model=embedding_model,
-                    embedding_dimensions=embedding_dimensions)
+    async def set_models(
+        self,
+        chat_id,
+        generation_model=None,
+        embedding_model=None,
+        embedding_dimensions=None,
+    ):
+        self._patch(
+            chat_id,
+            generation_model=generation_model,
+            embedding_model=embedding_model,
+            embedding_dimensions=embedding_dimensions,
+        )
 
     async def set_settings(self, chat_id, changes):
         self._patch(chat_id, **changes)
@@ -268,6 +276,23 @@ class FakeChunkRepository:
             for c in self.items
         )
 
+    async def set_chunk_summaries(self, summaries: dict) -> int:
+        written = 0
+
+        for chunk in self.items:
+            text = summaries.get(str(chunk.id))
+
+            if text is not None:
+                chunk.summary = text
+                written += 1
+
+        return written
+
+    async def count_unsummarised(self, project_id) -> int:
+        return sum(
+            1 for c in self.items if c.project_id == project_id and not c.summary
+        )
+
     async def get_chunks_by_orders(self, asset_id, chunk_orders):
         wanted = set(chunk_orders)
         return {
@@ -293,6 +318,56 @@ class FakeChunkRepository:
         return [str(c.id) for c in gone]
 
 
+class FakeArtifactRepository:
+    """In-memory artifacts, keyed by (chat_id, kind) as the unique index is."""
+
+    def __init__(self):
+        self.items: dict[str, object] = {}
+
+    async def create_artifact(self, artifact):
+        # Replace, matching the upsert both backends do: regenerating a set
+        # does not accumulate a second row for the same notebook and kind.
+        for key, existing in list(self.items.items()):
+            if existing.chat_id == artifact.chat_id and existing.kind == artifact.kind:
+                del self.items[key]
+
+        self.items[artifact.artifact_id] = artifact
+
+        return artifact.artifact_id
+
+    async def find_artifact(self, chat_id, kind):
+        for artifact in self.items.values():
+            if artifact.chat_id == chat_id and str(artifact.kind) == str(kind):
+                return artifact
+
+        return None
+
+    async def append_items(self, artifact_id, items):
+        artifact = self.items.get(artifact_id)
+
+        if artifact is None:
+            return 0
+
+        artifact.items.extend(items)
+
+        return len(artifact.items)
+
+    async def finish_artifact(self, artifact_id, status, error=""):
+        artifact = self.items.get(artifact_id)
+
+        if artifact is not None:
+            artifact.status = status
+            artifact.error = error
+
+    async def delete_artifacts_for_chat(self, chat_id):
+        doomed = [k for k, a in self.items.items() if a.chat_id == chat_id]
+
+        for key in doomed:
+            del self.items[key]
+
+        return len(doomed)
+
+
 class FakeVectorRepository:
     """Records what was indexed; search returns whatever was staged."""
 
@@ -310,7 +385,10 @@ class FakeVectorRepository:
         return list(self.collections)
 
     async def get_collection_info(self, collection_name):
-        return {"name": collection_name, "points_count": len(self.points.get(collection_name, []))}
+        return {
+            "name": collection_name,
+            "points_count": len(self.points.get(collection_name, [])),
+        }
 
     async def create_collection(self, collection_name, embedding_size, reset=False):
         existed = collection_name in self.collections
@@ -347,16 +425,25 @@ class FakeVectorRepository:
         self.points.pop(collection_name, None)
         return existed
 
-    async def insert_many(self, collection_name, texts, vectors, metadata=None,
-                          record_ids=None, batch_size=64):
+    async def insert_many(
+        self,
+        collection_name,
+        texts,
+        vectors,
+        metadata=None,
+        record_ids=None,
+        batch_size=64,
+    ):
         rows = self.points.setdefault(collection_name, [])
         for i, text in enumerate(texts):
-            rows.append({
-                "id": record_ids[i] if record_ids else str(i),
-                "text": text,
-                "vector": vectors[i],
-                "metadata": (metadata or [{}] * len(texts))[i],
-            })
+            rows.append(
+                {
+                    "id": record_ids[i] if record_ids else str(i),
+                    "text": text,
+                    "vector": vectors[i],
+                    "metadata": (metadata or [{}] * len(texts))[i],
+                }
+            )
         return True
 
     async def delete_by_metadata(self, collection_name, key, value):
@@ -367,10 +454,10 @@ class FakeVectorRepository:
         return removed
 
     async def search_by_vector(self, collection_name, vector, limit=5, asset_ids=None):
-        self.searched.append({"collection": collection_name, "limit": limit,
-                              "asset_ids": asset_ids})
+        self.searched.append(
+            {"collection": collection_name, "limit": limit, "asset_ids": asset_ids}
+        )
         return self.hits[:limit]
-
 
 
 class FakeTaskRepository:
@@ -400,7 +487,9 @@ class FakeTaskRepository:
         return next(
             (
                 t
-                for t in sorted(self.items.values(), key=lambda t: t.created_at, reverse=True)
+                for t in sorted(
+                    self.items.values(), key=lambda t: t.created_at, reverse=True
+                )
                 if t.task_name == task_name
                 and t.args_hash == args_hash
                 and t.status in IN_FLIGHT
@@ -412,13 +501,17 @@ class FakeTaskRepository:
         return next(
             (
                 t
-                for t in sorted(self.items.values(), key=lambda t: t.created_at, reverse=True)
+                for t in sorted(
+                    self.items.values(), key=lambda t: t.created_at, reverse=True
+                )
                 if t.project_id == project_id and t.status in IN_FLIGHT
             ),
             None,
         )
 
-    async def update_status(self, task_id, status, result=None, error="", error_type=""):
+    async def update_status(
+        self, task_id, status, result=None, error="", error_type=""
+    ):
         task = self.items.get(task_id)
         if task is None:
             return
@@ -446,7 +539,9 @@ class FakeTaskRepository:
         task.stage, task.done, task.total = stage, done, total
 
     async def iter_project_tasks(self, project_id):
-        for task in sorted(self.items.values(), key=lambda t: t.created_at, reverse=True):
+        for task in sorted(
+            self.items.values(), key=lambda t: t.created_at, reverse=True
+        ):
             if task.project_id == project_id:
                 yield task
 
@@ -457,7 +552,8 @@ class FakeTaskRepository:
             TaskExecutionStatus.DEAD,
         }
         doomed = [
-            k for k, v in self.items.items()
+            k
+            for k, v in self.items.items()
             if v.status in terminal and v.created_at < cutoff
         ]
         for k in doomed:
@@ -473,20 +569,21 @@ class FakeTaskRepository:
                 and task.started_at < started_before
             )
             stale_queue = (
-                task.status is TaskExecutionStatus.QUEUED and task.created_at < queued_before
+                task.status is TaskExecutionStatus.QUEUED
+                and task.created_at < queued_before
             )
             if stale_run or stale_queue:
                 task.status = TaskExecutionStatus(status)
-                task.error = "no completion recorded; the worker running this task is gone"
+                task.error = (
+                    "no completion recorded; the worker running this task is gone"
+                )
                 task.error_type = "WorkerLost"
                 task.completed_at = datetime.now(timezone.utc)
                 marked += 1
         return marked
 
     async def delete_tasks_for_project(self, project_id):
-        self.items = {
-            k: v for k, v in self.items.items() if v.project_id != project_id
-        }
+        self.items = {k: v for k, v in self.items.items() if v.project_id != project_id}
 
 
 class FakeDb:
@@ -499,6 +596,7 @@ class FakeDb:
         self._messages = FakeMessageRepository()
         self._projects = FakeProjectRepository()
         self._assets = FakeAssetRepository()
+        self._artifacts = FakeArtifactRepository()
         self._chunks = FakeChunkRepository()
         self._vectors = FakeVectorRepository(hits=hits)
         self._tasks = FakeTaskRepository()
@@ -513,12 +611,32 @@ class FakeDb:
     async def setup_indexes(self):
         return None
 
-    def users(self):    return self._users
-    def sessions(self): return self._sessions
-    def chats(self):    return self._chats
-    def messages(self): return self._messages
-    def projects(self): return self._projects
-    def assets(self):   return self._assets
-    def chunks(self):   return self._chunks
-    def vectors(self):  return self._vectors
-    def tasks(self):    return self._tasks
+    def users(self):
+        return self._users
+
+    def sessions(self):
+        return self._sessions
+
+    def chats(self):
+        return self._chats
+
+    def messages(self):
+        return self._messages
+
+    def projects(self):
+        return self._projects
+
+    def assets(self):
+        return self._assets
+
+    def artifacts(self):
+        return self._artifacts
+
+    def chunks(self):
+        return self._chunks
+
+    def vectors(self):
+        return self._vectors
+
+    def tasks(self):
+        return self._tasks
