@@ -10,8 +10,8 @@ from enums import ArtifactKind
 from models.db_schema import MindMapNodeSet, MindMapOutline
 from utils import get_logger
 
-from .StructuredController import generate_structured
 from .ArtifactController import ArtifactController
+from .StructuredController import generate_structured
 
 logger = get_logger(__name__)
 
