@@ -192,3 +192,22 @@ def test_the_index_build_shares_the_index_queue():
         == routes[f"{SETTINGS.CELERY_PROJECT_NAME}.{CeleryTaskFunction.INDEX.value}"]["queue"]
         == SETTINGS.CELERY_QUEUE_INDEX
     )
+
+
+def test_every_declared_queue_has_a_worker():
+    """The general form of the rule above, for queues rather than tasks: a
+    queue declared in celery_queues but consumed by no compose worker is dead
+    config at best, and a silent black hole the day something routes to it.
+    The default queue is the exception -- every task is routed explicitly, so
+    nothing is ever published to it."""
+    from celery_app import SETTINGS, celery_app
+
+    prefix = f"{SETTINGS.CELERY_PROJECT_NAME}."
+    declared = {
+        name.removeprefix(prefix)
+        for name in celery_app.conf.task_queues
+        if name != SETTINGS.CELERY_TASK_DEFAULT_QUEUE
+    }
+
+    assert declared, "no queues declared, so this test checks nothing"
+    assert declared <= _compose_queues(), f"declared with no worker: {sorted(declared - _compose_queues())}"

@@ -119,6 +119,14 @@ services:
     container_name: celery-index
     command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.index_project_task\" --loglevel=INFO --concurrency=1"]
 
+  # Studio generation: flashcard decks and quizzes. Its own queue and its own
+  # worker so a deck never sits behind an ingest. Concurrency 4: it spends
+  # nearly all its time waiting on a model API, so four runs cost almost no CPU.
+  celery-studio:
+    <<: *celery-worker
+    container_name: celery-studio
+    command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.generate_artifact_task\" --loglevel=INFO --concurrency=4"]
+
   # Consumes the periodic sweep of task_executions. Concurrency 1: there is
   # one scheduled job and running two copies of a sweep concurrently would
   # have them contend over the same rows for no gain.
@@ -152,13 +160,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
-
-  # celery-chat is intentionally absent: `answer_chat_task` is named in the
-  # queue enum and routed to, but no such task exists in src/tasks/. A worker
-  # for it would consume a queue nothing can publish to and appear in Flower
-  # as capacity that is not there. Restore it in the commit that adds the task.
-  #
-  #   celery-chat:  -Q ${CELERY_PROJECT_NAME}.answer_chat_task
 
   # --- Celery dashboard -------------------------------------------------------
 
