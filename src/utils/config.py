@@ -458,7 +458,6 @@ class Settings(BaseSettings):
     # maintenance from competing for the same worker slots.
     CELERY_QUEUE_PROCESS: str | None = None
     CELERY_QUEUE_INDEX: str | None = None
-    CELERY_QUEUE_CHAT: str | None = None
     CELERY_QUEUE_STUDIO: str | None = None
     CELERY_QUEUE_MAINTENANCE: str | None = None
 
@@ -470,7 +469,6 @@ class Settings(BaseSettings):
             "CELERY_TASK_DEFAULT_QUEUE": f"{self.CELERY_PROJECT_NAME}.default",
             "CELERY_QUEUE_PROCESS": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.PROCESS.value}",
             "CELERY_QUEUE_INDEX": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.INDEX.value}",
-            "CELERY_QUEUE_CHAT": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.CHAT.value}",
             "CELERY_QUEUE_STUDIO": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.GENERATE_ARTIFACT.value}",
             "CELERY_QUEUE_MAINTENANCE": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MAINTENANCE.value}",
         }

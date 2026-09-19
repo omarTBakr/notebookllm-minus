@@ -12,7 +12,6 @@ class CeleryTaskFunction(StrEnum):
     # its own row in task_executions, and its own bar in Flower. It shares
     # INDEX's queue rather than getting one of its own — see celery_queues.
     BUILD_INDEX = "build_vector_index_task"
-    CHAT = "answer_chat_task"
     GENERATE_ARTIFACT = "generate_artifact_task"
     MAINTENANCE = "maintenance_task"
 

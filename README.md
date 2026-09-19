@@ -181,7 +181,6 @@ slower, which `PdfLayoutController` offsets by extracting pages across a process
 
 **Not yet**
 - Web-search grounding is stored per notebook and shown marked *soon*, with no backend behind it
-- `answer_chat_task` is routed but unimplemented, so no chat worker runs
 - Formats past pdf/txt/md are enumerated in `AssetType` and not implemented
 
 ## Architecture
@@ -615,10 +614,8 @@ uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.maintenan
 uv run celery -A celery_app.celery_app beat --loglevel=INFO
 ```
 
-Compose runs the same set as `celery-process`, `celery-index`, `celery-maintenance` and
-`celery-beat`. There is no `celery-chat`: `answer_chat_task` is named in the queue enum and
-routed to, but no such task exists, and a worker for it would consume a queue nothing can
-publish to while appearing in Flower as capacity that is not there.
+Compose runs the same set as `celery-process`, `celery-index`, `celery-studio`,
+`celery-maintenance` and `celery-beat`.
 
 **The sweep.** `maintenance_task` runs every `CELERY_MAINTENANCE_INTERVAL_HOURS` (default 24)
 and does two things: marks work that can no longer be running as `DEAD`, and deletes finished
