@@ -166,7 +166,8 @@
    height, so only the reading area stretches, and it scrolls rather than
    pushing them off the bottom when an answer is long. */
 .panel--studio.is-artifact .flashcard,
-.panel--studio.is-artifact .quiz__body {
+.panel--studio.is-artifact .quiz__body,
+.panel--studio.is-artifact .mindmap {
   flex: 1;
   min-height: 0;
 }
@@ -478,4 +479,301 @@
 .quiz__option.is-wrong {
   border-color: #dc2626;
   background: color-mix(in srgb, #dc2626 12%, var(--surface));
+}
+
+
+/* --- mind map ----------------------------------------------------------------
+   A pannable canvas: HTML nodes over an SVG of curved links, one hue per
+   branch (--hue, set per node from JS). Tints are mixed into --surface so the
+   same hue reads on the light and the dark theme. */
+.mindmap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-block-size: 320px;
+}
+
+.panel--studio.is-artifact .mindmap {
+  overflow: hidden;
+}
+
+.mm__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.mm__hint {
+  margin-inline-start: auto;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.mm__icon-btn {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 30px;
+  block-size: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mm__icon-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mm__viewport {
+  position: relative;
+  flex: 1;
+  min-block-size: 260px;
+  overflow: hidden;
+  border-radius: 12px;
+  cursor: grab;
+  touch-action: none;
+  /* A faint dot grid: says "canvas you can move around in" before anyone
+     tries to drag it. */
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--text-muted) 22%, transparent) 1px, transparent 1.4px) 0 0 / 18px 18px,
+    var(--surface-2);
+}
+
+.mm__viewport.is-dragging {
+  cursor: grabbing;
+}
+
+.mm__canvas {
+  position: absolute;
+  /* Physical, not logical: the layout mirrors itself for RTL in JS, and a
+     logical inset here would mirror it a second time. */
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  transition: transform 0.12s ease-out;
+}
+
+.mm__viewport.is-dragging .mm__canvas {
+  transition: none;
+}
+
+.mm__links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.mm__link {
+  fill: none;
+  stroke: hsl(var(--hue) 65% 55%);
+  stroke-linecap: round;
+}
+
+.mm__link--branch {
+  stroke-width: 3;
+  opacity: 0.85;
+}
+
+.mm__link--topic {
+  stroke-width: 1.6;
+  opacity: 0.6;
+}
+
+.mm-node {
+  position: absolute;
+  box-sizing: border-box;
+  /* Sized by content, capped by each kind's max-inline-size. Without this an
+     absolutely positioned node shrinks to its container, which is 0px wide at
+     the moment the nodes are measured -- one character per line. */
+  inline-size: max-content;
+  font: inherit;
+  line-height: 1.3;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.mm-node--root {
+  max-inline-size: 180px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #d946ef));
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.mm-node--branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-inline-size: 190px;
+  padding: 8px 12px;
+  border: 2px solid hsl(var(--hue) 65% 55%);
+  border-radius: 12px;
+  background: color-mix(in srgb, hsl(var(--hue) 70% 55%) 16%, var(--surface));
+  color: var(--text);
+  font-weight: 650;
+  font-size: 0.86rem;
+  cursor: pointer;
+  box-shadow: 0 2px 8px color-mix(in srgb, hsl(var(--hue) 60% 40%) 14%, transparent);
+}
+
+.mm-node--branch[aria-expanded="false"] {
+  border-style: dashed;
+  opacity: 0.8;
+}
+
+.mm-node__count {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 20px;
+  block-size: 20px;
+  padding-inline: 5px;
+  border-radius: 999px;
+  background: hsl(var(--hue) 65% 55%);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.mm-node--topic {
+  max-inline-size: 210px;
+  padding: 6px 11px;
+  border: 1px solid color-mix(in srgb, hsl(var(--hue) 65% 55%) 45%, var(--border));
+  border-inline-start: 4px solid hsl(var(--hue) 65% 55%);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.mm-node--topic:hover,
+.mm-node--topic:focus-visible {
+  box-shadow: 0 4px 14px color-mix(in srgb, hsl(var(--hue) 60% 40%) 22%, transparent);
+  transform: translateY(-1px);
+}
+
+.mm-node--topic.is-selected {
+  background: color-mix(in srgb, hsl(var(--hue) 70% 55%) 20%, var(--surface));
+  box-shadow: 0 0 0 2px hsl(var(--hue) 65% 55%);
+}
+
+.mm-node.is-new {
+  animation: mm-appear 0.35s ease-out both;
+}
+
+@keyframes mm-appear {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+
+.mm__inspector {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid hsl(var(--hue) 65% 55%);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  animation: mm-appear 0.2s ease-out both;
+}
+
+.mm__inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mm__inspector-head .mm__icon-btn {
+  margin-inline-start: auto;
+  inline-size: 26px;
+  block-size: 26px;
+}
+
+.mm__chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, hsl(var(--hue) 70% 55%) 18%, var(--surface));
+  color: hsl(var(--hue) 55% 38%);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.mm__inspector h4 {
+  margin: 6px 0 4px;
+  font-size: 0.92rem;
+}
+
+.mm__inspector p {
+  margin: 0 0 8px;
+  font-family: var(--font-study);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.mm__cite {
+  white-space: normal;
+  max-inline-size: 100%;
+}
+
+.mm__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 12px;
+}
+
+.mm__skeleton span {
+  block-size: 14px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--surface-2), color-mix(in srgb, var(--accent) 12%, var(--surface-2)), var(--surface-2));
+  background-size: 200% 100%;
+  animation: mm-shimmer 1.4s linear infinite;
+}
+
+.mm__skeleton span:nth-child(even) {
+  margin-inline-start: 18%;
+}
+
+@keyframes mm-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* Full screen: the section lifts out of the panel over a dimmed page. The
+   huge spread shadow is the backdrop, so no extra element is needed. */
+#mindmap.is-expanded {
+  position: fixed;
+  inset: 4vh 4vw;
+  z-index: 60;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45), 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+#mindmap.is-expanded .mindmap {
+  flex: 1;
+  min-block-size: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-node.is-new,
+  .mm__inspector,
+  .mm__skeleton span {
+    animation: none;
+  }
+
+  .mm__canvas {
+    transition: none;
+  }
 }

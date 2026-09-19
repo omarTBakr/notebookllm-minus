@@ -11,7 +11,7 @@
       <button class="studio-card studio-card--audio"  data-soon="Audio Overview"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-audio"/></svg></span><span data-i18n="audioOverview"></span></button>
       <button class="studio-card studio-card--slides" data-soon="Slide Deck"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-slides"/></svg></span><span data-i18n="slideDeck"></span></button>
       <button class="studio-card studio-card--video"  data-soon="Video Overview"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-video"/></svg></span><span data-i18n="videoOverview"></span></button>
-      <button class="studio-card studio-card--mind"   data-soon="Mind Map"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-mindmap"/></svg></span><span data-i18n="mindMap"></span></button>
+      <button class="studio-card studio-card--mind" id="btn-mindmap"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-mindmap"/></svg></span><span data-i18n="mindMap"></span></button>
       <button class="studio-card studio-card--report" data-soon="Reports"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-report"/></svg></span><span data-i18n="reports"></span></button>
       <button class="studio-card studio-card--cards" id="btn-flashcards"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-cards"/></svg></span><span data-i18n="flashcards"></span></button>
       <button class="studio-card studio-card--quiz" id="btn-quiz"><span class="studio-card__icon"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-quiz"/></svg></span><span data-i18n="quiz"></span></button>
@@ -25,8 +25,8 @@
       <p class="empty__body" data-i18n="studioEmptyBody"></p>
     </div>
 
-    {# Built, unlike the tiles above. Hidden until asked for; both fill while
-       being read, so neither waits for the whole notebook. Opening one takes
+    {# Built, unlike the tiles above. Hidden until asked for; each fills while
+       being read, so none waits for the whole notebook. Opening one takes
        over the whole panel -- the grid is hidden, not scrolled past -- and the
        back button in its header is the way out. #}
     <section class="artifact" id="flashcards" hidden>
@@ -77,6 +77,22 @@
 
     {# The note editor takes the empty state's place rather than sitting beside
        it: the panel is one column and both want the same room. #}
+    <section class="artifact" id="mindmap" hidden>
+      <header class="artifact__head">
+        <button class="artifact__back" id="mindmap-close"><svg class="ico" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-back"/></svg><span data-i18n="backToStudio"></span></button>
+        <h3 data-i18n="mindMap"></h3>
+        <span class="artifact__count" id="mindmap-count"></span>
+      </header>
+
+      <p class="artifact__status" id="mindmap-status" hidden></p>
+
+      <div class="mindmap" id="mindmap-body"></div>
+
+      <div class="artifact__actions artifact__actions--minor">
+        <button class="btn btn--ghost" id="mindmap-again" data-i18n="regenerate"></button>
+      </div>
+    </section>
+
     <div class="note" id="note-editor" hidden>
       <input class="note__title" id="note-title" type="text" data-i18n-placeholder="noteTitle" autocomplete="off">
       <textarea class="note__body" id="note-body" data-i18n-placeholder="notePlaceholder" spellcheck="false"></textarea>

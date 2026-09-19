@@ -62,3 +62,93 @@ export function clampIndex(index, length) {
 
 /** The label under a card, given whether it is showing its answer. */
 export const cardSide = (flipped) => (flipped ? "back" : "front");
+
+/** A mind map's items as branches, in the order the server gave them.
+ *
+ * Items carry `branch` once the outline pass has run. Until then — the map is
+ * still generating — they have none, and come back as one branch titled "" so
+ * the panel can draw them straight under the root rather than hiding them.
+ */
+export function mindMapBranches(items) {
+  const branches = [];
+  const at = new Map();
+
+  for (const item of items ?? []) {
+    if (!item) continue;
+
+    const title = item.branch ?? "";
+
+    if (!at.has(title)) {
+      at.set(title, branches.length);
+      branches.push({ title, nodes: [] });
+    }
+
+    branches[at.get(title)].nodes.push(item);
+  }
+
+  return branches;
+}
+
+/** Where every node of a mind map goes, given how big each one turned out.
+ *
+ * Left to right: the root, then a column of branches, then a column of topics.
+ * Each branch sits level with the middle of its own topics, and the root level
+ * with the middle of everything. A branch with no title (topics not grouped
+ * yet) takes no room of its own: its topics hang straight off the root. A
+ * collapsed branch keeps its place and drops its topics.
+ *
+ * Sizes are measured by the caller, so this is arithmetic only — which is what
+ * lets it be tested without a browser. Mirroring for right-to-left is left to
+ * the caller too: it is one subtraction per x, at draw time.
+ */
+export function layoutMindMap(tree, { gapX = 56, gapY = 10, branchGap = 22 } = {}) {
+  const branches = tree?.branches ?? [];
+  const root = tree?.root ?? { w: 0, h: 0 };
+
+  const branchX = root.w + gapX;
+  const branchColumn = Math.max(0, ...branches.map((b) => b.w || 0));
+  const topicX = branchX + (branchColumn ? branchColumn + gapX : 0);
+
+  const placed = [];
+  let y = 0;
+
+  for (const branch of branches) {
+    const shown = branch.collapsed ? [] : branch.topics ?? [];
+    const stack = shown.reduce((sum, t) => sum + t.h, 0) + gapY * Math.max(0, shown.length - 1);
+    const block = Math.max(branch.h || 0, stack);
+
+    let at = y + (block - stack) / 2;
+    const topics = shown.map((t) => {
+      const box = { x: topicX, y: at, w: t.w, h: t.h };
+      at += t.h + gapY;
+      return box;
+    });
+
+    placed.push({ x: branchX, y: y + (block - (branch.h || 0)) / 2, w: branch.w || 0, h: branch.h || 0, topics });
+    y += block + branchGap;
+  }
+
+  const height = Math.max(root.h, placed.length ? y - branchGap : 0);
+  const width = Math.max(
+    root.w,
+    ...placed.flatMap((b) => [b.x + b.w, ...b.topics.map((t) => t.x + t.w)]),
+  );
+
+  return {
+    root: { x: 0, y: (height - root.h) / 2, w: root.w, h: root.h },
+    branches: placed,
+    width,
+    height,
+  };
+}
+
+/** A curved link from the end of one box to the start of the next. */
+export function linkPath(from, to) {
+  const x1 = from.x + from.w;
+  const y1 = from.y + from.h / 2;
+  const x2 = to.x;
+  const y2 = to.y + to.h / 2;
+  const mid = (x1 + x2) / 2;
+
+  return `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
+}

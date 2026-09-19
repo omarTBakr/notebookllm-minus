@@ -80,6 +80,17 @@ class MongoArtifactRepository(ArtifactRepository, BaseModel):
         except PyMongoError as exc:
             raise DbError(f"Failed to append artifact items: {exc}") from exc
 
+    async def replace_items(self, artifact_id: str, items: list[dict]) -> int:
+        try:
+            await self.collection.update_one(
+                {"artifact_id": artifact_id},
+                {"$set": {"items": items, "updated_at": utcnow()}},
+            )
+
+            return len(items)
+        except PyMongoError as exc:
+            raise DbError(f"Failed to replace artifact items: {exc}") from exc
+
     async def finish_artifact(self, artifact_id: str, status: str, error: str = "") -> None:
         try:
             await self.collection.update_one(

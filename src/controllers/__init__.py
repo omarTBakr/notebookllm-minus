@@ -4,6 +4,7 @@ from .DataController import DataController
 from .FileController import FileController
 from .FlashcardController import FlashcardController
 from .IdempotencyController import IdempotencyController
+from .MindMapController import MindMapController
 from .ModelController import ModelController, NvidiaModelController, for_source
 from .NLPController import NLPController
 from .ProcessController import ProcessController
@@ -19,6 +20,7 @@ __all__ = [
     "FileController",
     "FlashcardController",
     "IdempotencyController",
+    "MindMapController",
     "ModelController",
     "NvidiaModelController",
     "for_source",

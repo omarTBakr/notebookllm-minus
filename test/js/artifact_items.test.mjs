@@ -23,7 +23,7 @@ const source = readFileSync(
   "utf8",
 );
 
-const { citable, score, clampIndex } = await import(
+const { citable, score, clampIndex, mindMapBranches, layoutMindMap, linkPath } = await import(
   `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
 
@@ -117,3 +117,94 @@ test("an empty list has no position but does not produce -1", () => {
 function list() {
   return ["a", "b", "c", "d"];
 }
+
+// --- mind map branches -----------------------------------------------------------
+
+test("mind map items group by branch, in the order the branches first appear", () => {
+  const branches = mindMapBranches([
+    { topic: "a", branch: "One" },
+    { topic: "b", branch: "Two" },
+    { topic: "c", branch: "One" },
+  ]);
+
+  assert.deepEqual(
+    branches.map((b) => [b.title, b.nodes.map((n) => n.topic)]),
+    [["One", ["a", "c"]], ["Two", ["b"]]],
+  );
+});
+
+test("items not yet grouped come back as one untitled branch", () => {
+  const branches = mindMapBranches([{ topic: "a" }, { topic: "b" }]);
+
+  assert.equal(branches.length, 1);
+  assert.equal(branches[0].title, "");
+  assert.equal(branches[0].nodes.length, 2);
+});
+
+test("an empty or missing list is no branches", () => {
+  assert.deepEqual(mindMapBranches([]), []);
+  assert.deepEqual(mindMapBranches(undefined), []);
+  assert.deepEqual(mindMapBranches([null]), []);
+});
+
+// --- mind map layout -------------------------------------------------------------
+
+const box = (w, h) => ({ w, h });
+
+test("branches sit level with the middle of their topics, the root with everything", () => {
+  const layout = layoutMindMap(
+    {
+      root: box(100, 30),
+      branches: [
+        { ...box(80, 20), topics: [box(120, 20), box(120, 20)] },
+        { ...box(80, 20), topics: [box(120, 20)] },
+      ],
+    },
+    { gapX: 50, gapY: 10, branchGap: 20 },
+  );
+
+  // Branch one's topics span 0..50, so the branch is centred at 25.
+  assert.equal(layout.branches[0].y + 10, 25);
+  // Branch two starts after 50 + 20, one topic of 20: centred at 80.
+  assert.equal(layout.branches[1].y + 10, 80);
+  assert.equal(layout.height, 90);
+  assert.equal(layout.root.y, (90 - 30) / 2);
+
+  // Columns: root 0..100, branches from 150, topics from 150 + 80 + 50.
+  assert.equal(layout.branches[0].x, 150);
+  assert.equal(layout.branches[0].topics[0].x, 280);
+  assert.equal(layout.width, 400);
+});
+
+test("a collapsed branch keeps its place and drops its topics", () => {
+  const layout = layoutMindMap({
+    root: box(100, 30),
+    branches: [{ ...box(80, 20), collapsed: true, topics: [box(120, 20), box(120, 20)] }],
+  });
+
+  assert.equal(layout.branches[0].topics.length, 0);
+  assert.equal(layout.height, 30, "only the root is left to size the map");
+});
+
+test("ungrouped topics hang off the root, in the branch column", () => {
+  const layout = layoutMindMap(
+    { root: box(100, 30), branches: [{ w: 0, h: 0, topics: [box(120, 20)] }] },
+    { gapX: 50 },
+  );
+
+  assert.equal(layout.branches[0].topics[0].x, 150);
+});
+
+test("an empty map is just the root", () => {
+  const layout = layoutMindMap({ root: box(100, 30), branches: [] });
+
+  assert.equal(layout.width, 100);
+  assert.equal(layout.height, 30);
+});
+
+test("a link runs from the end of one box to the start of the next", () => {
+  assert.equal(
+    linkPath({ x: 0, y: 0, w: 10, h: 10 }, { x: 30, y: 20, w: 5, h: 10 }),
+    "M 10 5 C 20 5, 20 25, 30 25",
+  );
+});

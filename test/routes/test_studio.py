@@ -136,10 +136,10 @@ async def test_flashcards_and_quiz_are_separate_runs(client, indexed, queued):
 
 
 async def test_an_unbuilt_studio_tile_cannot_be_started_by_url(client, seed, queued):
-    """The Studio panel shows nine tiles and two have generators. ArtifactKind
+    """The Studio panel shows nine tiles and three have generators. ArtifactKind
     holds only what can actually run, so guessing a name in a URL is a 400
     naming the alternatives rather than a queued task nothing will consume."""
-    response = await client.post("/chat/chats/c1/studio/mindmap")
+    response = await client.post("/chat/chats/c1/studio/report")
 
     assert response.status_code == 400
     assert "flashcards" in response.json()["detail"]

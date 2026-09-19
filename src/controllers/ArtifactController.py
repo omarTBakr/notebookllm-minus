@@ -79,6 +79,15 @@ class ArtifactController:
 
         return self._make_citable(items, dict(numbered), len(batch))
 
+    async def finalize(self, client, parser, items: list[dict]) -> list[dict] | None:
+        """A last pass over the finished set; None keeps the items as they are.
+
+        Most kinds are complete once every batch is in. One that needs to see
+        the whole set at once -- a mind map choosing its branches -- returns
+        the replacement items here.
+        """
+        return None
+
     def _make_citable(self, items: list[dict], by_number: dict, batch_size: int) -> list[dict]:
         """Attach the real chunk and asset, dropping what cannot be placed."""
         citable = []

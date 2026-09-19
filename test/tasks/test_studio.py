@@ -444,6 +444,97 @@ async def test_a_question_offering_the_same_option_twice_is_not_stored(
         ), f"stored a question with a repeated option: {item['options']}"
 
 
+
+class MindMapClient(FakeClient):
+    """FakeClient, plus the two mind-map calls.
+
+    Topics come back two per batch like cards do. The outline puts odd-numbered
+    topics on one branch and even ones on another, unless `outline_fails`, in
+    which case it answers with something that is never valid JSON.
+    """
+
+    def __init__(self, outline_fails=False, **kwargs):
+        super().__init__(**kwargs)
+        self.outline_fails = outline_fails
+        self.outline_calls = 0
+
+    async def generate_text(self, prompt, max_tokens=None, temperature=None, **_):
+        if "list of topics" in prompt:
+            self.outline_calls += 1
+
+            if self.outline_fails:
+                return "not json"
+
+            numbers = [int(line.split(".")[0]) for line in prompt.splitlines() if line[:1].isdigit()]
+
+            return json.dumps(
+                {
+                    "branches": [
+                        {"title": "Odd", "members": [n for n in numbers if n % 2]},
+                        {"title": "Even", "members": [n for n in numbers if not n % 2] or [1]},
+                    ]
+                }
+            )
+
+        if "mind map" in prompt and "### Summary" in prompt:
+            self.generate_calls += 1
+            orders = [int(line.split()[-1]) for line in prompt.splitlines() if line.startswith("### Summary")]
+
+            return json.dumps(
+                {
+                    "nodes": [
+                        {"topic": f"T{order}", "detail": f"D{order}", "chunk_order": order}
+                        for order in orders[: self.items_per_call]
+                    ]
+                }
+            )
+
+        return await super().generate_text(prompt, max_tokens=max_tokens, temperature=temperature)
+
+
+async def test_a_mind_map_groups_every_topic_into_a_branch(notebook, fake_db):
+    """Topics stream in per batch, then one outline call sees them all and
+    each is stamped with its branch -- none lost, each still citable."""
+    client = await notebook(chunk_count=25, client=MindMapClient())
+
+    await studio._run_generation("c1", ArtifactKind.MIND_MAP.value)
+
+    artifact = await fake_db.artifacts().find_artifact("c1", "mindmap")
+
+    assert artifact.status == ArtifactStatus.COMPLETE.value
+    assert client.outline_calls == 1, "branches are chosen once, over the whole set"
+    assert len(artifact.items) == 8
+    assert {item["branch"] for item in artifact.items} == {"Odd", "Even"}
+    assert all(item["asset_id"] == "a1" for item in artifact.items)
+
+    branches = [item["branch"] for item in artifact.items]
+    assert branches == sorted(branches, key=["Odd", "Even"].index), "items are ordered branch by branch"
+
+
+async def test_a_failed_outline_keeps_the_topics(notebook, fake_db):
+    """An ungrouped map still has every topic and citation; failing the whole
+    run over the grouping would throw that away."""
+    client = await notebook(chunk_count=13, client=MindMapClient(outline_fails=True))
+
+    await studio._run_generation("c1", ArtifactKind.MIND_MAP.value)
+
+    artifact = await fake_db.artifacts().find_artifact("c1", "mindmap")
+
+    assert client.outline_calls >= 1
+    assert artifact.status == ArtifactStatus.COMPLETE.value
+    assert len(artifact.items) == 4
+    assert not any("branch" in item for item in artifact.items)
+
+
+async def test_flashcards_are_not_regrouped(notebook, fake_db):
+    """finalize is a no-op for the kinds that do not need it."""
+    await notebook(chunk_count=10)
+
+    await studio._run_generation("c1", ArtifactKind.FLASHCARDS.value)
+
+    artifact = await fake_db.artifacts().find_artifact("c1", "flashcards")
+    assert not any("branch" in item for item in artifact.items)
+
 async def test_a_question_offered_as_its_own_option_is_not_stored(notebook, fake_db):
     """From a real quiz: "What technical skills does X have experience with?"
     offering "X has experience with which of the following?" as an option —

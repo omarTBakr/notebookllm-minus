@@ -25,7 +25,12 @@ import uuid
 from celery.exceptions import SoftTimeLimitExceeded
 
 from celery_app import SETTINGS, celery_app
-from controllers import FlashcardController, QuizController, generate_structured
+from controllers import (
+    FlashcardController,
+    MindMapController,
+    QuizController,
+    generate_structured,
+)
 from enums import ArtifactKind, ArtifactStatus, TaskStage
 from exceptions import CeleryTaskError, StructuredOutputError
 from factories import DbFactory, ProviderCache
@@ -63,6 +68,7 @@ FIRST_BATCH = 3
 _CONTROLLERS = {
     ArtifactKind.FLASHCARDS: FlashcardController,
     ArtifactKind.QUIZ: QuizController,
+    ArtifactKind.MIND_MAP: MindMapController,
 }
 
 
@@ -106,6 +112,28 @@ async def _summarise(client, parser, batch) -> dict[str, str]:
             summaries[str(chunk.id)] = entry.summary
 
     return summaries
+
+
+async def _finalize(controller, client, parser, artifacts, chat_id: str, kind: ArtifactKind) -> None:
+    """Give the controller its one look at the finished set.
+
+    A failure here keeps the set as the batches left it rather than failing the
+    run: an ungrouped mind map still has every topic and every citation, which
+    is worth more than an error.
+    """
+    current = await artifacts.find_artifact(chat_id, kind.value)
+
+    if current is None or not current.items:
+        return
+
+    try:
+        replacement = await controller.finalize(client, parser, current.items)
+    except StructuredOutputError as exc:
+        logger.warning("Final pass for %s on %r failed; keeping the items as generated: %s", kind.value, chat_id, exc)
+        return
+
+    if replacement is not None:
+        await artifacts.replace_items(current.artifact_id, replacement)
 
 
 async def _run_generation(chat_id: str, kind: str, task_id: str | None = None) -> dict:
@@ -222,6 +250,8 @@ async def _run_generation(chat_id: str, kind: str, task_id: str | None = None) -
         if batch:
             await flush(batch)
 
+        await _finalize(controller, client, parser, artifacts, chat_id, artifact_kind)
+
         await artifacts.finish_artifact(artifact_id, ArtifactStatus.COMPLETE.value)
         await recorder.stage(TaskStage.GENERATING.value, total, total)
 
@@ -277,7 +307,7 @@ async def _run_generation(chat_id: str, kind: str, task_id: str | None = None) -
     queue=SETTINGS.CELERY_QUEUE_STUDIO,
 )
 def generate_artifact_task(self, chat_id: str, kind: str) -> dict:
-    """Generate a flashcard deck or quiz for one notebook."""
+    """Generate a flashcard deck, quiz or mind map for one notebook."""
     try:
         return asyncio.run(_run_generation(chat_id, kind, task_id=self.request.id))
 

@@ -80,9 +80,11 @@ function open() {
 
   // The other one closes: the panel holds one at a time now that either fills
   // it, and leaving both open would stack them.
-  const other = $("quiz");
+  for (const other of ["quiz", "mindmap"]) {
+    const el = $(other);
 
-  if (other) other.hidden = true;
+    if (el) el.hidden = true;
+  }
 
   const empty = $("studio-empty");
 

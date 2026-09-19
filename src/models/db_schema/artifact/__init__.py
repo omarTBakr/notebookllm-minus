@@ -17,6 +17,7 @@ document or to open the page it came from.
 """
 
 from .flashcard import Flashcard, FlashcardSet
+from .mindmap import MindMapBranch, MindMapNode, MindMapNodeSet, MindMapOutline
 from .quiz import QuizQuestion, QuizSet
 from .record import Artifact
 from .summary import ChunkSummary, SummarySet
@@ -26,6 +27,10 @@ __all__ = [
     "ChunkSummary",
     "Flashcard",
     "FlashcardSet",
+    "MindMapBranch",
+    "MindMapNode",
+    "MindMapNodeSet",
+    "MindMapOutline",
     "QuizQuestion",
     "QuizSet",
     "SummarySet",
