@@ -153,7 +153,7 @@ Off by default is the point rather than caution: this costs seconds per page,
 and on a well-produced Arabic PDF the text layer is already correct, so
 enabling it should be a decision about a corpus and not a habit.
 
-The engine ships in the image. `Docker/notebookllm-minus/Dockerfile` installs
+The engine ships in the image. `Docker/services/notebookllm-minus/Dockerfile` installs
 `tesseract-ocr` and `tesseract-ocr-ara` as system packages and downloads
 `ara.traineddata` and `eng.traineddata` from `tessdata_best` into
 `/usr/share/tessdata-best` at build time, so the container starts with no

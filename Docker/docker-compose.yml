@@ -5,8 +5,26 @@
 # lockfile with it — hence `context: ..` and a dockerfile path that starts with
 # Docker/.
 #
-# Secrets come from ./.env (compose substitution, gitignored) and the per-service
-# files under ./env/. Nothing is hardcoded here.
+# Layout: services/<name>/ holds each service's checked-in config (nginx,
+# prometheus, grafana, rabbitmq, redis, the app Dockerfile); env/ holds the
+# per-service environment files.
+#
+# Two kinds of file live in env/, and only one kind reaches the containers:
+#   - env_file: entries below (.env.app, .env.rabbitmq, .env.redis, .env.grafana)
+#     are injected into that container at runtime.
+#   - .env.nginx, .env.mongo and .env.postgres feed the ${...} substitutions in
+#     THIS file. Compose reads those only from --env-file, never from env_file:,
+#     so they must be passed on every command:
+#
+#       docker compose --env-file env/.env.nginx --env-file env/.env.mongo \
+#                      --env-file env/.env.postgres up -d --build
+#
+#     or, once per shell, the shorthand
+#       export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
+#
+# The Postgres variables are required (${VAR:?...}): without them compose would
+# silently substitute empty strings and start a database with a blank password.
+# Nothing else is hardcoded here.
 #
 # Two databases are declared but only one is used at a time: DOCUMENT_DB_BACKEND
 # in src/.env picks between them. pgvector holds documents *and* vectors; mongo
@@ -19,7 +37,7 @@
 x-celery-worker: &celery-worker
   build:
     context: ..
-    dockerfile: Docker/notebookllm-minus/Dockerfile
+    dockerfile: Docker/services/notebookllm-minus/Dockerfile
   image: notebookllm-minus
   restart: unless-stopped
   env_file:
@@ -56,7 +74,7 @@ services:
       # Relative to the context (the repo root), so it must include Docker/.
       # The previous value resolved to <root>/notebookllm-minus/Dockerfile,
       # which does not exist.
-      dockerfile: Docker/notebookllm-minus/Dockerfile
+      dockerfile: Docker/services/notebookllm-minus/Dockerfile
     image: notebookllm-minus
     container_name: fastapi-app
     restart: unless-stopped
@@ -159,7 +177,7 @@ services:
     # duplicated here as a literal.
     build:
       context: ..
-      dockerfile: Docker/notebookllm-minus/Dockerfile
+      dockerfile: Docker/services/notebookllm-minus/Dockerfile
     image: notebookllm-minus
     container_name: flower
     restart: unless-stopped
@@ -203,16 +221,17 @@ services:
     container_name: nginx
     restart: unless-stopped
     ports:
-      # 8080 on the host, not 80: this machine already runs Apache (httpd) on
-      # 80. Inside the container nginx still listens on 80, which is what
-      # nginx.conf and the other services expect.
-      - "8080:80"
+      # Host port from NGINX_PORT in env/.env.nginx; 8080 if unset, not 80,
+      # because this machine already runs Apache (httpd) on 80. Inside the
+      # container nginx still listens on 80, which is what nginx.conf and the
+      # other services expect.
+      - "${NGINX_PORT:-8080}:80"
     volumes:
       # proxy.conf, not nginx.conf: Docker Desktop's file sharing cached the
       # old path as missing after an in-place replace on this external drive,
       # and every container mounting it saw an empty file. A fresh path is the
       # reliable way out; the contents are unchanged.
-      - ./nginx/proxy.conf:/etc/nginx/nginx.conf:ro
+      - ./services/nginx/proxy.conf:/etc/nginx/nginx.conf:ro
     networks:
       - backend
     depends_on:
@@ -228,9 +247,9 @@ services:
     container_name: pgvector-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USERNAME}
-      POSTGRES_PASSWORD: ${POSTGRES_PASS}
-      POSTGRES_DB: ${POSTGRES_MAIN_DB}
+      POSTGRES_USER: ${POSTGRES_USERNAME:?pass --env-file env/.env.postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASS:?pass --env-file env/.env.postgres}
+      POSTGRES_DB: ${POSTGRES_MAIN_DB:?pass --env-file env/.env.postgres}
     ports:
       - "5400:5432"
     volumes:
@@ -302,7 +321,7 @@ services:
       # Durable queue/exchange definitions and messages survive restarts.
       - rabbitmq:/var/lib/rabbitmq
       # Custom broker config: listener ports, memory watermarks, log format.
-      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./services/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     networks:
       - backend
     healthcheck:
@@ -329,7 +348,7 @@ services:
       # Named volume so RDB snapshots / AOF survive container recreation.
       - redis:/data
       # Our redis.conf overrides the image defaults (password, maxmemory…).
-      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./services/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     # Pass the config file explicitly; the image default CMD ignores custom
     # conf files without this override.
     command: redis-server /usr/local/etc/redis/redis.conf
@@ -339,8 +358,9 @@ services:
       # redis-cli PING returns PONG when the server is up and authenticated.
       # $$REDIS_PASSWORD (double $): compose passes this to the container shell
       # as $REDIS_PASSWORD, which is set via env_file: ./env/.env.redis.
-      # Single ${REDIS_PASSWORD} would be substituted by compose from Docker/.env
-      # (where it is not defined) → empty string → WRONGPASS → healthcheck fails.
+      # Single ${REDIS_PASSWORD} would be substituted by compose from its own
+      # --env-file set (which does not include env/.env.redis) → empty string →
+      # WRONGPASS → healthcheck fails.
       test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
@@ -358,7 +378,7 @@ services:
     volumes:
       # Without this mount Prometheus starts with its built-in defaults and
       # scrapes nothing — which is what the previous file did.
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./services/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus:/prometheus
     networks:
       - backend
@@ -386,8 +406,8 @@ services:
       # Provisioned at startup: the Prometheus data source and the dashboard,
       # so neither has to be added by hand. The dashboards directory is watched,
       # so editing the JSON on disk updates Grafana without a restart.
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./services/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./services/grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - backend
     depends_on:
