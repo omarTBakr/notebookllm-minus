@@ -12,7 +12,7 @@ import pytest
 
 from enums import ArtifactKind, ArtifactStatus
 from models.db_schema import DataChunk
-from tasks import studio
+from tasks import runtime, studio
 
 
 class FakeClient:
@@ -129,8 +129,10 @@ def notebook(fake_db, monkeypatch):
             async def aclose_all(self):
                 pass
 
-        monkeypatch.setattr(studio, "DbFactory", lambda _s: _Factory(fake_db))
-        monkeypatch.setattr(studio, "ProviderCache", lambda _s: FakeProviders())
+        # Patched on tasks.runtime, not on the job: `job_resources` is what
+        # builds both, and the job only reads what it is handed.
+        monkeypatch.setattr(runtime, "DbFactory", lambda _s: _Factory(fake_db))
+        monkeypatch.setattr(runtime, "ProviderCache", lambda _s: FakeProviders())
 
         return the_client
 

@@ -1,16 +1,14 @@
 import asyncio
 
-from celery.exceptions import SoftTimeLimitExceeded
-
 from celery_app import SETTINGS, celery_app
 from controllers import NLPController
 from enums import TaskStage
-from exceptions import CeleryTaskError, ChatNotFoundError
-from factories import DbFactory, ProviderCache
+from exceptions import ChatNotFoundError
 from models import ChatModel, ChunkModel, ProjectModel
 from utils import get_logger
 
 from .recorder import TaskRecorder, downstream_ids
+from .runtime import job_resources, run_job
 from .status import task_status
 
 logger = get_logger(__name__)
@@ -41,14 +39,12 @@ async def _run_index_task(
     task_id: str | None = None,
     downstream: list[str] | None = None,
 ) -> dict:
-    settings = SETTINGS
-    db = DbFactory(settings).create()
-    providers = None
-    try:
-        await db.connect()
+    async with job_resources(providers=True) as job:
+        db, providers = job.db, job.providers
+
         recorder = TaskRecorder(db, task_id)
         await recorder.started()
-        providers = ProviderCache(settings)
+
         project = await ProjectModel(db).get_project(project_id)
         chat = None
         try:
@@ -100,12 +96,6 @@ async def _run_index_task(
         await recorder.succeeded(result)
 
         return result
-    finally:
-        try:
-            if providers is not None:
-                await providers.aclose_all()
-        finally:
-            await db.disconnect()
 
 
 @celery_app.task(
@@ -127,41 +117,25 @@ def index_project_task(
     batch_size: int | None = None,
 ) -> dict:
     """Embed and index chunks without consuming an API process slot."""
-    try:
-        return asyncio.run(
-            _run_index_task(
-                project_id,
-                asset_id,
-                reset,
-                batch_size,
-                task_id=self.request.id,
-                downstream=downstream_ids(self.request),
-            )
-        )
-
-    except SoftTimeLimitExceeded as exc:
-        # The nested finally in _run_index_task closes the provider pools and
-        # then the DB. A hard kill skipped both, leaking an HTTP connection
-        # pool per timed-out index run.
-        logger.error(
-            "index_project_task for project %r exceeded its soft time limit of %ss",
+    return run_job(
+        lambda: _run_index_task(
             project_id,
-            SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT,
-        )
-        raise CeleryTaskError(
-            f"Indexing {project_id!r} exceeded " f"{SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT}s and was stopped"
-        ) from exc
+            asset_id,
+            reset,
+            batch_size,
+            task_id=self.request.id,
+            downstream=downstream_ids(self.request),
+        ),
+        what=f"Indexing {project_id!r}",
+    )
 
 
 async def _run_build_index_task(project_id: str, task_id: str | None = None) -> dict:
-    settings = SETTINGS
-    db = DbFactory(settings).create()
-    providers = None
-    try:
-        await db.connect()
+    async with job_resources(providers=True) as job:
+        db, providers = job.db, job.providers
+
         recorder = TaskRecorder(db, task_id)
         await recorder.started()
-        providers = ProviderCache(settings)
 
         # The whole reason this needs a provider at all: the index has to be
         # built at the width the *chat's* embedding model produces, which is
@@ -194,12 +168,6 @@ async def _run_build_index_task(project_id: str, task_id: str | None = None) -> 
         await recorder.succeeded(result)
 
         return result
-    finally:
-        try:
-            if providers is not None:
-                await providers.aclose_all()
-        finally:
-            await db.disconnect()
 
 
 @celery_app.task(
@@ -219,19 +187,10 @@ def build_vector_index_task(self, project_id: str) -> dict:
     task_executions row, and fails as itself: a build that timed out used to be
     reported as an indexing failure with every vector already written.
     """
-    try:
-        return asyncio.run(_run_build_index_task(project_id, task_id=self.request.id))
-
-    except SoftTimeLimitExceeded as exc:
-        logger.error(
-            "build_vector_index_task for project %r exceeded its soft time limit of %ss",
-            project_id,
-            SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT,
-        )
-        raise CeleryTaskError(
-            f"Building the vector index for {project_id!r} exceeded "
-            f"{SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT}s and was stopped"
-        ) from exc
+    return run_job(
+        lambda: _run_build_index_task(project_id, task_id=self.request.id),
+        what=f"Building the vector index for {project_id!r}",
+    )
 
 
 def get_index_task(task_id: str) -> dict:

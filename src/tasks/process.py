@@ -1,15 +1,11 @@
-import asyncio
 from types import SimpleNamespace
 
-from celery.exceptions import SoftTimeLimitExceeded
-
 from celery_app import SETTINGS, celery_app
-from exceptions import CeleryTaskError
-from factories import DbFactory
-from utils import get_logger, get_settings
+from utils import get_logger
 
 from .process_service import process_data
 from .recorder import TaskRecorder, downstream_ids
+from .runtime import job_resources, run_job
 from .status import task_status
 
 logger = get_logger(__name__)
@@ -21,18 +17,15 @@ async def _run_process_task(
     task_id: str | None = None,
     downstream: list[str] | None = None,
 ) -> dict:
-    settings = get_settings()
-    db = DbFactory(settings).create()
-    try:
-        await db.connect()
+    async with job_resources() as job:
         # No task_id (a direct call, or a test) means no row to update, and
         # every recorder method becomes a no-op.
-        recorder = TaskRecorder(db, task_id, counts_ingest=True)
+        recorder = TaskRecorder(job.db, task_id, counts_ingest=True)
         await recorder.started()
 
         try:
             request = SimpleNamespace(**request_data)
-            result = await process_data(project_id, request, db, recorder=recorder)
+            result = await process_data(project_id, request, job.db, recorder=recorder)
 
         except BaseException as exc:
             # BaseException, not Exception: SoftTimeLimitExceeded inherits
@@ -48,8 +41,6 @@ async def _run_process_task(
         await recorder.succeeded(result)
 
         return result
-    finally:
-        await db.disconnect()
 
 
 @celery_app.task(
@@ -61,30 +52,15 @@ async def _run_process_task(
 )
 def process_data_task(self, project_id: str, request_data: dict) -> dict:
     """Run document ingestion in a Celery worker process."""
-    try:
-        return asyncio.run(
-            _run_process_task(
-                project_id,
-                request_data,
-                task_id=self.request.id,
-                downstream=downstream_ids(self.request),
-            )
-        )
-
-    except SoftTimeLimitExceeded as exc:
-        # Reached only because task_soft_time_limit fires *inside* the task:
-        # `asyncio.run` unwinds, `_run_process_task`'s finally disconnects the
-        # DB, and only then does this run. Under the hard limit alone the
-        # child is killed here and none of that happens.
-        logger.error(
-            "process_data_task for project %r exceeded its soft time limit of %ss",
+    return run_job(
+        lambda: _run_process_task(
             project_id,
-            SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT,
-        )
-        raise CeleryTaskError(
-            f"Document processing for {project_id!r} exceeded "
-            f"{SETTINGS.CELERY_TASK_SOFT_TIME_LIMIT}s and was stopped"
-        ) from exc
+            request_data,
+            task_id=self.request.id,
+            downstream=downstream_ids(self.request),
+        ),
+        what=f"Document processing for {project_id!r}",
+    )
 
 
 def get_process_task(task_id: str) -> dict:

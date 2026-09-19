@@ -211,3 +211,26 @@ def test_every_declared_queue_has_a_worker():
 
     assert declared, "no queues declared, so this test checks nothing"
     assert declared <= _compose_queues(), f"declared with no worker: {sorted(declared - _compose_queues())}"
+
+
+def test_every_job_module_is_registered():
+    """A job module missing from celery_app's `include` never registers its
+    tasks. The worker then rejects them as unknown, or — worse — the queue they
+    were routed to simply accepts messages nothing consumes, with no error
+    anywhere. Read from the source rather than by importing: a module that is
+    *not* registered is exactly the one nothing has imported."""
+    from celery_app import celery_app
+
+    tasks_dir = Path(__file__).resolve().parents[2] / "src" / "tasks"
+    registered = set(celery_app.conf.include)
+
+    defines_a_task = {
+        f"tasks.{path.relative_to(tasks_dir).with_suffix('').as_posix().replace('/', '.')}"
+        for path in tasks_dir.rglob("*.py")
+        # A package __init__ re-exports tasks but defines none; the decorator
+        # appears there only in prose.
+        if path.name != "__init__.py" and "@celery_app.task" in path.read_text()
+    }
+
+    assert defines_a_task, "no job modules found, so this test checks nothing"
+    assert defines_a_task <= registered, f"not in celery_app include: {sorted(defines_a_task - registered)}"

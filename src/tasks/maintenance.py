@@ -19,19 +19,17 @@ from datetime import datetime, timedelta, timezone
 
 from celery_app import SETTINGS, celery_app
 from enums import TaskExecutionStatus
-from factories import DbFactory
 from models import TaskModel
 from utils import get_logger
+
+from .runtime import job_resources
 
 logger = get_logger(__name__)
 
 
 async def _run_sweep() -> dict:
-    db = DbFactory(SETTINGS).create()
-
-    try:
-        await db.connect()
-        tasks = TaskModel(db)
+    async with job_resources() as job:
+        tasks = TaskModel(job.db)
 
         now = datetime.now(timezone.utc)
 
@@ -67,9 +65,6 @@ async def _run_sweep() -> dict:
             "deleted": deleted,
             "retention_days": SETTINGS.CELERY_TASK_RETENTION_DAYS,
         }
-
-    finally:
-        await db.disconnect()
 
 
 @celery_app.task(

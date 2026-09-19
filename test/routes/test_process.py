@@ -224,8 +224,12 @@ async def test_process_task_disconnects_database_after_processing(monkeypatch):
         calls.append((project_id, request.asset_id, request.reset))
         return {"status": "ok"}
 
-    monkeypatch.setattr(process_tasks, "get_settings", lambda: "settings")
-    monkeypatch.setattr(process_tasks, "DbFactory", FakeFactory)
+    # DbFactory on tasks.runtime: `job_resources` is what opens the connection
+    # now, and this test is about what the planner does with the one it is given.
+    import tasks.runtime as runtime
+
+    monkeypatch.setattr(runtime, "get_settings", lambda: "settings")
+    monkeypatch.setattr(runtime, "DbFactory", FakeFactory)
     monkeypatch.setattr(process_tasks, "process_data", fake_process)
 
     result = await process_tasks._run_process_task(
