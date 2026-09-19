@@ -38,6 +38,7 @@ import {
   saveAnswer as saveAnswerToSources,
 } from "./sources.js";
 import { bindFlashcards, repaintFlashcards } from "./flashcards.js";
+import { bindMindMap, repaintMindMap } from "./mindmap.js";
 import { bindQuiz, repaintQuiz } from "./quiz.js";
 import { bindStudio, repaint as repaintStudio } from "./studio.js";
 import { bindTheme } from "./theme.js";
@@ -88,12 +89,13 @@ async function openNotebook(chatId) {
   paintMeta();
   showFor(state.notebook);
 
-  // Not awaited: an existing deck or quiz appears when it appears, and a
+  // Not awaited: an existing deck, quiz or map appears when it appears, and a
   // notebook that has never generated one answers exists:false anyway. Making
   // the notebook wait on two more round trips to show nothing would be a poor
   // trade.
   repaintFlashcards();
   repaintQuiz();
+  repaintMindMap();
 
   $("question").disabled = false;
   $("btn-send").disabled = false;
@@ -212,6 +214,7 @@ async function main() {
   bindStudio();
   bindFlashcards();
   bindQuiz();
+  bindMindMap();
   bindAutoCopy();
   bindTranscript();
 

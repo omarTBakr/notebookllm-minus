@@ -352,6 +352,16 @@ class FakeArtifactRepository:
 
         return len(artifact.items)
 
+    async def replace_items(self, artifact_id, items):
+        artifact = self.items.get(artifact_id)
+
+        if artifact is None:
+            return 0
+
+        artifact.items = list(items)
+
+        return len(artifact.items)
+
     async def finish_artifact(self, artifact_id, status, error=""):
         artifact = self.items.get(artifact_id)
 

@@ -147,3 +147,60 @@ summary_prompt = "\n".join(
         "{content}",
     ]
 )
+
+
+# --- step two, mind map: lines become topics -----------------------------------
+
+mindmap_prompt = "\n".join(
+    [
+        "Below are numbered summaries of passages from one document.",
+        "",
+        "Pick out the main topics these passages cover, for a mind map of the",
+        "document. A topic is a short noun phrase of two to six words -- a",
+        "concept, person, event, method or argument -- not a sentence.",
+        "",
+        "For each topic give:",
+        "- topic: the short name that goes on the map.",
+        "- detail: one sentence saying what the passage says about it.",
+        "- chunk_order: the number of the summary it came from. This is how a",
+        "  node is traced back to its page; a wrong number is worse than none.",
+        "",
+        "Rules:",
+        "- Skip summaries that say the passage is a heading, a contents page or",
+        "  otherwise has no content.",
+        "- One topic per idea. Do not list the same idea twice under different",
+        "  wording.",
+        "- Do not invent anything that is not in the summaries.",
+        "- Write in English, whatever language the summaries are in.",
+        "",
+        "Write at most {count} topics.",
+        "",
+        "{summaries}",
+    ]
+)
+
+# Every topic the batches produced, shown at once so the branches can be chosen
+# for the whole document rather than batch by batch.
+mindmap_outline_prompt = "\n".join(
+    [
+        "Below is a numbered list of topics taken from one document.",
+        "",
+        "Group them into the main branches of a mind map of that document.",
+        "",
+        "Rules:",
+        "- Use between 3 and 8 branches. Each title is a short phrase of one to",
+        "  four words naming what its topics have in common.",
+        "- Put every topic in exactly one branch, by its number.",
+        "- Branch titles must all be different.",
+        "- Order the branches the way a reader would meet them in the document.",
+        "- Write the titles in English.",
+        "",
+        "{topics}",
+    ]
+)
+
+# One line inside the outline prompt above.
+mindmap_topic_prompt = "{num}. {topic}"
+
+# The branch for topics the outline left out. Plain text, not a prompt.
+mindmap_other_branch = "Other"

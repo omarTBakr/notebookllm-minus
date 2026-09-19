@@ -41,6 +41,15 @@ class ArtifactRepository(ABC):
         """
 
     @abstractmethod
+    async def replace_items(self, artifact_id: str, items: list[dict]) -> int:
+        """Overwrite a set's items, returning how many it now holds.
+
+        For a final pass that rewrites the whole set once every batch is in --
+        a mind map stamping each topic with its branch. Never while batches are
+        still appending: that is what append_items is for.
+        """
+
+    @abstractmethod
     async def finish_artifact(self, artifact_id: str, status: str, error: str = "") -> None:
         """Mark a set complete or failed.
 

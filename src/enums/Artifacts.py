@@ -15,13 +15,14 @@ class ArtifactKind(StrEnum):
     keyed by, so these strings are part of the API and cannot be renamed
     casually.
 
-    Only the two that are built. The Studio panel shows nine tiles, but a
+    Only the ones that are built. The Studio panel shows nine tiles, but a
     member here means "there is a generator behind this", and adding one before
     that is true would let a route accept a kind nothing can produce.
     """
 
     FLASHCARDS = "flashcards"
     QUIZ = "quiz"
+    MIND_MAP = "mindmap"
 
 
 class ArtifactStatus(StrEnum):

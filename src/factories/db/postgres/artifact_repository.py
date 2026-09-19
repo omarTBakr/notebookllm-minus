@@ -94,6 +94,19 @@ class PostgresArtifactRepository(PostgresBaseRepository, ArtifactRepository):
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to count artifact items: {exc}") from exc
 
+    async def replace_items(self, artifact_id: str, items: list[dict]) -> int:
+        statement = (
+            update(ArtifactRow).where(ArtifactRow.artifact_id == artifact_id).values(items=items, updated_at=func.now())
+        )
+
+        try:
+            async with self.session_factory.begin() as db:
+                await db.execute(statement)
+
+            return len(items)
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to replace artifact items: {exc}") from exc
+
     async def finish_artifact(self, artifact_id: str, status: str, error: str = "") -> None:
         statement = (
             update(ArtifactRow)
