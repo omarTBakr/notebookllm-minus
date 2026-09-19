@@ -1,9 +1,10 @@
 # Test, then restart the systemd unit on the main box.
 #
-# The unit (notebookllm-minus.service) runs `docker compose up -d --build` in
-# the checkout on that machine, so a restart is only a deployment if the
-# checkout has moved first — hence the `git pull` below. Drop that line and
-# this becomes a pure "bounce the service" button.
+# The unit (notebookllm-minus.service) runs `docker compose --env-file
+# env/.env.nginx --env-file env/.env.mongo --env-file env/.env.postgres up -d
+# --build` in Docker/ in the checkout on that machine, so a restart is only a
+# deployment if the checkout has moved first — hence the `git pull` below. Drop
+# that line and this becomes a pure "bounce the service" button.
 #
 # Secrets used (repository settings -> Secrets and variables -> Actions):
 #   SSH_MAIN_HOST_IP       the box's public IP
@@ -111,6 +112,11 @@ jobs:
               "$REMOTE_USER@$HOST" \
               "REMOTE_DIR='$REMOTE_DIR' SERVICE='$SERVICE' bash -euo pipefail -s" <<'REMOTE'
             cd "$REMOTE_DIR"
+            # docker-compose.yml substitutes ${POSTGRES_*} and ${NGINX_PORT} from
+            # these, and refuses to run without them, so every `docker compose`
+            # below (even a read-only `ps`) needs them. Same list the systemd
+            # unit passes to `up`.
+            export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
 
             # --ff-only: refuse to merge. A box that has drifted should stop
             # the deploy and be looked at, not have a merge commit invented

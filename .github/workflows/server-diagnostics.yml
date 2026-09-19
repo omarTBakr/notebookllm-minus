@@ -39,6 +39,11 @@ jobs:
           ssh -i "$KEY_FILE" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               "$REMOTE_USER@$HOST" "REMOTE_DIR='$REMOTE_DIR' bash -euo pipefail -s" <<'REMOTE'
             cd "$REMOTE_DIR/Docker"
+            # docker-compose.yml substitutes ${POSTGRES_*} and ${NGINX_PORT} from
+            # these, and refuses to run without them, so every `docker compose`
+            # below (even a read-only `ps`) needs them. Same list the systemd
+            # unit passes to `up`.
+            export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
 
             # Everything below redirects stdin from /dev/null. The remote
             # script IS stdin (ssh ... bash -s <<'REMOTE'), and `docker compose

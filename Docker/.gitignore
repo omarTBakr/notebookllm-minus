@@ -1,6 +1,1 @@
-# This repo mirrors the working machine — Docker/.env and everything under
-# Docker/env/ ARE tracked here on purpose (see the root .gitignore for why).
-# Do not re-add `.env` or `env` below: an ignore rule on a tracked path only
-# makes `git add` silently refuse new files under it, which is exactly what
-# blocked rabbitmq's and redis's real .env files until this was fixed.
 mongodb

@@ -66,10 +66,16 @@ flowchart TD
 
 ```bash
 cd Docker
-cp .env.example .env            # database credentials
-cp -r env.example env           # per-service env files
+cp -r env.example env           # per-service env files; fill in the REPLACE_ME values
+cp -r services.example services # per-service config; set requirepass in services/redis/redis.conf
+export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
 docker compose up -d --build    # postgres profile: app, pgvector, nginx, prometheus, grafana
 ```
+
+Three of the env files (`.env.nginx`, `.env.mongo`, `.env.postgres`) are read by compose itself
+for `${...}` substitution, which it only does through `--env-file` — hence the `export`, which
+is the shorthand for repeating `--env-file` on every command. Without them compose refuses to
+start and says which one it wanted. `Docker/README.md` has the full layout.
 
 Then configure the app itself and run it:
 
@@ -656,8 +662,21 @@ sudoers matches a command as written, so the path and arguments must match the i
 character for character — `sudo -n -l` over ssh lists what is actually permitted.
 
 The unit itself is `Type=oneshot` with `RemainAfterExit=yes`, running `docker compose up -d
---build` in the checkout. The restart *is* the deployment only because the checkout moved
-first; that is why the workflow pulls before restarting.
+--build` in `Docker/` in the checkout. The restart *is* the deployment only because the checkout
+moved first; that is why the workflow pulls before restarting.
+
+The unit has to pass the compose-substitution env files, or compose refuses to start (by
+design — the alternative was a database with an empty password). In its existing
+`docker compose ... up -d --build` line, add the flags after `compose`:
+
+```
+docker compose --env-file env/.env.nginx --env-file env/.env.mongo --env-file env/.env.postgres up -d --build
+```
+
+or, equivalently, `Environment=COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres`
+on the unit; follow either with `systemctl daemon-reload`. The unit itself is not in the repo,
+so this is a one-time manual edit on the server. Until it is made, a deploy fails loudly and
+leaves the running containers untouched.
 
 ## Observability
 
@@ -706,7 +725,7 @@ Linux — without it the node job sits down with a DNS error while every other t
 15s scrape would fire one four times a minute forever. Liveness comes from the app's job
 being up at all.
 
-Grafana provisions its dashboards by scanning `Docker/grafana/dashboards/`, so a new `*.json`
+Grafana provisions its dashboards by scanning `Docker/services/grafana/dashboards/`, so a new `*.json`
 there is picked up without being listed anywhere: FastAPI observability, PostgreSQL, host, and
 RabbitMQ broker/queue health.
 

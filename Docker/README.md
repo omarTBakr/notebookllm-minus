@@ -19,18 +19,27 @@ driven from `docker-compose.yml`; run every command from **this directory**.
 ```bash
 cd Docker
 
-cp .env.example .env           # the five values compose substitutes
-cp -r env.example env          # then fill in env/.env.app — see Configuration
+cp -r env.example env                     # then fill in every file — see Configuration
+cp -r services.example services           # then set requirepass in services/redis/redis.conf
 
-docker compose config          # parses and resolves; fastest way to catch a typo
+# Three of the env files feed ${...} substitution inside docker-compose.yml, and
+# compose reads those only from --env-file. Set them once per shell:
+export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
+
+docker compose config                     # parses and resolves; fastest way to catch a typo
 docker compose up -d --build
 ```
+
+Without `COMPOSE_ENV_FILES` (or the equivalent `--env-file env/.env.nginx --env-file
+env/.env.mongo --env-file env/.env.postgres` on every command) compose refuses to run and says
+which variable it wanted — deliberately, since the alternative was a database started with an
+empty password. This needs Docker Compose ≥ 2.24 (`docker compose version`).
 
 Then:
 
 | | |
 | --- | --- |
-| the app | http://localhost — through nginx |
+| the app | http://localhost:8080 — through nginx (`NGINX_PORT` in `env/.env.nginx`) |
 | the app, direct | http://localhost:8000 — bypasses nginx |
 | Grafana | http://localhost:3000 — `admin` / `admin` on first boot |
 | Prometheus | http://localhost:9090 — check `/targets` first |
@@ -43,23 +52,26 @@ Then:
 Docker/
 ├── docker-compose.yml            the whole stack
 ├── docker-composeV1.yml          the earlier mongo-only version, kept for reference
-├── .env                          values compose substitutes into docker-compose.yml
-├── .env.example                  template for the above
-├── env/                          per-service environment, mounted into containers
-│   ├── .env.app                  the application's own configuration
-│   ├── .env.grafana
-│   ├── .env.postgres-exporter
-│   ├── .env.rabbitmq             first-boot broker credentials
-│   └── .env.redis                cache password + connection details
-├── env.example/                  templates for the above — env/ itself IS tracked
-│                                  (this repo mirrors the deploy machine on purpose)
-├── nginx/nginx.conf              reverse proxy config
-├── prometheus/prometheus.yml     scrape targets
-├── rabbitmq/rabbitmq.conf        broker config: ports, vhost, memory/disk limits
-├── redis/redis.conf              cache config: auth, persistence, eviction policy
-└── notebookllm-minus/
-    ├── Dockerfile
-    └── Dockerfile.dockerignore
+├── services/                     each service's config, one directory apiece (copied from services.example/)
+│   ├── nginx/proxy.conf          reverse proxy config
+│   ├── prometheus/prometheus.yml scrape targets
+│   ├── grafana/                  provisioning + dashboards
+│   ├── rabbitmq/rabbitmq.conf    broker config: ports, vhost, memory/disk limits
+│   ├── redis/redis.conf          cache config: auth, persistence, eviction policy
+│   └── notebookllm-minus/        the application image
+│       ├── Dockerfile
+│       └── Dockerfile.dockerignore
+├── services.example/             the tracked templates for services/
+├── env/                          per-service environment (copied from env.example/) — two kinds, see Configuration
+│   ├── .env.app                  the application's own configuration      (container)
+│   ├── .env.grafana                                                       (container)
+│   ├── .env.rabbitmq             first-boot broker credentials            (container)
+│   ├── .env.redis                cache password + connection details      (container)
+│   ├── .env.postgres-exporter    optional override; DSN comes from compose (container)
+│   ├── .env.postgres             POSTGRES_* that compose substitutes      (compose)
+│   ├── .env.mongo                MONGO_INITDB_ROOT_* that compose substitutes (compose)
+│   └── .env.nginx                NGINX_PORT that compose substitutes      (compose)
+└── env.example/                  templates for env/ — placeholders, no real values
 ```
 
 ## The image
@@ -74,7 +86,7 @@ compile from source.
 too:
 
 ```bash
-docker build -f notebookllm-minus/Dockerfile -t notebookllm-minus ..
+docker build -f services/notebookllm-minus/Dockerfile -t notebookllm-minus ..
 ```
 
 ### The ignore file is named `Dockerfile.dockerignore`, not `.dockerignore`
@@ -92,7 +104,7 @@ output reports a context in the hundreds of MB rather than single digits, this i
 
 | service | image | host port | notes |
 | --- | --- | --- | --- |
-| `nginx` | `nginx:1.27-alpine` | 80 | reverse proxy; denies `/metrics` |
+| `nginx` | `nginx:1.27-alpine` | 8080 (`NGINX_PORT`) | reverse proxy; denies `/metrics` |
 | `fastapi` | built here | 8000 | the application |
 | `pgvector` | `pgvector/pgvector:0.8.6-pg18-trixie` | 5400 | documents *and* vectors |
 | `mongo` | `mongo:8.2` | 27017 | profile `mongo` only |
@@ -112,18 +124,33 @@ outage.
 
 ## Configuration
 
-Two layers, and they are not interchangeable.
+Two kinds of file live in `env/`, and they are not interchangeable.
 
-**`./.env`** — read by compose itself, for `${...}` substitution inside `docker-compose.yml`.
-Only these five:
+**Compose-substitution files** — `env/.env.nginx`, `env/.env.mongo`, `env/.env.postgres`.
+Read by `docker compose` itself, for `${...}` substitution inside `docker-compose.yml`, and
+**never** handed to a container. Compose only reads these through `--env-file` (or
+`COMPOSE_ENV_FILES`); a service's `env_file:` cannot feed them. Pass all three on every compose
+command — `ps`, `logs` and `exec` included, because compose interpolates the whole file first.
 
 ```
-MONGO_INITDB_ROOT_USERNAME    MONGO_INITDB_ROOT_PASSWORD
-POSTGRES_USERNAME             POSTGRES_PASS               POSTGRES_MAIN_DB
+env/.env.nginx      NGINX_PORT
+env/.env.mongo      MONGO_INITDB_ROOT_USERNAME   MONGO_INITDB_ROOT_PASSWORD
+env/.env.postgres   POSTGRES_USERNAME            POSTGRES_PASS               POSTGRES_MAIN_DB
 ```
 
-**`./env/*`** — mounted into containers as their environment. `env/.env.app` is the
-application's configuration and the one you will actually edit.
+The Postgres three are `${VAR:?...}` in the compose file, so leaving them out is an error that
+names the file to pass. (The Mongo ones are not, because compose interpolates services under
+an inactive profile too, and that would break every command for anyone not using Mongo.)
+
+**Container files** — `env/.env.app`, `.env.rabbitmq`, `.env.redis`, `.env.grafana`. Listed as
+`env_file:` on their service and injected as that container's environment. `env/.env.app` is
+the application's configuration and the one you will actually edit.
+
+**What is committed where.** `env/` and `services/` are gitignored: they hold your real
+passwords. The repository carries only `env.example/` and `services.example/`, which use
+`REPLACE_ME__...` placeholders (each with the command that generates a value). Copy both
+directories once, as in the quick start, and fill the placeholders in. When you add a variable
+to a real file, add it to its template in the same change.
 
 The image ships **no** `src/.env`; configuration comes entirely from `env/.env.app`. Several
 settings have no defaults — `APPLICATION_NAME`, `APP_VERSION`, `ALLOWED_TYPES`,
@@ -170,20 +197,20 @@ idle infrastructure, healthy and reachable, doing nothing.
 
 Same two-layer split as the app's own config:
 
-- **`rabbitmq/rabbitmq.conf`** and **`redis/redis.conf`** — broker/server behaviour (ports,
+- **`services/rabbitmq/rabbitmq.conf`** and **`services/redis/redis.conf`** — broker/server behaviour (ports,
   memory limits, persistence, eviction policy), mounted read-only, restart to apply.
 - **`env/.env.rabbitmq`** and **`env/.env.redis`** — credentials and connection details,
   injected as container environment.
 
-**Action required before the first `docker compose up`** — both env files ship with
-`change-me` placeholders that must become real values, or ship already generated (check
-`env/.env.rabbitmq` and `env/.env.redis` for what is actually there):
+**Action required before the first `docker compose up`** — the templates in `env.example/`
+ship `REPLACE_ME__...` placeholders (each with the command that generates a value) that must
+become real values:
 
 | variable | file | why it matters |
 | --- | --- | --- |
 | `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS` | `env/.env.rabbitmq` | only honoured the *first* time the container boots against an empty `rabbitmq` volume — changing it later does nothing until the volume is dropped |
 | `RABBITMQ_ERLANG_COOKIE` | `env/.env.rabbitmq` | must stay stable across restarts or the node cannot rejoin its own persisted data; `openssl rand -hex 32` |
-| `REDIS_PASSWORD` (env) ↔ `requirepass` (conf) | `env/.env.redis` and `redis/redis.conf` | **must match exactly** — Redis reads its own password from `redis.conf`, not from the environment, so these are two independent settings a human has to keep in sync. A mismatch is `NOAUTH`/`WRONGPASS` from any client, including the healthcheck |
+| `REDIS_PASSWORD` (env) ↔ `requirepass` (conf) | `env/.env.redis` and `services/redis/redis.conf` | **must match exactly** — Redis reads its own password from `redis.conf`, not from the environment, so these are two independent settings a human has to keep in sync. A mismatch is `NOAUTH`/`WRONGPASS` from any client, including the healthcheck |
 
 The Redis healthcheck (`redis-cli -a $$REDIS_PASSWORD ping`) and the RabbitMQ one
 (`rabbitmq-diagnostics ping`) are what `fastapi`'s `depends_on: condition: service_healthy`
@@ -197,7 +224,7 @@ future `RABBITMQ_HOST=rabbitmq` / `REDIS_HOST=redis` in `env/.env.app` would poi
 
 ## Observability
 
-Prometheus scrapes; Grafana draws. Targets are in `prometheus/prometheus.yml`:
+Prometheus scrapes; Grafana draws. Targets are in `services/prometheus/prometheus.yml`:
 
 `prometheus` · `notebookllm` (the app's `/metrics`) · `postgres` · `node` · `qdrant`
 
@@ -223,7 +250,7 @@ Both are adapted from community dashboards (16110 and 9628) with their queries r
 this project's metric names — `http_requests_total` rather than `fastapi_requests_total`,
 `handler` rather than `path`, and a `$job` variable in place of `$app_name`.
 
-`Docker/grafana/dashboards/` is watched on a 30-second interval, so editing a JSON there
+`Docker/services/grafana/dashboards/` is watched on a 30-second interval, so editing a JSON there
 updates Grafana without a restart.
 
 **Four panels on the PostgreSQL dashboard are permanently empty**, and it is not a
@@ -275,7 +302,7 @@ and `--docker_only=true` to keep it from using more CPU than the app it is watch
 you do not need per-container graphs.
 
 **Uploads are capped twice.** `MAX_FILE_SIZE` in `env/.env.app` (50 MB) and
-`client_max_body_size` in `nginx/nginx.conf` (64 MB). Raise the app's and nginx will reject the
+`client_max_body_size` in `services/nginx/proxy.conf` (64 MB). Raise the app's and nginx will reject the
 request with a 413 before the app ever sees it.
 
 **A citation's highlight needs `PDF_LOADER=pymupdf` set in `env/.env.app` — it is not
@@ -295,6 +322,10 @@ default in this compose file) sees the host's full core count; one capped with `
 `PDF_LOADER` in `src/utils/config.py` for the measurements.
 
 ## Troubleshooting
+
+**Compose says `pass --env-file env/.env.postgres`** (or a variable is required but not set) —
+the compose-substitution files were not passed. Export `COMPOSE_ENV_FILES` as in the quick
+start, or add the three `--env-file` flags.
 
 **`docker compose config` fails** — a YAML problem, and it names the line. Fix this before
 anything else; nothing downstream will work.
