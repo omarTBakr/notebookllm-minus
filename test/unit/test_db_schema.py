@@ -4,8 +4,8 @@ import pytest
 from bson.objectid import ObjectId
 from pydantic import ValidationError
 
-from enums import AssetType
-from models.db_schema import Asset, Chat, DataChunk, Project, Session, User
+from data.models import Asset, Chat, DataChunk, Project, Session, User
+from shared.enums import AssetType
 
 
 @pytest.mark.parametrize("model, kwargs, field", [

@@ -11,7 +11,7 @@ import inspect
 
 import pytest
 
-from factories.db import mongo, postgres
+from data.repositories import mongo, postgres
 
 BACKENDS = {"mongo": mongo, "postgres": postgres}
 
@@ -22,9 +22,11 @@ def concrete_repositories(package):
         if not inspect.ismodule(module):
             continue
         for name, obj in vars(module).items():
-            if (inspect.isclass(obj)
-                    and name.startswith(("Mongo", "Postgres", "Qdrant"))
-                    and obj.__module__.startswith(package.__name__)):
+            if (
+                inspect.isclass(obj)
+                and name.startswith(("Mongo", "Postgres", "Qdrant"))
+                and obj.__module__.startswith(package.__name__)
+            ):
                 found.append(obj)
     return found
 
@@ -57,18 +59,17 @@ def own_methods(cls):
     actually declares is what catches a domain method that exists on one
     backend and not the other.
     """
-    return {
-        name for name, obj in vars(cls).items()
-        if callable(obj) and not name.startswith("_")
-    }
+    return {name for name, obj in vars(cls).items() if callable(obj) and not name.startswith("_")}
 
 
 # Repository role -> the class name each backend gives it. The vector stores
 # are excluded: Qdrant and pgvector back different engines and their surfaces
 # legitimately differ.
 PAIRS = [
+    ("artifact", "MongoArtifactRepository", "PostgresArtifactRepository"),
     ("asset", "MongoAssetRepository", "PostgresAssetRepository"),
     ("chunk", "MongoChunkRepository", "PostgresChunkRepository"),
+    ("ingest_batch", "MongoIngestBatchRepository", "PostgresIngestBatchRepository"),
     ("chat", "MongoChatRepository", "PostgresChatRepository"),
     ("message", "MongoMessageRepository", "PostgresMessageRepository"),
     ("project", "MongoProjectRepository", "PostgresProjectRepository"),
@@ -128,9 +129,9 @@ def test_a_unique_content_violation_reads_as_a_duplicate_not_a_db_fault():
 
     from sqlalchemy.exc import IntegrityError
 
-    from exceptions import DuplicateAssetError
-    from factories.db.postgres import PostgresAssetRepository
-    from models.db_schema import Asset
+    from data.models import Asset
+    from data.repositories.postgres import PostgresAssetRepository
+    from shared.exceptions import DuplicateAssetError
 
     class ExplodingSession:
         def begin(self):
@@ -161,9 +162,9 @@ def test_an_unrelated_integrity_error_is_still_a_database_fault():
 
     from sqlalchemy.exc import IntegrityError
 
-    from exceptions import DbError
-    from factories.db.postgres import PostgresAssetRepository
-    from models.db_schema import Asset
+    from data.models import Asset
+    from data.repositories.postgres import PostgresAssetRepository
+    from shared.exceptions import DbError
 
     class ExplodingSession:
         def begin(self):

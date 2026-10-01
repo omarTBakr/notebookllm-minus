@@ -1,0 +1,208 @@
+/* Top bar + the three-panel workspace.
+ *
+ * The grid is pinned with direction:ltr so Sources | Chat | Studio keep their
+ * places in both languages; each panel gets the document direction back, so
+ * Arabic text still reads right-to-left inside a layout that does not move. */
+
+.topbar {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  padding: 0 16px;
+  position: relative;
+  direction: ltr;
+}
+
+.topbar__brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+/* The mark drawn for this size on a 24x24 grid -- brackets, a root node with eyes
+   and three branches. img/logo.svg is the same mark (no leaves, no corner strips)
+   for the favicon; demo/logo-mark.svg is the full artwork. */
+.logo {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  color: var(--accent);
+}
+
+.notebook-title {
+  font: inherit;
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  max-width: 34vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notebook-title:hover { background: var(--surface-2); border-color: var(--border); }
+
+.topbar__actions { display: flex; align-items: center; gap: 6px; flex: none; }
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex: none;
+}
+
+/* --- dropdowns (notebook switcher, profile menu) --- */
+
+.dropdown {
+  position: absolute;
+  inset-block-start: calc(var(--topbar-h) - 6px);
+  inset-inline-end: 16px;
+  min-width: 250px;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+  padding: 8px;
+  z-index: 50;
+}
+
+.dropdown__title {
+  margin: 2px 6px 6px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dropdown__list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+
+.dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 0.85rem;
+  color: inherit;
+  text-align: start;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.dropdown__item:hover { background: var(--surface-2); }
+.dropdown__item.is-active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.dropdown__item .dot { width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; flex: none; }
+.dropdown__item.is-active .dot { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.dropdown__item span:not(.dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dropdown__actions {
+  display: flex;
+  gap: 6px;
+  margin-block-start: 8px;
+  padding-block-start: 8px;
+  border-top: 1px solid var(--border);
+}
+.dropdown__actions .btn { flex: 1; font-size: 0.78rem; padding: 5px 8px; }
+
+/* --- workspace ------------------------------------------------------------ */
+
+.workspace {
+  display: grid;
+  /* The full house, and only the first paint's worth: panels.js rewrites this
+     inline as panels are resized or dismissed. Stated here so the page is
+     already laid out correctly before that module runs — the tracks below
+     match the markup's five items, panel/bar/panel/bar/panel. */
+  grid-template-columns:
+    300px
+    var(--resizer-w)
+    minmax(0, 1fr)
+    var(--resizer-w)
+    300px;
+  /* No gap: the drag bars are the gap. A grid gap either side of them would
+     put 34px of dead ground between panels and leave only the middle of it
+     grabbable. */
+  gap: 0;
+  padding: 0 14px 6px;
+  /* Fills whatever the top bar and disclaimer leave. */
+  height: calc(100vh - var(--topbar-h) - 26px);
+  min-height: 0;
+  direction: ltr;
+}
+
+:root[dir="rtl"] .panel,
+:root[dir="rtl"] .dropdown,
+:root[dir="rtl"] .modal__panel,
+:root[dir="rtl"] .toast { direction: rtl; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.panel__head h2 { font-size: 0.92rem; }
+.panel__head-actions { display: flex; gap: 2px; }
+.panel__collapse { font: inherit; background: none; border: 0; color: var(--text-muted); cursor: pointer; padding: 2px 4px; }
+.panel__collapse:hover { color: var(--text); }
+
+/* Sized to content and not scrollable — the transcript is the scrolling one. */
+.panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+  overflow: hidden;
+}
+
+/* Dismissing a panel is in panels.css: it leaves the grid entirely, and the
+   top bar's toggle group is what brings it back. */
+
+.disclaimer {
+  margin: 0;
+  padding: 3px 0 6px;
+  text-align: center;
+  font-size: 0.73rem;
+  color: var(--text-muted);
+}
+
+/* Below this the three columns genuinely cannot coexist, so the panels
+   stack and the page scrolls — still all three, just not side by side. */
+@media (max-width: 780px) {
+  html, body { overflow: auto; }
+  .workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: calc(100vh - var(--topbar-h) - 26px);
+    /* Stacked, the drag bars are gone, so the gap has to come back. */
+    gap: var(--gap);
+  }
+  .panel--sources, .panel--studio { min-height: 220px; }
+  .panel--chat { min-height: 60vh; }
+}

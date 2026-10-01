@@ -39,12 +39,6 @@ jobs:
           ssh -i "$KEY_FILE" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               "$REMOTE_USER@$HOST" "REMOTE_DIR='$REMOTE_DIR' bash -euo pipefail -s" <<'REMOTE'
             cd "$REMOTE_DIR/Docker"
-            # docker-compose.yml substitutes ${POSTGRES_*} and ${NGINX_PORT} from
-            # these, and refuses to run without them, so every `docker compose`
-            # below (even a read-only `ps`) needs them. Same list the systemd
-            # unit passes to `up`.
-            export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
-
             # Everything below redirects stdin from /dev/null. The remote
             # script IS stdin (ssh ... bash -s <<'REMOTE'), and `docker compose
             # exec` reads stdin even with -T, so the first one swallowed the
@@ -63,7 +57,7 @@ jobs:
             # Every line stays indented: a bare column-0 line inside a YAML
             # block scalar ends the scalar and is parsed as a new key.
             # One line: a column-0 continuation would end the YAML block scalar.
-            docker compose exec -T celery-process python -c 'import sys; sys.path.insert(0,"/app"); from controllers.PdfLayoutController import _cpu_count, _available_memory_mb; from controllers import ProcessController; p = ProcessController(); mem = _available_memory_mb(); print("OCR_ENABLED", p.settings.OCR_ENABLED); print("OCR_EXTRACTOR", p.settings.OCR_EXTRACTOR); print("OCR_WORKERS set", p.settings.OCR_WORKERS); print("cpus visible", _cpu_count()); print("memory available MB", None if mem is None else round(mem)); print("workers for a 200-page doc", p._ocr_workers(200))' < /dev/null || echo "(celery-process not running)"
+            docker compose exec -T celery-process python -c 'import sys; sys.path.insert(0,"/app"); from shared.utils import cpu_count, available_memory_mb; from application.services import ProcessService; p = ProcessService(); mem = available_memory_mb(); print("OCR_ENABLED", p.settings.OCR_ENABLED); print("OCR_EXTRACTOR", p.settings.OCR_EXTRACTOR); print("OCR_WORKERS set", p.settings.OCR_WORKERS); print("cpus visible", cpu_count()); print("memory available MB", None if mem is None else round(mem)); print("workers for a 200-page doc", p._ocr_workers(200))' < /dev/null || echo "(celery-process not running)"
             echo "::endgroup::"
 
             echo "::group::tesseract present"

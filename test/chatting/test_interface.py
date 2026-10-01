@@ -2,12 +2,14 @@
 
 import pytest
 
-from enums import ChatRole
-from exceptions import LLMProviderError, UnsupportedProviderError
-from factories.llmchatting import LLMChattingInterface
-from factories.llmchatting.LLMChattingFactory import LLMChattingFactory, _thinking_flag
+from application.providers.chatting import LLMChattingInterface
+from application.providers.chatting.LLMChattingFactory import (
+    LLMChattingFactory,
+    _thinking_flag,
+)
+from shared.enums import ChatRole
+from shared.exceptions import LLMProviderError, UnsupportedProviderError
 from test.fakes.llm import FailingChatClient, FakeChatClient, FakeStreamingChatClient
-
 
 # --- message construction -----------------------------------------------------
 
@@ -187,7 +189,7 @@ def test_a_blank_nvidia_endpoint_falls_back_to_the_default(monkeypatch):
     """`NVIDIA_API_BASE_URL = ""` reads as unset — an OpenAI client with an
     nvapi key and no endpoint would dial OpenAI and fail with an
     authentication error that says nothing about the real mistake."""
-    from utils import get_settings
+    from shared.utils import get_settings
 
     monkeypatch.setenv("NVIDIA_API_BASE_URL", "")
     get_settings.cache_clear()
@@ -370,7 +372,7 @@ class _Stream:
 
 
 def _openai_client(chunks):
-    from factories.llmchatting import OpenAIChatProvider
+    from application.providers.chatting import OpenAIChatProvider
 
     client = OpenAIChatProvider(api_key="sk-test", model_id="m", base_url="http://x.invalid/v1")
     stream = _Stream(chunks)
@@ -449,7 +451,7 @@ async def test_a_mid_stream_failure_is_a_provider_error():
             yield _Chunk(content="partial")
             raise RuntimeError("connection reset")
 
-    from factories.llmchatting import OpenAIChatProvider
+    from application.providers.chatting import OpenAIChatProvider
 
     client = OpenAIChatProvider(api_key="sk-test", model_id="m", base_url="http://x.invalid/v1")
     client.client.chat.completions.create = lambda **kw: _Boom([])

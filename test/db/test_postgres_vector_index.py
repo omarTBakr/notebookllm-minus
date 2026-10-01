@@ -19,8 +19,8 @@ Everything here asserts on the SQL string, so none of it needs a server.
 
 import pytest
 
-from enums import DistanceMethod, IndexType
-from factories.db.postgres.vector_repository import PostgresVectorRepository
+from data.repositories.postgres.vector_repository import PostgresVectorRepository
+from shared.enums import DistanceMethod, IndexType
 
 
 class _Result:
@@ -193,7 +193,7 @@ async def test_every_distance_method_has_a_real_halfvec_opclass(distance, operat
 def test_the_opclass_names_are_the_vector_ones_with_the_type_substituted():
     """Reads the mapping the derivation depends on, so a future edit that
     renames an operator class fails here rather than in a worker at 3am."""
-    from enums import DISTANCE_METHOD_TO_PGVECTOR
+    from shared.enums import DISTANCE_METHOD_TO_PGVECTOR
 
     assert {
         method: opclass for method, (_, opclass) in DISTANCE_METHOD_TO_PGVECTOR.items()

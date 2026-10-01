@@ -19,7 +19,7 @@ dropped as unknown from one that was never set at all.
 import re
 from pathlib import Path
 
-from utils.config import SRC_DIR, Settings
+from shared.utils.config import SRC_DIR, Settings
 
 ENV_EXAMPLE = SRC_DIR / ".env.example"
 
@@ -91,7 +91,8 @@ def test_every_key_in_the_docker_app_example_is_a_real_field():
     """The container reads only Docker/env/.env.app, so a name that drifted out of
     Settings there is dropped just as silently as one in src/.env.example — and
     nothing about starting the container reveals it. Only the template is checked:
-    the real file is gitignored, so a fresh checkout has nothing there to look at."""
+    the real file is tracked in the private repo only, so a public checkout has
+    nothing at Docker/env/.env.app to look at."""
     keys = documented_keys(DOCKER_APP_EXAMPLE)
 
     assert len(keys) > 20

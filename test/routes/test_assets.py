@@ -60,7 +60,7 @@ async def test_asset_content_is_served_as_text(client, seed):
 
 
 async def test_asset_content_is_served_as_pdf_for_a_pdf(client, seed, fake_db):
-    from enums import AssetType
+    from shared.enums import AssetType
 
     fake_db.assets().items["a1"].asset_type = AssetType.PDF
 
@@ -92,8 +92,8 @@ async def test_content_404s_for_an_asset_in_another_notebook(client, seed, fake_
     them. Reported as missing rather than forbidden, so the reply does not
     confirm the asset exists somewhere else.
     """
-    from enums import AssetType
-    from models.db_schema import Asset, Chat, Project
+    from data.models import Asset, Chat, Project
+    from shared.enums import AssetType
 
     fake_db.chats().items["c2"] = Chat(chat_id="c2", session_id="s1", user_id="u1",
                                        title="Someone else's notebook")
@@ -173,8 +173,8 @@ async def test_download_encodes_a_non_ascii_filename(client, seed, fake_db):
 
 
 async def test_download_still_enforces_the_notebook_ownership_check(client, seed, fake_db):
-    from enums import AssetType
-    from models.db_schema import Asset, Chat, Project
+    from data.models import Asset, Chat, Project
+    from shared.enums import AssetType
 
     fake_db.chats().items["c2"] = Chat(chat_id="c2", session_id="s1", user_id="u1",
                                        title="Someone else's notebook")
@@ -195,7 +195,8 @@ async def test_download_still_enforces_the_notebook_ownership_check(client, seed
 
 def _chunk(fake_db, asset_id, order, metadata):
     from bson.objectid import ObjectId
-    from models.db_schema import DataChunk
+
+    from data.models import DataChunk
 
     fake_db.chunks().items.append(DataChunk(
         project_id=ObjectId(), asset_id=asset_id, chunk_order=order,
@@ -240,8 +241,8 @@ async def test_locate_404s_for_an_unknown_chunk(client, seed, fake_db):
 
 
 async def test_locate_enforces_the_notebook_ownership_check(client, seed, fake_db):
-    from enums import AssetType
-    from models.db_schema import Asset, Chat, Project
+    from data.models import Asset, Chat, Project
+    from shared.enums import AssetType
 
     fake_db.chats().items["c2"] = Chat(chat_id="c2", session_id="s1", user_id="u1",
                                        title="Someone else's notebook")
@@ -288,7 +289,7 @@ async def test_inline_text_is_sanitised_but_download_is_raw(client, seed, fake_d
 
 async def test_locate_returns_a_text_range_for_a_text_asset(client, seed, fake_db):
     _chunk(fake_db, "a1", 0, {"start_index": 10})
-    fake_db.assets().items["a1"].asset_type = __import__("enums").AssetType.TEXT
+    fake_db.assets().items["a1"].asset_type = __import__("shared.enums", fromlist=["AssetType"]).AssetType.TEXT
 
     response = await client.get("/chat/chats/c1/assets/a1/chunks/0/locate")
 
@@ -319,7 +320,7 @@ async def test_locate_has_no_text_range_for_a_pdf_asset(client, seed, fake_db):
     """start_index exists on PDF chunks too (for computing `highlight`), but
     it indexes into the *page* text, not the whole asset — a text_range there
     would be meaningless and must not be reported."""
-    from enums import AssetType
+    from shared.enums import AssetType
 
     fake_db.assets().items["a1"].asset_type = AssetType.PDF
     _chunk(fake_db, "a1", 0, {"page": 0, "start_index": 5})

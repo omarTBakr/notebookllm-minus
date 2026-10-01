@@ -2,8 +2,8 @@
 
 import pytest
 
-from enums import DatabaseCollection
-from factories.db.mongo.base_model import BaseModel
+from data.repositories.mongo.base_model import BaseModel
+from shared.enums import DatabaseCollection
 
 
 class _FakeDb(dict):

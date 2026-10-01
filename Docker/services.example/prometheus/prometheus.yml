@@ -19,7 +19,7 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # The application. Everything defined in src/utils/metrics.py plus the HTTP
+  # The application. Everything defined in src/shared/utils/metrics.py plus the HTTP
   # RED signals from the instrumentator.
   - job_name: notebookllm
     metrics_path: /metrics

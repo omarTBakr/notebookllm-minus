@@ -3,13 +3,13 @@
 import pytest
 from langchain_core.documents import Document
 
-from controllers import ProcessController
-from exceptions import UnsupportedFileTypeError
+from application.services import ProcessService
+from shared.exceptions import UnsupportedFileTypeError
 
 
 @pytest.fixture
 def controller():
-    return ProcessController(chunk_size=50, chunk_overlap=10)
+    return ProcessService(chunk_size=50, chunk_overlap=10)
 
 
 def test_split_file_breaks_a_long_document_up(controller):
@@ -70,7 +70,7 @@ def test_an_unknown_extension_is_rejected(controller, tmp_path):
 
 
 def test_presentation_forms_fold_to_standard_letters():
-    from controllers.TextProcessingController import normalize_text
+    from application.services.ingest.TextProcessingService import normalize_text
 
     # U+FEA9 etc. are Arabic Presentation Forms-B; the query form lives in
     # U+0600-06FF.
@@ -82,7 +82,7 @@ def test_presentation_forms_fold_to_standard_letters():
 
 
 def test_bidi_control_characters_are_removed():
-    from controllers.TextProcessingController import normalize_text
+    from application.services.ingest.TextProcessingService import normalize_text
 
     # Producers emit these to force visual order; they are noise to a tokeniser.
     out = normalize_text("‫hello‬ ‏world‎")
@@ -91,7 +91,7 @@ def test_bidi_control_characters_are_removed():
 
 
 def test_normalisation_leaves_ordinary_text_alone():
-    from controllers.TextProcessingController import normalize_text
+    from application.services.ingest.TextProcessingService import normalize_text
 
     text = "Beirut sits on a promontory. The mountains rise behind it."
     assert normalize_text(text) == text
@@ -100,8 +100,8 @@ def test_normalisation_leaves_ordinary_text_alone():
 def test_sanitize_normalises_and_still_strips_nulls(controller):
     from langchain_core.documents import Document
 
-    # sanitize/get_splitter live on the TextProcessingController the
-    # ProcessController delegates to.
+    # sanitize/get_splitter live on the TextProcessingService the
+    # ProcessService delegates to.
     docs = controller.text.sanitize([Document(page_content="‫ﺍ‬\x00 a")])
     content = docs[0].page_content
 
@@ -203,8 +203,8 @@ def test_start_index_survives_on_a_markdown_document_too(controller):
     ],
 )
 def test_pdf_loader_setting_selects_the_library(monkeypatch, tmp_path, setting, expected):
-    from utils import get_settings
-    from controllers import ProcessController
+    from application.services import ProcessService
+    from shared.utils import get_settings
 
     monkeypatch.setenv("PDF_LOADER", setting)
     get_settings.cache_clear()
@@ -212,7 +212,7 @@ def test_pdf_loader_setting_selects_the_library(monkeypatch, tmp_path, setting, 
     pdf = tmp_path / "doc.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")  # never parsed; the loader is only constructed
 
-    controller = ProcessController()
+    controller = ProcessService()
     controller.settings = get_settings()
 
     assert type(controller.get_loader(pdf)).__name__ == expected
@@ -220,8 +220,8 @@ def test_pdf_loader_setting_selects_the_library(monkeypatch, tmp_path, setting, 
 
 def test_txt_is_unaffected_by_the_pdf_loader_setting(monkeypatch, tmp_path):
     """PDF_LOADER must not reach the text path."""
-    from utils import get_settings
-    from controllers import ProcessController
+    from application.services import ProcessService
+    from shared.utils import get_settings
 
     monkeypatch.setenv("PDF_LOADER", "pymupdf")
     get_settings.cache_clear()
@@ -229,7 +229,7 @@ def test_txt_is_unaffected_by_the_pdf_loader_setting(monkeypatch, tmp_path):
     txt = tmp_path / "note.txt"
     txt.write_text("hello")
 
-    controller = ProcessController()
+    controller = ProcessService()
     controller.settings = get_settings()
 
     assert type(controller.get_loader(txt)).__name__ == "TextLoader"
@@ -238,7 +238,7 @@ def test_txt_is_unaffected_by_the_pdf_loader_setting(monkeypatch, tmp_path):
 # --- markdown ------------------------------------------------------------------
 #
 # .md gets structure-aware separators (headings and fences first) rather than
-# the plain-prose chain. See TextProcessingController.get_splitter.
+# the plain-prose chain. See TextProcessingService.get_splitter.
 
 
 def test_md_is_loaded_as_text(controller, tmp_path):
@@ -285,7 +285,7 @@ def test_process_and_split_picks_the_splitter_from_the_real_filename():
     from the name, since there is no file on disk to inspect."""
     import asyncio
 
-    controller = ProcessController(chunk_size=50, chunk_overlap=10)
+    controller = ProcessService(chunk_size=50, chunk_overlap=10)
     markdown = b"# Heading\n\n" + (b"word " * 40) + b"\n\n# Two\n\n" + (b"word " * 40)
 
     chunks = asyncio.run(controller.process_and_split(markdown, "doc.md"))
@@ -297,7 +297,7 @@ def test_process_and_split_picks_the_splitter_from_the_real_filename():
 #
 # Only when PDF_LOADER=pymupdf: the pypdf/pdfplumber loaders never expose word
 # boxes, so a chunk from either has nothing to compute a highlight from. See
-# ProcessController._process_pdf_with_layout and PdfLayoutController.
+# ProcessService._process_pdf_with_layout and PdfLayoutService.
 
 
 def _synthetic_pdf(path, pages_text):
@@ -313,11 +313,11 @@ def _synthetic_pdf(path, pages_text):
 
 
 def _with_pdf_loader(monkeypatch, value):
-    from utils import get_settings
+    from shared.utils import get_settings
 
     monkeypatch.setenv("PDF_LOADER", value)
     get_settings.cache_clear()
-    controller = ProcessController(chunk_size=1000, chunk_overlap=200)
+    controller = ProcessService(chunk_size=1000, chunk_overlap=200)
     controller.settings = get_settings()
     return controller
 
@@ -373,7 +373,7 @@ def test_a_highlight_rect_is_computed_from_the_right_page(monkeypatch, tmp_path)
 
 def test_process_and_split_attaches_highlights_end_to_end(monkeypatch, tmp_path):
     """The real ingest path: bytes in, chunk_metadata out — same route
-    routes/chat/assets.py actually calls."""
+    presentation/routes/chat/assets.py actually calls."""
     import asyncio
 
     controller = _with_pdf_loader(monkeypatch, "pymupdf")

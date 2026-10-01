@@ -7,12 +7,17 @@ route returns is derived from the exception class.
 
 import pytest
 
-from exceptions import AssetNotFoundError, ChatNotFoundError, DbError, UserNotFoundError
-from factories.db.mongo.asset_repository import MongoAssetRepository
-from factories.db.mongo.chat_repository import MongoChatRepository
-from factories.db.mongo.user_repository import MongoUserRepository
-from models.db_schema import Asset, Chat, User
-from enums import AssetType
+from data.models import Asset, Chat, User
+from data.repositories.mongo.asset_repository import MongoAssetRepository
+from data.repositories.mongo.chat_repository import MongoChatRepository
+from data.repositories.mongo.user_repository import MongoUserRepository
+from shared.enums import AssetType
+from shared.exceptions import (
+    AssetNotFoundError,
+    ChatNotFoundError,
+    DbError,
+    UserNotFoundError,
+)
 from test.fakes.mongo import FakeMongoDb, driver_failure
 
 

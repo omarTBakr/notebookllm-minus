@@ -7,9 +7,9 @@ endpoint was checked by hand; these are the parts that must not regress.
 
 import pytest
 
-from enums import EmbeddingInputType, TruncateMode
-from exceptions import EmbeddingError, UnsupportedProviderError
-from factories.llmembedding import LLMEmbeddingFactory, NvidiaEmbeddingProvider
+from application.providers.embedding import LLMEmbeddingFactory, NvidiaEmbeddingProvider
+from shared.enums import EmbeddingInputType, TruncateMode
+from shared.exceptions import EmbeddingError, UnsupportedProviderError
 
 
 class _Vector:

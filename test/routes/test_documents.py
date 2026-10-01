@@ -2,8 +2,6 @@
 
 from types import SimpleNamespace
 
-import pytest
-
 
 def a_text_file(name="note1.txt", body=b"the quick brown fox " * 40):
     return {"file": (name, body, "text/plain")}
@@ -65,8 +63,7 @@ async def test_a_forbidden_content_type_is_rejected(ingest, client, seed):
 
 
 async def test_an_empty_file_is_rejected(ingest, client, seed):
-    response = await ingest("c1", {"file": ("empty.txt", b"", "text/plain")}
-    )
+    response = await ingest("c1", {"file": ("empty.txt", b"", "text/plain")})
 
     assert response.status_code == 400
 
@@ -117,11 +114,9 @@ async def test_a_refused_duplicate_changes_nothing(ingest, client, seed, fake_db
 
 async def test_the_same_document_in_another_notebook_is_allowed(ingest, client, seed, fake_db):
     """Scoped per notebook: two notebooks may each hold the same file."""
-    from models.db_schema import Chat, Project
+    from data.models import Chat, Project
 
-    fake_db.chats().items["c2"] = Chat(
-        chat_id="c2", session_id="s1", user_id="u1", title="Another notebook"
-    )
+    fake_db.chats().items["c2"] = Chat(chat_id="c2", session_id="s1", user_id="u1", title="Another notebook")
     fake_db.projects().items["c2"] = Project(project_id="c2", name="Another notebook")
 
     files = a_text_file("shared.txt", b"one document, two notebooks")
@@ -140,8 +135,7 @@ async def test_a_different_document_with_the_same_name_is_allowed(ingest, client
     """The name is not the identity — re-saving a file under a used name is a
     normal thing to do."""
     await ingest("c1", a_text_file("notes.txt", b"first version"))
-    response = await ingest("c1", a_text_file("notes.txt", b"a later, different version")
-    )
+    response = await ingest("c1", a_text_file("notes.txt", b"a later, different version"))
 
     assert response.status_code in (200, 201, 202), response.text
 
@@ -246,7 +240,9 @@ async def test_a_markdown_document_is_chunked_on_its_headings(ingest, client, se
     # rather than fitting both sections in one chunk.
     body = ("# One\n\n" + "word " * 300 + "\n\n# Two\n\n" + "word " * 300).encode()
 
-    await ingest("c1", {"file": ("two-sections.md", body, "text/markdown")},
+    await ingest(
+        "c1",
+        {"file": ("two-sections.md", body, "text/markdown")},
     )
 
     contents = [c.chunk_content for c in fake_db.chunks().items]
@@ -263,40 +259,36 @@ async def test_a_broker_outage_is_a_503_not_a_500(client, seed, monkeypatch):
     "Internal server error" on every upload."""
     from kombu.exceptions import OperationalError as BrokerOperationalError
 
-    import routes.chat.assets as assets_route
+    import application.tasks.workflows as workflows
 
     def refuse(*args, **kwargs):
         raise BrokerOperationalError("broker unavailable")
 
-    monkeypatch.setattr(
-        assets_route, "ingestion_chain", lambda *a, **k: SimpleNamespace(apply_async=refuse)
-    )
+    # Patched on tasks.workflows: AssetIngestService imports it late, so
+    # this is the binding it reads when it runs.
+    monkeypatch.setattr(workflows, "ingestion_signature", lambda *a, **k: SimpleNamespace(apply_async=refuse))
 
-    response = await client.post(
-        "/chat/chats/c1/documents", files=a_text_file("unlucky.txt")
-    )
+    response = await client.post("/chat/chats/c1/documents", files=a_text_file("unlucky.txt"))
 
     assert response.status_code == 503
     assert "unlucky.txt" in response.json()["detail"]
 
 
-async def test_a_failed_queue_does_not_leave_the_document_unuploadable(
-    client, seed, fake_db, monkeypatch
-):
+async def test_a_failed_queue_does_not_leave_the_document_unuploadable(client, seed, fake_db, monkeypatch):
     """The asset row is committed before the chain is queued. Left behind, it
     would never be ingested *and* the content-hash dedupe would answer 409 to
     every retry — so the document could not be added at all without deleting
     it by hand first."""
     from kombu.exceptions import OperationalError as BrokerOperationalError
 
-    import routes.chat.assets as assets_route
+    import application.tasks.workflows as workflows
 
     def refuse(*args, **kwargs):
         raise BrokerOperationalError("broker unavailable")
 
-    monkeypatch.setattr(
-        assets_route, "ingestion_chain", lambda *a, **k: SimpleNamespace(apply_async=refuse)
-    )
+    # Patched on tasks.workflows: AssetIngestService imports it late, so
+    # this is the binding it reads when it runs.
+    monkeypatch.setattr(workflows, "ingestion_signature", lambda *a, **k: SimpleNamespace(apply_async=refuse))
 
     files = a_text_file("retry-me.txt", b"queued while the broker was down")
     await client.post("/chat/chats/c1/documents", files=files)
@@ -322,9 +314,7 @@ async def test_a_failed_queue_does_not_leave_the_document_unuploadable(
 # 540s soft limit, three asset rows, zero chunks, 409 on every retry.
 
 
-async def test_a_document_whose_ingestion_died_can_be_uploaded_again(
-    ingest, client, seed, fake_db
-):
+async def test_a_document_whose_ingestion_died_can_be_uploaded_again(ingest, client, seed, fake_db):
     files = a_text_file("half-ingested.txt", b"bytes that failed to ingest")
 
     first = await ingest("c1", files)
@@ -335,8 +325,7 @@ async def test_a_document_whose_ingestion_died_can_be_uploaded_again(
     retry = await ingest("c1", files)
 
     assert retry.status_code in (200, 201, 202), (
-        "the retry was refused, so the document can never be added without "
-        f"deleting it by hand first: {retry.text}"
+        "the retry was refused, so the document can never be added without " f"deleting it by hand first: {retry.text}"
     )
 
 
@@ -349,10 +338,7 @@ async def test_the_husk_is_replaced_rather_than_duplicated(ingest, client, seed,
     await _record_failed_ingestion(fake_db, "c1", "replaceme.txt")
     await ingest("c1", files)
 
-    named = [
-        a async for a in fake_db.assets().iter_assets_for_projects(["c1"])
-        if a.name == "replaceme.txt"
-    ]
+    named = [a async for a in fake_db.assets().iter_assets_for_projects(["c1"]) if a.name == "replaceme.txt"]
     assert len(named) == 1, f"expected the husk to be replaced, found {len(named)}"
 
 
@@ -414,3 +400,75 @@ async def _record_failed_ingestion(fake_db, chat_id, name):
             await tasks.update_status(task.task_id, "FAILURE")
             marked += 1
     assert marked, "no task row to mark failed; the route stopped recording them"
+
+
+# --- what a notebook gets called ----------------------------------------------
+
+
+async def test_the_first_document_names_an_untitled_notebook(ingest, client, seed, fake_db):
+    """A notebook is *about* its documents, so the document is the better name.
+
+    Nothing named a notebook on upload before, so it stayed "New chat" until
+    the first question renamed it to whatever was typed — an Arabic-named PDF
+    followed by an English question produced an English notebook unrelated to
+    its contents.
+    """
+    await _make_untitled(fake_db, "c1")
+
+    await ingest("c1", a_text_file("ذخائر_لبنان.txt", b"arabic-named source"))
+
+    chat = await fake_db.chats().get_chat("c1")
+
+    assert chat.title == "ذخائر_لبنان", f"notebook is called {chat.title!r}"
+
+
+async def test_a_question_does_not_rename_a_notebook_that_has_a_document(ingest, client, seed, fake_db):
+    """The exact bug: upload in one language, ask in another, keep the first."""
+    await _make_untitled(fake_db, "c1")
+    await ingest("c1", a_text_file("ذخائر_لبنان.txt", b"arabic-named source"))
+
+    await client.post("/chat/chats/c1/message", json={"text": "summarize this document"})
+
+    chat = await fake_db.chats().get_chat("c1")
+
+    assert chat.title == "ذخائر_لبنان", f"the question overwrote the document name: {chat.title!r}"
+
+
+async def test_a_question_still_names_a_notebook_with_no_documents(client, seed, fake_db):
+    """The old behaviour has to survive for a notebook used as a plain
+    assistant — otherwise the sidebar is a column of "New chat".
+
+    The seeded notebook already has messages, and the rule is "first question",
+    so its history is cleared to make this genuinely the first one.
+    """
+    await _make_untitled(fake_db, "c1")
+    fake_db.messages().items.clear()
+
+    await client.post("/chat/chats/c1/message", json={"text": "what is a phoenician city?"})
+
+    chat = await fake_db.chats().get_chat("c1")
+
+    assert chat.title == "what is a phoenician city?"
+
+
+async def test_a_notebook_the_user_named_is_never_renamed(ingest, client, seed, fake_db):
+    """An explicit name outranks both rules."""
+    await fake_db.chats().rename("c1", "My research")
+
+    await ingest("c1", a_text_file("something.txt", b"bytes"))
+
+    chat = await fake_db.chats().get_chat("c1")
+
+    assert chat.title == "My research"
+
+
+async def _make_untitled(fake_db, chat_id):
+    """A notebook as the API actually creates one.
+
+    The seed fixture gives chats a real name, which is the *named* case — the
+    one that must never be overwritten. Both auto-naming rules only fire on a
+    notebook nobody has named, so a test about them has to start from that.
+    """
+    from presentation.routes.schemas.chat_request import DEFAULT_CHAT_TITLE
+
+    await fake_db.chats().rename(chat_id, DEFAULT_CHAT_TITLE)

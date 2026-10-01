@@ -10,9 +10,10 @@ import json
 
 import pytest
 
-from enums import ArtifactKind, ArtifactStatus
-from models.db_schema import DataChunk
-from tasks import runtime, studio
+from application.tasks import runtime
+from application.tasks.jobs import studio
+from data.models import DataChunk
+from shared.enums import ArtifactKind, ArtifactStatus
 
 
 class FakeClient:
@@ -58,11 +59,7 @@ class FakeClient:
             )
 
         self.generate_calls += 1
-        orders = [
-            int(line.split()[-1])
-            for line in prompt.splitlines()
-            if line.startswith("### Summary")
-        ]
+        orders = [int(line.split()[-1]) for line in prompt.splitlines() if line.startswith("### Summary")]
         self.orders_seen.append(orders)
 
         key = "cards" if "flashcard" in prompt.lower() else "questions"
@@ -70,15 +67,13 @@ class FakeClient:
 
         for order in orders[: self.items_per_call]:
             if key == "cards":
-                made.append(
-                    {"front": f"Q{order}", "back": f"A{order}", "chunk_order": order}
-                )
+                made.append({"front": f"Q{order}", "back": f"A{order}", "chunk_order": order})
             else:
                 made.append(
                     {
                         "question": f"Q{order}",
-                        "options": ["a", "b", "c", "d"],
-                        "answer_index": 0,
+                        "correct_answer": f"right {order}",
+                        "wrong_answers": [f"wrong {order}a", f"wrong {order}b", f"wrong {order}c"],
                         "chunk_order": order,
                     }
                 )
@@ -91,14 +86,12 @@ def notebook(fake_db, monkeypatch):
     """A notebook with 25 chunks, and the task pointed at fakes."""
 
     async def build(chunk_count=25, client=None):
-        from models.db_schema import Chat, Project
+        from data.models import Chat, Project
 
         # The task reads the chat for its language and generation model, and
         # the project for the ObjectId that chunks are keyed by -- the two
         # identifiers this codebase has already confused once.
-        fake_db.chats().items["c1"] = Chat(
-            chat_id="c1", session_id="s1", user_id="u1", title="A notebook"
-        )
+        fake_db.chats().items["c1"] = Chat(chat_id="c1", session_id="s1", user_id="u1", title="A notebook")
         # Only minted once. Re-running this fixture with a fresh Project would
         # give it a new ObjectId and orphan the chunks from the previous call,
         # which is precisely what a "second run reuses summaries" test must not
@@ -218,9 +211,7 @@ async def test_an_item_citing_a_chunk_outside_its_batch_is_dropped(notebook, fak
             payload = json.loads(answer)
 
             if "cards" in payload:
-                payload["cards"].append(
-                    {"front": "made up", "back": "nowhere", "chunk_order": 9999}
-                )
+                payload["cards"].append({"front": "made up", "back": "nowhere", "chunk_order": 9999})
                 return json.dumps(payload)
 
             return answer
@@ -276,6 +267,10 @@ async def test_quiz_questions_are_shaped_for_marking(notebook, fake_db):
         assert len(item["options"]) == 4
         assert 0 <= item["answer_index"] <= 3
 
+        # The index points at the answer the model called correct, wherever
+        # the shuffle put it -- the model was never asked for a position.
+        assert item["options"][item["answer_index"]].startswith("right ")
+
 
 async def test_every_item_carries_the_asset_it_came_from(notebook, fake_db):
     """chunk_order alone cannot open a page.
@@ -302,22 +297,14 @@ async def test_every_item_carries_the_asset_it_came_from(notebook, fake_db):
 async def test_items_from_different_documents_cite_different_assets(notebook, fake_db):
     """The case the bug would have broken: two documents, overlapping
     chunk_order, and a citation that must still land on the right one."""
-    from models.db_schema import DataChunk
+    from data.models import DataChunk
 
     await notebook(chunk_count=5)
     project = await fake_db.projects().get_project("c1")
 
     # A second document whose chunk_order range overlaps the first exactly.
     await fake_db.chunks().create_chunks(
-        [
-            DataChunk(
-                project_id=project.id,
-                asset_id="a2",
-                chunk_order=i,
-                chunk_content=f"other {i}",
-            )
-            for i in range(5)
-        ]
+        [DataChunk(project_id=project.id, asset_id="a2", chunk_order=i, chunk_content=f"other {i}") for i in range(5)]
     )
 
     # One item per summary, so both documents are represented -- the default
@@ -330,10 +317,7 @@ async def test_items_from_different_documents_cite_different_assets(notebook, fa
     artifact = await fake_db.artifacts().find_artifact("c1", "flashcards")
     assets = {item["asset_id"] for item in artifact.items}
 
-    assert assets == {
-        "a1",
-        "a2",
-    }, f"items were all attributed to one document: {assets}"
+    assert assets == {"a1", "a2"}, f"items were all attributed to one document: {assets}"
 
     # And the orders are the real ones, not the batch-local numbering.
     a1_orders = {i["chunk_order"] for i in artifact.items if i["asset_id"] == "a1"}
@@ -374,9 +358,7 @@ async def test_a_short_summarising_answer_leaves_chunks_unsummarised(notebook, f
                 chunk.summary == f"summary of {chunk.chunk_content}"
             ), f"chunk {chunk.chunk_order} holds another chunk's summary"
 
-    assert any(
-        not c.summary for c in chunks
-    ), "the skipped chunks were filled in from somewhere"
+    assert any(not c.summary for c in chunks), "the skipped chunks were filled in from somewhere"
     assert any(c.summary for c in chunks), "nothing was summarised at all"
 
 
@@ -389,19 +371,13 @@ async def test_only_summarised_chunks_can_produce_items(notebook, fake_db):
 
     artifact = await fake_db.artifacts().find_artifact("c1", "flashcards")
     project = await fake_db.projects().get_project("c1")
-    chunks = {
-        c.chunk_order: c async for c in fake_db.chunks().iter_project_chunks(project.id)
-    }
+    chunks = {c.chunk_order: c async for c in fake_db.chunks().iter_project_chunks(project.id)}
 
     for item in artifact.items:
-        assert chunks[
-            item["chunk_order"]
-        ].summary, f"item {item} cites a chunk that was never summarised"
+        assert chunks[item["chunk_order"]].summary, f"item {item} cites a chunk that was never summarised"
 
 
-async def test_a_question_offering_the_same_option_twice_is_not_stored(
-    notebook, fake_db
-):
+async def test_a_question_offering_the_same_option_twice_is_not_stored(notebook, fake_db):
     """Seen in a real run: four options, two of them the identical string.
 
     That question cannot be answered — if the repeated option is the correct
@@ -422,12 +398,7 @@ async def test_a_question_offering_the_same_option_twice_is_not_stored(
 
             if "questions" in payload and payload["questions"] and Repeater.first:
                 Repeater.first = False
-                payload["questions"][0]["options"] = [
-                    "same",
-                    "same",
-                    "other",
-                    "another",
-                ]
+                payload["questions"][0]["wrong_answers"] = ["same", "same", "other"]
                 return json.dumps(payload)
 
             return answer
@@ -441,10 +412,43 @@ async def test_a_question_offering_the_same_option_twice_is_not_stored(
 
     for item in artifact.items:
         options = [o.strip().casefold() for o in item["options"]]
-        assert (
-            len(set(options)) == 4
-        ), f"stored a question with a repeated option: {item['options']}"
+        assert len(set(options)) == 4, f"stored a question with a repeated option: {item['options']}"
 
+
+async def test_a_question_offered_as_its_own_option_is_not_stored(notebook, fake_db):
+    """From a real quiz: "What technical skills does X have experience with?"
+    offering "X has experience with which of the following?" as an option —
+    and marking that one correct, while the option that actually listed the
+    skills was marked wrong.
+
+    An option that is itself a question cannot answer one. Decidable here,
+    unlike the answer merely being wrong, so the model is asked again.
+    """
+
+    class Padder(FakeClient):
+        first = True
+
+        async def generate_text(self, prompt, **kw):
+            answer = await super().generate_text(prompt, **kw)
+            payload = json.loads(answer)
+
+            if "questions" in payload and payload["questions"] and Padder.first:
+                Padder.first = False
+                payload["questions"][0]["correct_answer"] = "which of the following is true?"
+                return json.dumps(payload)
+
+            return answer
+
+    Padder.first = True
+    await notebook(chunk_count=3, client=Padder())
+
+    await studio._run_generation("c1", ArtifactKind.QUIZ.value)
+
+    artifact = await fake_db.artifacts().find_artifact("c1", "quiz")
+
+    for item in artifact.items:
+        for option in item["options"]:
+            assert not option.rstrip().endswith("?"), f"stored a question as an option: {option!r}"
 
 
 class MindMapClient(FakeClient):
@@ -537,41 +541,17 @@ async def test_flashcards_are_not_regrouped(notebook, fake_db):
     artifact = await fake_db.artifacts().find_artifact("c1", "flashcards")
     assert not any("branch" in item for item in artifact.items)
 
-async def test_a_question_offered_as_its_own_option_is_not_stored(notebook, fake_db):
-    """From a real quiz: "What technical skills does X have experience with?"
-    offering "X has experience with which of the following?" as an option —
-    and marking that one correct, while the option that actually listed the
-    skills was marked wrong.
 
-    An option that is itself a question cannot answer one. Decidable here,
-    unlike the answer merely being wrong, so the model is asked again.
-    """
+async def test_a_batch_never_adds_more_items_than_it_asked_for(notebook, fake_db):
+    """llama-3.2-11b answered one batch with 48 quiz questions, and a quiz grew
+    to 123. The prompt says "at most"; the controller makes it true."""
+    from application.services.studio.ArtifactService import ITEMS_PER_BATCH
 
-    class Padder(FakeClient):
-        first = True
-
-        async def generate_text(self, prompt, **kw):
-            answer = await super().generate_text(prompt, **kw)
-            payload = json.loads(answer)
-
-            if "questions" in payload and payload["questions"] and Padder.first:
-                Padder.first = False
-                payload["questions"][0]["options"][
-                    0
-                ] = "which of the following is true?"
-                return json.dumps(payload)
-
-            return answer
-
-    Padder.first = True
-    await notebook(chunk_count=3, client=Padder())
+    await notebook(chunk_count=10, client=FakeClient(items_per_call=10))
 
     await studio._run_generation("c1", ArtifactKind.QUIZ.value)
 
     artifact = await fake_db.artifacts().find_artifact("c1", "quiz")
-
-    for item in artifact.items:
-        for option in item["options"]:
-            assert not option.rstrip().endswith(
-                "?"
-            ), f"stored a question as an option: {option!r}"
+    # Ten chunks are two batches: the small first one (3), then the other 7.
+    assert artifact.items
+    assert len(artifact.items) <= ITEMS_PER_BATCH * 2

@@ -1,7 +1,7 @@
 """The transcript, and the streamed answer."""
 
-from enums import ChatRole
-from models.db_schema import Message
+from data.models import Message
+from shared.enums import ChatRole
 
 
 async def test_history_is_empty_for_a_new_chat(client, seed):
@@ -88,7 +88,8 @@ async def test_an_empty_question_is_rejected(client, seed):
 
 def _chunk(order, page, asset_id="a1"):
     from bson.objectid import ObjectId
-    from models.db_schema import DataChunk
+
+    from data.models import DataChunk
 
     return DataChunk(
         project_id=ObjectId(),

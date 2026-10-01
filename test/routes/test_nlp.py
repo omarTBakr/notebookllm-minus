@@ -45,7 +45,7 @@ async def test_search_falls_back_to_the_default_for_a_non_chat_project(
     Those must keep working on the .env default rather than 404-ing because no
     chat row exists for the id.
     """
-    from models.db_schema import Project
+    from data.models import Project
 
     fake_db.projects().items["p-no-chat"] = Project(
         project_id="p-no-chat", name="not a notebook"

@@ -1,0 +1,12 @@
+# Loads every dashboard JSON under /var/lib/grafana/dashboards at startup and
+# watches for changes, so editing the file on disk updates Grafana.
+apiVersion: 1
+
+providers:
+  - name: notebookllm
+    type: file
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

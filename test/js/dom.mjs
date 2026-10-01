@@ -82,7 +82,7 @@ export const document = {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(
-  resolve(here, "../../src/web/static/js/markdown.js"),
+  resolve(here, "../../src/presentation/web/static/js/markdown.js"),
   "utf8",
 );
 

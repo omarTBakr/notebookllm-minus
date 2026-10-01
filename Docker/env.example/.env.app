@@ -15,6 +15,14 @@ MAX_FILE_SIZE=10485760
 # Bytes per streaming read while saving an upload.
 MAX_FILE_CHUNK_SIZE=65536
 
+# --- Link sources (PDF, article or YouTube from a URL) -------------------------
+# Seconds allowed to fetch a link, redirects and body included.
+URL_FETCH_TIMEOUT=30
+# Transcript languages to prefer for a YouTube video, in order.
+YOUTUBE_TRANSCRIPT_LANGUAGES=["ar", "en"]
+# http(s) proxy for transcript requests; YouTube blocks most cloud IPs.
+YOUTUBE_PROXY_URL=""
+
 # --- Document database ---------------------------------------------------------
 # postgres (pgvector) | mongo (+ qdrant)
 DOCUMENT_DB_BACKEND="postgres"
@@ -41,7 +49,7 @@ VECTOR_DB_DISTANCE_METHOD="cosine"
 
 # --- LLM providers and API keys ------------------------------------------------
 # Which provider answers chat and which one embeds:
-# anthropic | openai | google | cohere | nvidia | ollama
+# anthropic | openai | google | cohere | nvidia | openrouter | ollama
 GENERATION_BACKEND="ollama"
 # Changing the embedding provider means rebuilding the index.
 EMBEDDING_BACKEND="nvidia"
@@ -60,7 +68,8 @@ COHERE_API_KEY=""
 GOOGLE_API_KEY=""
 # Google model offered in the model picker.
 GOOGLE_MODEL_ID="gemini-3.6-flash"
-# OpenRouter: used only by the `openrouter` OCR extractor.
+# OpenRouter: the `openrouter` chat/embedding backend (its models join the picker;
+# ids are <publisher>/<model>) and the OCR extractor. OPENROUTER_MODEL is the OCR's.
 OPENROUTER_API_KEY=""
 OPENROUTER_MODEL="minimax/minimax-m3:free"
 
@@ -90,22 +99,51 @@ RETRIEVAL_MIN_SCORE=0.0
 # --- Ingestion (parsing and chunking) ------------------------------------------
 # pymupdf: slower (~2.3 s/page) but the only loader that yields citation highlights.
 PDF_LOADER="pymupdf"
+# Pages per queue message, the unit of parsing and retry.
+PDF_BATCH_PAGES=10
 # Chunks shorter than this are merged into a neighbour on the same page.
 MIN_CHUNK_CHARS=100
 # Chunks embedded per request to the embedding model.
 CHUNKING_BATCH_SIZE=512
 
 # --- OCR (re-read unsearchable Arabic pages) -----------------------------------
-# Off by default: a re-read page loses its citation highlight.
+# Off: the post-processing pass below replaced it and keeps citation highlights.
 OCR_ENABLED=false
 # qalam | tesseract-best | openrouter
-OCR_EXTRACTOR="qalam"
+OCR_EXTRACTOR="tesseract-best"
+# qalam's word-break gap, as a fraction of the type size (upstream: 0.25).
+# Needs the patched qalam build; stock qalam ignores it.
+QALAM_WORD_GAP=0.15
+# OCR pages with no usable text layer (scans, pictures of text) with
+# tesseract-best. qalam picks the pages; costs ~1s per such page.
+OCR_UNREADABLE_PAGES=true
 # Where the image installs the tessdata_best models.
 TESSDATA_BEST="/usr/share/tessdata-best"
 # Pages with fewer characters than this are never re-read.
 OCR_MIN_CHARS=80
 # Pages OCR'd in parallel. 0 = sized from the container's CPUs and memory.
 OCR_WORKERS=0
+
+# --- Text post-processing (repair split and fused words with an LLM) -----------
+POSTPROCESS_ENABLED=true
+# <source>/<model>. NIM ids keep their publisher, hence nvidia/nvidia/...
+POSTPROCESS_MODEL_ID="nvidia/nvidia/nemotron-3-super-120b-a12b"
+# Pages per model call. Larger calls truncate long Arabic pages.
+POSTPROCESS_PAGES_PER_CALL=5
+# Model calls in flight per batch (4 hosted, 2 for a local Ollama).
+POSTPROCESS_CONCURRENCY=4
+# Context window; Ollama only.
+POSTPROCESS_NUM_CTX=16384
+# Output cap per call. Higher only feeds repetition loops.
+POSTPROCESS_MAX_TOKENS=12288
+# Reject a repair whose length differs from the original by more than this ratio.
+POSTPROCESS_LENGTH_TOLERANCE=0.5
+
+# --- Chunk summaries (what Studio generates from) ------------------------------
+# Summarise each chunk of a new document right after it is stored, with the
+# notebook's own model, so Studio's first flashcards skip the summarising pass.
+# Off: Studio still summarises on first use.
+INGEST_SUMMARISE=true
 
 # --- Celery broker (RabbitMQ) --------------------------------------------------
 # Must match RABBITMQ_DEFAULT_USER / _PASS in env/.env.rabbitmq.
@@ -114,6 +152,7 @@ CELERY_PASSWORD="REPLACE_ME__same_as_RABBITMQ_DEFAULT_PASS"
 CELERY_HOST="rabbitmq"
 CELERY_PORT=5672
 CELERY_VHOST="/"
+CELERY_MANAGEMENT_PORT=15672
 
 # --- Celery result backend (Redis) ---------------------------------------------
 # Password must match REDIS_PASSWORD in env/.env.redis.
@@ -173,3 +212,4 @@ LOG_BACKUP_COUNT=5
 # Prometheus scrape endpoint.
 METRICS_ENABLED=true
 METRICS_PATH="/metrics"
+WORKER_METRICS_PORT=9808

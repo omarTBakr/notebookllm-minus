@@ -6,7 +6,7 @@ preserve every character and still destroy every word, and only one of the two
 numbers notices.
 """
 
-from arabic_extraction.benchmark.metrics import (
+from application.arabic_extraction.benchmark.metrics import (
     agreement,
     character_error_rate,
     levenshtein,

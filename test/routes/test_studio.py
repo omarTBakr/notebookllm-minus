@@ -7,14 +7,14 @@ run — which is the design this replaced, and the complaint that prompted it.
 
 import pytest
 
-from enums import ArtifactKind, ArtifactStatus
-from models.db_schema import Artifact, DataChunk
+from data.models import Artifact, DataChunk
+from shared.enums import ArtifactKind, ArtifactStatus
 
 
 @pytest.fixture
 def queued(monkeypatch):
     """Stand in for the broker, recording what would have been published."""
-    import routes.chat.studio as studio_route
+    import presentation.dependencies as studio_route
 
     published = []
 
@@ -46,15 +46,7 @@ async def indexed(fake_db, seed):
     project = await fake_db.projects().get_project("c1")
 
     await fake_db.chunks().create_chunks(
-        [
-            DataChunk(
-                project_id=project.id,
-                asset_id="a1",
-                chunk_order=i,
-                chunk_content=f"content {i}",
-            )
-            for i in range(4)
-        ]
+        [DataChunk(project_id=project.id, asset_id="a1", chunk_order=i, chunk_content=f"content {i}") for i in range(4)]
     )
 
     return seed
@@ -63,9 +55,7 @@ async def indexed(fake_db, seed):
 # --- starting a generation -----------------------------------------------------
 
 
-async def test_a_notebook_with_no_documents_is_refused_immediately(
-    client, seed, queued
-):
+async def test_a_notebook_with_no_documents_is_refused_immediately(client, seed, queued):
     """The bug that sent a panel spinning for four minutes.
 
     Clicking a Studio tile while the upload is still indexing used to queue a
@@ -196,14 +186,7 @@ async def test_a_failed_set_still_returns_what_it_produced(client, seed, fake_db
             chat_id="c1",
             kind=ArtifactKind.QUIZ,
             status=ArtifactStatus.FAILED,
-            items=[
-                {
-                    "question": "Q",
-                    "options": list("abcd"),
-                    "answer_index": 0,
-                    "chunk_order": 1,
-                }
-            ],
+            items=[{"question": "Q", "options": list("abcd"), "answer_index": 0, "chunk_order": 1}],
             error="provider fell over",
         )
     )

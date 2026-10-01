@@ -2,8 +2,8 @@
 
 import pytest
 
-from factories.provider_cache import ProviderCache
-from factories.llmchatting import LLMChattingInterface
+from application.providers.chatting import LLMChattingInterface
+from application.providers.provider_cache import ProviderCache
 
 
 @pytest.fixture
@@ -123,3 +123,35 @@ def test_the_two_kinds_of_id_coexist_in_one_cache(keyed):
     assert local is not vendor
     assert type(local).__name__ != type(vendor).__name__
     assert cache.chatting("local/llama3.1:8b") is local
+
+
+# --- context window -----------------------------------------------------------
+
+
+def test_a_context_window_reaches_the_ollama_options(cache):
+    """Ollama truncates a prompt longer than its window silently -- no error, no
+    warning, and a perfectly well-formed reply to whatever survived. The
+    correction pass sends a whole page and expects it back, so this option is
+    the difference between a repaired page and one missing its beginning."""
+    client = cache.chatting("local/gemma4:e4b", num_ctx=16384)
+
+    assert client._options(max_tokens=512, temperature=0)["num_ctx"] == 16384
+
+
+def test_no_context_window_leaves_the_option_out(cache):
+    """Absent rather than zero or a guess: omitting it is what lets Ollama keep
+    the model's own default, which is the right answer for ordinary chat."""
+    client = cache.chatting("local/gemma4:e4b")
+
+    assert "num_ctx" not in client._options(max_tokens=512, temperature=0)
+
+
+def test_two_context_windows_are_two_clients(cache):
+    """Part of the key, like `dimensions` on the embedding side: a client built
+    for a page-sized window must not be handed to a chat that wants the model's
+    default, or the two silently share whichever was built first."""
+    wide = cache.chatting("local/gemma4:e4b", num_ctx=16384)
+    narrow = cache.chatting("local/gemma4:e4b")
+
+    assert wide is not narrow
+    assert cache.chatting("local/gemma4:e4b", num_ctx=16384) is wide
