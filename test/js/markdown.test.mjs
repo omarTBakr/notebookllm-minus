@@ -1,6 +1,10 @@
 // The markdown renderer, table support in particular.
 //
-//     node --test test/js/
+//     node --test test/js/*.test.mjs
+//
+// The glob, not the directory: `node --test test/js/` fails with
+// "Cannot find module" on node 22, which resolves a bare directory
+// argument differently than it used to.
 //
 // No dependencies and no package.json: node 22 ships the runner, and dom.mjs
 // stands in for the browser.

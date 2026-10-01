@@ -1,14 +1,13 @@
-"""The shape of the ingestion chain, and where its links are published to.
+"""The shape of the ingestion pipeline, and where its stages are published to.
 
-Building the ANN index used to be the tail of index_project_task. It is now a
-link of its own, which buys visibility — a bar in Flower, a row in
-task_executions — at the cost of three ways to get it silently wrong, one test
-section each:
+Ingestion is no longer a Celery chain. The planner publishes its page batches
+and returns; the last batch to finish claims the collection and the collector
+publishes the indexing stage. What survives from the chain era is the *naming*:
+three stages, in order, each with a task_executions row written before any of
+them runs.
 
-* a mutable signature, which corrupts arguments rather than raising,
-* a caller that queues indexing without the build, leaving a collection that
-  searches correctly and slowly forever,
-* a queue no worker consumes, which leaves the task QUEUED with no error.
+`index_chain` is still a real chain -- /nlp/index/push indexes chunks that
+already exist -- so its link-shape tests are unchanged.
 """
 
 import re
@@ -16,14 +15,15 @@ from pathlib import Path
 
 import pytest
 
-from enums import CeleryTaskFunction
-from tasks.workflows import (
+from application.tasks.workflows import (
+    QueuedChain,
     chain_results,
     chain_task_names,
     index_chain,
     index_chain_task_names,
-    ingestion_chain,
+    ingestion_signature,
 )
+from shared.enums import CeleryTaskFunction
 
 COMPOSE = Path(__file__).resolve().parents[2] / "Docker" / "docker-compose.yml"
 
@@ -33,53 +33,57 @@ def _links(canvas):
     return [(sig["task"], tuple(sig.args), bool(sig.immutable)) for sig in canvas.tasks]
 
 
-# --- the chain builds the index, as its own link ------------------------------
+# --- the three ingestion stages, and the ids they are published under ---------
 
 
-def test_ingestion_ends_by_building_the_index():
-    """Three links, in order. index_chunks no longer builds the index itself,
-    so a chain that stopped at indexing would embed every chunk and leave the
-    collection on an exact scan."""
-    names = [name for name, _, _ in _links(ingestion_chain("p1", {"reset": False}))]
-
-    assert names == [
+def test_the_three_stage_names_are_in_publication_order():
+    """These are what each stage's task_executions row is filed under, and the
+    order the routes zip them against QueuedChain.ids in."""
+    assert chain_task_names() == (
         "notebookllm.process_data_task",
         "notebookllm.index_project_task",
         "notebookllm.build_vector_index_task",
-    ]
+    )
 
 
-def test_the_index_build_is_given_only_the_project():
-    """The index covers the whole collection whichever asset triggered the run,
-    so passing asset_id would suggest a scope the build does not have."""
-    _, _, build = _links(ingestion_chain("p1", {}, asset_id="a1", batch_size=64))
+def test_every_stage_gets_its_own_id():
+    """Three rows, three ids. Reusing one would make two stages share a row and
+    the second overwrite the first's status."""
+    queued = QueuedChain()
 
-    assert build == ("notebookllm.build_vector_index_task", ("p1",), True)
-
-
-def test_every_link_is_immutable():
-    """`.s` instead of `.si` prepends the parent's return value to the child's
-    arguments — index_project_task would receive process's *result dict* as its
-    project_id. Silent corruption, not an error, on every ingest."""
-    for name, _, immutable in _links(ingestion_chain("p1", {}, asset_id="a1")):
-        assert immutable, f"{name} would inherit its parent's return value"
+    assert len(set(queued.ids)) == 3
+    assert queued.ids == (queued.process_id, queued.index_id, queued.build_id)
 
 
-def test_indexing_does_not_inherit_process_reset():
-    """reset means different things on the two sides: chunks on process, the
-    *whole vector collection* on index. Inheriting it would turn "re-ingest
-    this document" into "throw away every vector in the notebook"."""
-    _, index, _ = _links(ingestion_chain("p1", {"reset": True}, asset_id="a1", batch_size=32))
+def test_the_planner_is_published_under_the_id_the_route_recorded():
+    """The browser polls the planner's id from the moment the upload returns.
+    Publishing under a different one leaves that row QUEUED for ever while the
+    work runs somewhere nobody is looking -- which is exactly what the chord
+    did."""
+    queued = QueuedChain()
+    signature = ingestion_signature("p1", {"reset": False}, queued)
 
-    assert index == ("notebookllm.index_project_task", ("p1", "a1", False, 32), True)
+    assert signature.options["task_id"] == queued.process_id
+    assert signature["task"] == "notebookllm.process_data_task"
 
 
-def test_the_index_chain_is_the_ingestion_chain_without_the_processing():
+def test_the_downstream_ids_ride_with_the_planner():
+    """The collector runs minutes later in another process and publishes index
+    and build itself. It reads their ids off the run row, which the planner
+    writes from these -- so they have to reach it."""
+    queued = QueuedChain()
+    _, request_data = ingestion_signature("p1", {"reset": True}, queued).args
+
+    assert request_data["parent_task_id"] == queued.process_id
+    assert request_data["index_task_id"] == queued.index_id
+    assert request_data["build_task_id"] == queued.build_id
+    assert request_data["reset"] is True, "the caller's own arguments must survive"
+
+
+def test_the_index_chain_is_the_ingestion_stages_without_the_processing():
     """/nlp/index/push indexes chunks that already exist, so it skips process
     — but it must not skip the build, which is what a bare .delay() did."""
-    assert [name for name, _, _ in _links(index_chain("p1"))] == [
-        name for name, _, _ in _links(ingestion_chain("p1", {}))
-    ][1:]
+    assert [name for name, _, _ in _links(index_chain("p1"))] == list(chain_task_names())[1:]
 
 
 def test_the_index_chain_passes_its_own_reset_through():
@@ -92,13 +96,6 @@ def test_the_index_chain_passes_its_own_reset_through():
 
 
 # --- the names used to write one row per link --------------------------------
-
-
-def test_the_recorded_names_match_the_tasks_the_chain_publishes():
-    """These names are what each link's task_executions row is filed under. A
-    name that does not match the task actually published leaves the row
-    orphaned and the status poll answering UNKNOWN."""
-    assert chain_task_names() == tuple(name for name, _, _ in _links(ingestion_chain("p1", {})))
 
 
 def test_the_index_chain_names_are_the_tail_of_the_ingestion_names():
@@ -161,28 +158,26 @@ def test_the_compose_queue_list_was_actually_found():
     assert "index_project_task" in _compose_queues()
 
 
-@pytest.mark.parametrize("task_name", [name for name, _, _ in _links(ingestion_chain("p", {}))])
+@pytest.mark.parametrize("task_name", chain_task_names())
 def test_every_task_in_the_chain_is_routed_to_a_queue_a_worker_consumes(task_name):
     """A task published to a queue with no consumer sits QUEUED forever and
     says nothing — no error, no dead letter, no timeout. build_vector_index_task
     therefore shares the *index* queue rather than getting one of its own,
     because the worker's -Q list lives in a file this one cannot change."""
-    import tasks  # noqa: F401 — registers the tasks on the app
+    import application.tasks  # noqa: F401 — registers the tasks on the app
     from celery_app import SETTINGS, celery_app
 
     queue = celery_app.conf.task_routes[task_name]["queue"]
     suffix = queue.removeprefix(f"{SETTINGS.CELERY_PROJECT_NAME}.")
 
-    assert suffix in _compose_queues(), (
-        f"{task_name} routes to {queue!r}, which no compose worker subscribes to"
-    )
+    assert suffix in _compose_queues(), f"{task_name} routes to {queue!r}, which no compose worker subscribes to"
 
 
 def test_the_index_build_shares_the_index_queue():
     """Stated explicitly because it is the one place a task name and its queue
     name deliberately differ, and a later "tidy-up" that gives it its own queue
     would break the rule above without touching this file."""
-    import tasks  # noqa: F401
+    import application.tasks  # noqa: F401
     from celery_app import SETTINGS, celery_app
 
     routes = celery_app.conf.task_routes
@@ -204,9 +199,7 @@ def test_every_declared_queue_has_a_worker():
 
     prefix = f"{SETTINGS.CELERY_PROJECT_NAME}."
     declared = {
-        name.removeprefix(prefix)
-        for name in celery_app.conf.task_queues
-        if name != SETTINGS.CELERY_TASK_DEFAULT_QUEUE
+        queue.name.removeprefix(prefix) for queue in celery_app.conf.task_queues if queue.name != SETTINGS.CELERY_TASK_DEFAULT_QUEUE
     }
 
     assert declared, "no queues declared, so this test checks nothing"
@@ -217,16 +210,16 @@ def test_every_job_module_is_registered():
     """A job module missing from celery_app's `include` never registers its
     tasks. The worker then rejects them as unknown, or — worse — the queue they
     were routed to simply accepts messages nothing consumes, with no error
-    anywhere. Read from the source rather than by importing: a module that is
-    *not* registered is exactly the one nothing has imported."""
+    anywhere. Found by reading the source rather than by importing: a module
+    that is *not* registered is exactly the one nothing has imported."""
     from celery_app import celery_app
 
-    tasks_dir = Path(__file__).resolve().parents[2] / "src" / "tasks"
+    jobs = Path(__file__).resolve().parents[2] / "src" / "application" / "tasks" / "jobs"
     registered = set(celery_app.conf.include)
 
     defines_a_task = {
-        f"tasks.{path.relative_to(tasks_dir).with_suffix('').as_posix().replace('/', '.')}"
-        for path in tasks_dir.rglob("*.py")
+        f"application.tasks.jobs.{path.relative_to(jobs).with_suffix('').as_posix().replace('/', '.')}"
+        for path in jobs.rglob("*.py")
         # A package __init__ re-exports tasks but defines none; the decorator
         # appears there only in prose.
         if path.name != "__init__.py" and "@celery_app.task" in path.read_text()

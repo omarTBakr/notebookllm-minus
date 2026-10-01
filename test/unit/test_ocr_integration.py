@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from controllers import ProcessController
+from application.services import ProcessService
 
 ARABIC_GOOD = "اليسار حينئذ بديدو ومعناه الهاربة. وحدث في أيام بيكماليون أن رامان " * 3
 ARABIC_FRAGMENTED = "ا ليسا ر حينئذ بديد و و معنا ه ا لها ر بة. و حد ث في أ يا م بيكماليو ن " * 3
@@ -18,13 +18,13 @@ ENGLISH = "The quick brown fox jumps over the lazy dog and keeps on running. " *
 
 
 def _page(index, text, label=None):
-    """Stands in for PdfLayoutController.PageWords."""
+    """Stands in for PdfLayoutService.PageWords."""
     return SimpleNamespace(page_index=index, text=text, page_label=label or str(index + 1))
 
 
 @pytest.fixture
 def controller(monkeypatch):
-    controller = ProcessController()
+    controller = ProcessService()
     monkeypatch.setattr(controller.settings, "OCR_ENABLED", True)
     monkeypatch.setattr(controller.settings, "OCR_EXTRACTOR", "fake-ocr")
     return controller
@@ -33,7 +33,7 @@ def controller(monkeypatch):
 @pytest.fixture
 def fake_engine(monkeypatch):
     """Register a fake extractor so nothing here needs tesseract installed."""
-    from arabic_extraction.base import ArabicExtractor
+    from application.arabic_extraction.base import ArabicExtractor
 
     class Fake(ArabicExtractor):
         name = "fake-ocr"
@@ -44,7 +44,7 @@ def fake_engine(monkeypatch):
             return "نص أعيدت قراءته بواسطة محرك التعرف الضوئي على الحروف"
 
     Fake.calls = []
-    monkeypatch.setattr("arabic_extraction.registry.ALL_EXTRACTORS", (Fake,))
+    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", (Fake,))
     return Fake
 
 
@@ -122,8 +122,8 @@ def test_an_ocred_page_keeps_its_boxes_and_records_a_scale(controller, fake_engi
     controller._reread_unusable_arabic(tmp_path / "x.pdf", pages)
 
     assert 0 in controller._pdf_pages, "the re-read page lost the only boxes it had"
-    assert controller._ocr_scale[0] > 0, "no scale recorded, so offsets cannot be mapped"
-    assert 1 not in controller._ocr_scale, "an untouched page should need no scaling"
+    assert controller._text_scale[0] > 0, "no scale recorded, so offsets cannot be mapped"
+    assert 1 not in controller._text_scale, "an untouched page should need no scaling"
 
 
 def test_a_scaled_highlight_is_marked_approximate():
@@ -131,10 +131,11 @@ def test_a_scaled_highlight_is_marked_approximate():
     a future change has to be able to find the close ones."""
     from types import SimpleNamespace
 
-    from controllers.PdfLayoutController import highlight_metadata
+    from application.services.ingest.PdfLayoutService import highlight_metadata
 
     page = SimpleNamespace(
-        width=100.0, height=100.0,
+        width=100.0,
+        height=100.0,
         starts=[0, 10, 20],
         words=["x" * 10] * 3,
         # pymupdf word tuples: x0, y0, x1, y1, block, line, word_no. Same block
@@ -160,12 +161,10 @@ def test_a_scaled_highlight_is_marked_approximate():
 def test_a_missing_engine_keeps_the_text_layer(controller, tmp_path, monkeypatch, caplog):
     """Failing an upload because an OCR binary is absent would be a worse
     outcome than indexing imperfect text."""
-    monkeypatch.setattr("arabic_extraction.registry.ALL_EXTRACTORS", ())
+    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", ())
 
     with caplog.at_level("WARNING"):
-        replacements = controller._reread_unusable_arabic(
-            tmp_path / "x.pdf", [_page(0, ARABIC_FRAGMENTED)]
-        )
+        replacements = controller._reread_unusable_arabic(tmp_path / "x.pdf", [_page(0, ARABIC_FRAGMENTED)])
 
     assert replacements == {}
     assert any("cannot run" in record.message for record in caplog.records)
@@ -173,7 +172,7 @@ def test_a_missing_engine_keeps_the_text_layer(controller, tmp_path, monkeypatch
 
 def test_a_failing_engine_leaves_that_page_alone(controller, tmp_path, monkeypatch, caplog):
     """One unreadable page must not lose the rest of the document."""
-    from arabic_extraction.base import ArabicExtractor
+    from application.arabic_extraction.base import ArabicExtractor
 
     class Exploding(ArabicExtractor):
         name = "fake-ocr"
@@ -181,13 +180,11 @@ def test_a_failing_engine_leaves_that_page_alone(controller, tmp_path, monkeypat
         def _extract(self, page):
             raise RuntimeError("the traineddata is corrupt")
 
-    monkeypatch.setattr("arabic_extraction.registry.ALL_EXTRACTORS", (Exploding,))
+    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", (Exploding,))
     controller._pdf_pages = {0: _page(0, ARABIC_FRAGMENTED)}
 
     with caplog.at_level("WARNING"):
-        replacements = controller._reread_unusable_arabic(
-            tmp_path / "x.pdf", [controller._pdf_pages[0]]
-        )
+        replacements = controller._reread_unusable_arabic(tmp_path / "x.pdf", [controller._pdf_pages[0]])
 
     assert replacements == {}
     # The OCR did not happen, so the boxes still describe the text.
@@ -207,10 +204,10 @@ def test_page_extraction_does_not_fork_inside_a_daemonic_worker(monkeypatch):
     that named the temp file and not the cause. This pins the serial fallback:
     without it the pool is constructed and the upload dies.
     """
-    import controllers.PdfLayoutController as layout
+    import application.services.ingest.PdfLayoutService as layout
 
-    monkeypatch.setattr(layout, "_is_daemonic", lambda: True)
-    monkeypatch.setattr(layout, "_cpu_count", lambda: 24)
+    monkeypatch.setattr(layout, "is_daemonic", lambda: True)
+    monkeypatch.setattr(layout, "cpu_count", lambda: 24)
 
     def explode(*args, **kwargs):
         raise AssertionError("daemonic processes are not allowed to have children")
@@ -231,10 +228,10 @@ def test_page_extraction_does_not_fork_inside_a_daemonic_worker(monkeypatch):
 def test_page_extraction_still_forks_when_it_may(monkeypatch, tmp_path):
     """The constraint belongs to the caller's context, not to this module: the
     API process and the benchmark still get the pool."""
-    import controllers.PdfLayoutController as layout
+    import application.services.ingest.PdfLayoutService as layout
 
-    monkeypatch.setattr(layout, "_is_daemonic", lambda: False)
-    monkeypatch.setattr(layout, "_cpu_count", lambda: 4)
+    monkeypatch.setattr(layout, "is_daemonic", lambda: False)
+    monkeypatch.setattr(layout, "cpu_count", lambda: 4)
 
     used = []
     real_pool = layout.ProcessPoolExecutor
@@ -270,8 +267,13 @@ def _arabic_pdf() -> Path:
     for line in ("تقرير سنوي عن حالة المكتبة", "البند الأول مراجعة البيانات"):
         image = Image.new("RGB", (900, 300), "white")
         ImageDraw.Draw(image).text(
-            (860, 100), line, font=ImageFont.truetype(font_path, 40),
-            fill="black", anchor="ra", direction="rtl", language="ar",
+            (860, 100),
+            line,
+            font=ImageFont.truetype(font_path, 40),
+            fill="black",
+            anchor="ra",
+            direction="rtl",
+            language="ar",
         )
         pages.append(image)
 
@@ -293,7 +295,7 @@ def test_pages_are_read_concurrently(controller, tmp_path, monkeypatch):
     """
     import threading
 
-    from arabic_extraction.base import ArabicExtractor
+    from application.arabic_extraction.base import ArabicExtractor
 
     seen: set[int] = set()
     barrier = threading.Barrier(4, timeout=10)
@@ -308,7 +310,7 @@ def test_pages_are_read_concurrently(controller, tmp_path, monkeypatch):
             barrier.wait()
             return "نص أعيدت قراءته بواسطة محرك التعرف الضوئي على الحروف"
 
-    monkeypatch.setattr("arabic_extraction.registry.ALL_EXTRACTORS", (Concurrent,))
+    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", (Concurrent,))
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 4)
 
     pages = [_page(n, ARABIC_FRAGMENTED) for n in range(4)]
@@ -334,9 +336,12 @@ def test_worker_count_falls_back_to_the_available_cpus(controller, monkeypatch):
     import sys
 
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 0)
+    # Concurrency 1 so this isolates the CPU bound; dividing the machine
+    # between concurrent tasks has its own tests below.
+    monkeypatch.setattr(controller.settings, "CELERY_WORKER_CONCURRENCY", 1)
     # The class is exported under the module's own name, so the dotted string
     # form resolves to the class. Reach for the module itself.
-    monkeypatch.setattr(sys.modules["controllers.ProcessController"], "_cpu_count", lambda: 2)
+    monkeypatch.setattr(sys.modules["application.services.ingest.ProcessService"], "cpu_count", lambda: 2)
 
     assert controller._ocr_workers(50) == 2
 
@@ -361,18 +366,21 @@ def test_worker_count_is_capped_by_memory_not_just_cpus(controller, monkeypatch)
     """
     import sys
 
-    module = sys.modules["controllers.ProcessController"]
+    module = sys.modules["application.services.ingest.ProcessService"]
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 0)
-    monkeypatch.setattr(module, "_cpu_count", lambda: 24)
-    monkeypatch.setattr(module, "_available_memory_mb", lambda: 5120.0)
+    # Pinned, because this test is about the *memory* cap and the other bound
+    # would otherwise decide it: CELERY_WORKER_CONCURRENCY now defaults to 0
+    # ("every available CPU"), which divides the per-task core share down to 1
+    # and would mask what is being measured here.
+    monkeypatch.setattr(controller.settings, "CELERY_WORKER_CONCURRENCY", 1)
+    monkeypatch.setattr(module, "cpu_count", lambda: 24)
+    monkeypatch.setattr(module, "available_memory_mb", lambda: 5120.0)
 
     # Half of 5 GB, at 256 MB a page.
     assert controller._ocr_workers(222) == 10
 
 
-def test_an_explicit_worker_count_is_honoured_above_the_memory_bound(
-    controller, monkeypatch, caplog
-):
+def test_an_explicit_worker_count_is_honoured_above_the_memory_bound(controller, monkeypatch, caplog):
     """An operator who sets this has the machine in front of them.
 
     Capping it silently is what left a 2-vCPU server unable to use both cores:
@@ -382,10 +390,10 @@ def test_an_explicit_worker_count_is_honoured_above_the_memory_bound(
     """
     import sys
 
-    module = sys.modules["controllers.ProcessController"]
+    module = sys.modules["application.services.ingest.ProcessService"]
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 4)
-    monkeypatch.setattr(module, "_cpu_count", lambda: 64)
-    monkeypatch.setattr(module, "_available_memory_mb", lambda: 1024.0)
+    monkeypatch.setattr(module, "cpu_count", lambda: 64)
+    monkeypatch.setattr(module, "available_memory_mb", lambda: 1024.0)
 
     with caplog.at_level("WARNING"):
         assert controller._ocr_workers(222) == 4
@@ -393,15 +401,13 @@ def test_an_explicit_worker_count_is_honoured_above_the_memory_bound(
     assert any("above what free memory suggests" in r.message for r in caplog.records)
 
 
-def test_an_explicit_worker_count_within_the_bound_warns_about_nothing(
-    controller, monkeypatch, caplog
-):
+def test_an_explicit_worker_count_within_the_bound_warns_about_nothing(controller, monkeypatch, caplog):
     import sys
 
-    module = sys.modules["controllers.ProcessController"]
+    module = sys.modules["application.services.ingest.ProcessService"]
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 2)
-    monkeypatch.setattr(module, "_cpu_count", lambda: 64)
-    monkeypatch.setattr(module, "_available_memory_mb", lambda: 4096.0)
+    monkeypatch.setattr(module, "cpu_count", lambda: 64)
+    monkeypatch.setattr(module, "available_memory_mb", lambda: 4096.0)
 
     with caplog.at_level("WARNING"):
         assert controller._ocr_workers(222) == 2
@@ -414,10 +420,10 @@ def test_at_least_one_page_is_read_even_on_a_tiny_host(controller, monkeypatch):
     doing it one page at a time."""
     import sys
 
-    module = sys.modules["controllers.ProcessController"]
+    module = sys.modules["application.services.ingest.ProcessService"]
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 0)
-    monkeypatch.setattr(module, "_cpu_count", lambda: 8)
-    monkeypatch.setattr(module, "_available_memory_mb", lambda: 64.0)
+    monkeypatch.setattr(module, "cpu_count", lambda: 8)
+    monkeypatch.setattr(module, "available_memory_mb", lambda: 64.0)
 
     assert controller._ocr_workers(222) == 1
 
@@ -427,9 +433,163 @@ def test_unknowable_memory_falls_back_to_the_cpu_count(controller, monkeypatch):
     CPU bound is still applied rather than nothing."""
     import sys
 
-    module = sys.modules["controllers.ProcessController"]
+    module = sys.modules["application.services.ingest.ProcessService"]
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 0)
-    monkeypatch.setattr(module, "_cpu_count", lambda: 4)
-    monkeypatch.setattr(module, "_available_memory_mb", lambda: None)
+    monkeypatch.setattr(controller.settings, "CELERY_WORKER_CONCURRENCY", 1)
+    monkeypatch.setattr(module, "cpu_count", lambda: 4)
+    monkeypatch.setattr(module, "available_memory_mb", lambda: None)
 
     assert controller._ocr_workers(222) == 4
+
+
+def test_the_pool_is_divided_by_worker_concurrency(controller, monkeypatch):
+    """A prefork worker runs CELERY_WORKER_CONCURRENCY tasks at once and each
+    sizes its own pool, so a per-task pool of `cpus` over-subscribes the box by
+    exactly that factor.
+
+    Observed on a 4-core server with concurrency 2: two documents ingesting
+    together put 8 tesseract processes on 4 cores, load average 8.66, six
+    processes each getting ~48% of a core instead of three getting ~100%.
+    Aggregate CPU looked unremarkable in a dashboard because the time went into
+    scheduling rather than work.
+    """
+    import sys
+
+    module = sys.modules["application.services.ingest.ProcessService"]
+    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 0)
+    monkeypatch.setattr(controller.settings, "CELERY_WORKER_CONCURRENCY", 2)
+    monkeypatch.setattr(module, "cpu_count", lambda: 4)
+    monkeypatch.setattr(module, "available_memory_mb", lambda: 8192.0)
+
+    assert controller._ocr_workers(214) == 2, "4 cores over 2 concurrent tasks is 2 each"
+
+
+def test_a_single_task_worker_gets_every_core(controller, monkeypatch):
+    """The other half of the same rule: at concurrency 1 nothing else is
+    competing, so one document should use the whole machine."""
+    import sys
+
+    module = sys.modules["application.services.ingest.ProcessService"]
+    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 0)
+    monkeypatch.setattr(controller.settings, "CELERY_WORKER_CONCURRENCY", 1)
+    monkeypatch.setattr(module, "cpu_count", lambda: 4)
+    monkeypatch.setattr(module, "available_memory_mb", lambda: 8192.0)
+
+    assert controller._ocr_workers(214) == 4
+
+
+def test_the_share_never_falls_below_one(controller, monkeypatch):
+    """Concurrency above the core count must not round the pool down to zero."""
+    import sys
+
+    module = sys.modules["application.services.ingest.ProcessService"]
+    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 0)
+    monkeypatch.setattr(controller.settings, "CELERY_WORKER_CONCURRENCY", 8)
+    monkeypatch.setattr(module, "cpu_count", lambda: 4)
+    monkeypatch.setattr(module, "available_memory_mb", lambda: 8192.0)
+
+    assert controller._ocr_workers(214) == 1
+
+
+def test_progress_is_reported_per_page(controller, fake_engine, tmp_path, monkeypatch):
+    """Per page, not per asset.
+
+    The counters used to advance only as whole documents finished, so a single
+    222-page upload reported 0 of 1 for its entire run: the bar sat still for
+    minutes, which is indistinguishable from a hang and was reported as one.
+    """
+    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 1)
+    pages = [_page(n, ARABIC_FRAGMENTED) for n in range(5)]
+    controller._pdf_pages = {p.page_index: p for p in pages}
+
+    seen = []
+    controller._reread_unusable_arabic(
+        tmp_path / "x.pdf", pages, on_progress=lambda done, total: seen.append((done, total))
+    )
+
+    assert seen == [
+        (1, 5),
+        (2, 5),
+        (3, 5),
+        (4, 5),
+        (5, 5),
+    ], "progress should advance once per page, ending at the total"
+
+
+def test_progress_advances_as_pages_finish_not_in_submission_order(controller, tmp_path, monkeypatch):
+    """`pool.map` yields in submission order, so a slow early page holds back
+    every completed page behind it and the bar moves in lurches. Completion
+    order is what the user is actually watching."""
+    import time
+
+    from application.arabic_extraction.base import ArabicExtractor
+
+    class Uneven(ArabicExtractor):
+        name = "fake-ocr"
+
+        def _extract(self, page):
+            # The first page submitted is the slowest to finish.
+            time.sleep(0.25 if page.number == 0 else 0.01)
+            return "نص أعيدت قراءته بواسطة محرك التعرف الضوئي على الحروف"
+
+    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", (Uneven,))
+    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 4)
+
+    pages = [_page(n, ARABIC_FRAGMENTED) for n in range(4)]
+    controller._pdf_pages = {p.page_index: p for p in pages}
+
+    first_report = []
+    controller._reread_unusable_arabic(
+        tmp_path / "x.pdf",
+        pages,
+        on_progress=lambda done, total: first_report.append(time.monotonic()),
+    )
+
+    assert len(first_report) == 4
+    # The three fast pages report well before the slow one finishes; with
+    # submission order nothing could be reported until page 0 was done.
+    assert first_report[-1] - first_report[0] > 0.1
+
+
+def test_progress_is_optional(controller, fake_engine, tmp_path):
+    """Every other caller — the benchmark, a script, a test — passes nothing."""
+    pages = [_page(0, ARABIC_FRAGMENTED)]
+    controller._pdf_pages = {0: pages[0]}
+
+    assert controller._reread_unusable_arabic(tmp_path / "x.pdf", pages) != {}
+
+
+async def test_process_and_split_forwards_progress_to_the_layer_below(controller, monkeypatch):
+    """The callback has to survive every hop, and one of them dropped it.
+
+    `process_and_split` accepted `on_progress` and then called `process_bytes`
+    without it, so every layer underneath was wired correctly and never heard
+    from. On the server that showed as a task row written once at start-up and
+    never again -- `stage=chunking done=0 total=1`, unchanged through seven
+    minutes of OCR while four tesseract processes ran.
+
+    Asserted at the seam rather than end to end: the break was *between* two
+    calls, and a fixture rich enough to trigger real OCR would test the OCR
+    rather than the wiring.
+    """
+    captured = {}
+
+    def fake_process_bytes(file_bytes, filename, on_progress=None):
+        captured["on_progress"] = on_progress
+        return []
+
+    monkeypatch.setattr(controller, "process_bytes", fake_process_bytes)
+
+    def callback(done, total):
+        pass
+
+    await controller.process_and_split(b"bytes", "book.pdf", on_progress=callback)
+
+    assert captured["on_progress"] is callback, "process_and_split dropped the progress callback before process_bytes"
+
+
+async def test_process_and_split_still_works_without_a_callback(controller, monkeypatch):
+    """Every other caller -- the benchmark, a script -- passes nothing."""
+    monkeypatch.setattr(controller, "process_bytes", lambda *a, **k: [])
+
+    assert await controller.process_and_split(b"bytes", "book.pdf") == []

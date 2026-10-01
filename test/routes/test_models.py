@@ -71,7 +71,7 @@ async def test_a_notebook_with_no_model_reports_the_qualified_default(client, se
     monkeypatch.setenv("EMBEDDING_MODEL_ID", "nvidia/nemotron-3-embed-1b")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
 
-    from utils import get_settings
+    from shared.utils import get_settings
 
     get_settings.cache_clear()
 
@@ -87,12 +87,12 @@ async def test_that_default_matches_what_the_catalogue_calls_current(client, see
     monkeypatch.setenv("EMBEDDING_MODEL_ID", "nvidia/nemotron-3-embed-1b")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test")
 
-    from controllers import ModelController
-    from utils import get_settings
+    from application.services import ModelService
+    from shared.utils import get_settings
 
     get_settings.cache_clear()
 
     reported = (await client.get("/chat/chats/c1")).json()["embedding_model"]
-    catalogue = await ModelController().catalogue(probe_embeddings=False)
+    catalogue = await ModelService().catalogue(probe_embeddings=False)
 
     assert reported == catalogue["current"]["embedding"]

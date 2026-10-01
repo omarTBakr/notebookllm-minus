@@ -12,13 +12,14 @@ test are the ones the route really published, not a second copy maintained
 here that could drift from it.
 """
 
-from types import SimpleNamespace
-
-from controllers import NLPController
-from enums import IN_FLIGHT, TaskExecutionStatus
-from exceptions import ChatNotFoundError
-from models import ChatModel, ChunkModel, ProjectModel
-from tasks.process_service import process_data
+from application.services import NLPService
+from application.tasks.jobs.ingest.assemble import assemble_chunks
+from application.tasks.jobs.ingest.parse import parse_batch
+from application.tasks.jobs.ingest.postprocess import _correct
+from application.tasks.jobs.ingest.process import plan_ingestion
+from data.models import ChatModel, ChunkModel, ProjectModel
+from shared.enums import IN_FLIGHT, TaskExecutionStatus
+from shared.exceptions import ChatNotFoundError
 
 
 async def _controller_for(app, project_id):
@@ -34,7 +35,7 @@ async def _controller_for(app, project_id):
         # /process and /data create projects that never had a chat.
         chat = None
 
-    return NLPController(
+    return NLPService(
         embedding_client=app.providers.embedding(
             getattr(chat, "embedding_model", None),
             getattr(chat, "embedding_dimensions", None),
@@ -69,13 +70,7 @@ async def drain_ingestion(app):
             await controller.build_index(project_id)
 
         elif task.task_name.endswith("process_data_task"):
-            request = SimpleNamespace(
-                asset_id=args.get("asset_id"),
-                chunk_size=args.get("chunk_size") or 1000,
-                overlap_size=args.get("overlap_size") if args.get("overlap_size") is not None else 200,
-                reset=args.get("reset", False),
-            )
-            await process_data(project_id, request, db)
+            await _drain_ingest_fanout(db, project_id, args)
 
         else:
             project = await ProjectModel(db).get_project(project_id)
@@ -89,3 +84,45 @@ async def drain_ingestion(app):
             )
 
         await tasks.update_status(task.task_id, TaskExecutionStatus.SUCCESS.value)
+
+
+async def _drain_ingest_fanout(db, project_id, args):
+    """The four stages, in the order the queues would run them.
+
+    Plan, parse each batch, correct it, then collect -- the same function
+    bodies the four tasks call. Driving the real bodies rather than a
+    simplified stand-in is the point: the batching, the page ordering, the
+    completion claim and the highlight rebasing are exactly the parts a
+    stand-in would quietly get right where production does not.
+    """
+    from data.models import IngestBatchModel
+    from data.models.ingest import IngestBatchStatus
+    from shared.utils import get_settings
+
+    plan = await plan_ingestion(project_id, args, db)
+
+    if not plan["batches"]:
+        return
+
+    batches = IngestBatchModel(db)
+    settings = get_settings()
+
+    for batch in plan["batches"]:
+        await parse_batch(project_id, batch["asset_id"], batch["start"], batch["end"], batch["batch_index"], db)
+
+        stored = await batches.find_batch(batch["asset_id"], batch["batch_index"])
+        pages = stored.payload.get("pages", [])
+
+        # Correction is off under test (POSTPROCESS_ENABLED=false in
+        # conftest's env), so this returns the pages untouched -- but it is
+        # called anyway, so the stage cannot break unnoticed.
+        await _correct(pages, settings)
+
+        stored.payload["pages"] = pages
+        stored.status = IngestBatchStatus.CORRECTED
+        await batches.save_batch(stored)
+
+    # The claim, exactly as the last real batch would make it.
+    for asset_id in {batch["asset_id"] for batch in plan["batches"]}:
+        if await batches.claim_collection(asset_id):
+            await assemble_chunks(asset_id, db)

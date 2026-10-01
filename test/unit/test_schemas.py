@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from routes.schemas import (
+from presentation.routes.schemas import (
     ChatSettingsRequest,
     CreateChatRequest,
     MessageRequest,
@@ -11,8 +11,8 @@ from routes.schemas import (
     RenameChatRequest,
     RenameUserRequest,
 )
-from routes.schemas.nlp_request import PushRequest, SearchRequest
-from routes.schemas.process_request import ProcessRequest
+from presentation.routes.schemas.nlp_request import PushRequest, SearchRequest
+from presentation.routes.schemas.process_request import ProcessRequest
 
 
 @pytest.mark.parametrize("model, field", [

@@ -1,0 +1,43 @@
+# Build context is the repository root. Everything here is either unusable in
+# the image, or actively harmful to ship into one.
+#
+# The .venv exclusion is the one that matters most: it is a full local
+# virtualenv built for this host, hundreds of megabytes, and it would be sent
+# to the daemon on every build only to be overwritten by the one uv builds.
+
+# --- virtualenvs and caches ---
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- version control and editors ---
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# --- secrets: the image takes its configuration from the environment ---
+# .env.example is kept: it is documentation, not configuration.
+.env
+**/.env
+!**/.env.example
+
+# --- runtime state, regenerated in the container ---
+logs/
+**/logs/
+src/assets/
+**/qdrant_db/
+
+# --- not part of the application ---
+test/
+Docker/
+skills/
+README.md
+LICENSE
+pytest.ini
+*.md

@@ -9,7 +9,7 @@ the fixed result rather than whichever landed last on disk.
 
 import json
 
-from arabic_extraction.benchmark.merge import merge
+from application.arabic_extraction.benchmark.merge import merge
 
 
 def _write(directory, suite, payload):

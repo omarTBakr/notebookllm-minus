@@ -12,8 +12,8 @@ from the exception class.
 
 from datetime import datetime, timezone
 
-from enums import IN_FLIGHT, TaskExecutionStatus
-from exceptions import (
+from shared.enums import IN_FLIGHT, TaskExecutionStatus
+from shared.exceptions import (
     AssetNotFoundError,
     ChatNotFoundError,
     NotFoundError,
@@ -108,13 +108,7 @@ class FakeChatRepository(_Store):
     async def set_has_documents(self, chat_id, value):
         self._patch(chat_id, has_documents=value)
 
-    async def set_models(
-        self,
-        chat_id,
-        generation_model=None,
-        embedding_model=None,
-        embedding_dimensions=None,
-    ):
+    async def set_models(self, chat_id, generation_model=None, embedding_model=None, embedding_dimensions=None):
         self._patch(
             chat_id,
             generation_model=generation_model,
@@ -211,16 +205,17 @@ class FakeAssetRepository(_Store):
         if not content_hash:
             return None
         return next(
-            (
-                a
-                for a in self.items.values()
-                if a.project_id == project_id and a.content_hash == content_hash
-            ),
+            (a for a in self.items.values() if a.project_id == project_id and a.content_hash == content_hash),
             None,
         )
 
     async def delete_asset(self, asset_id):
         return self.items.pop(asset_id, None) is not None
+
+    async def iter_project_assets(self, project_id):
+        for a in list(self.items.values()):
+            if a.project_id == project_id:
+                yield a
 
     async def iter_assets_for_projects(self, project_ids):
         wanted = set(project_ids)
@@ -255,27 +250,6 @@ class FakeChunkRepository:
                 continue
             yield c
 
-    async def count_project_chunks(self, project_id, asset_id=None):
-        # asset_id mirrors the real repositories, which scope the count the
-        # same way iter_project_chunks scopes its walk. The fake was missing
-        # it, so an asset-scoped count raised TypeError rather than returning
-        # a number — invisible until something actually passed one.
-        return sum(
-            1
-            for c in self.items
-            if str(c.project_id) == str(project_id)
-            and (asset_id is None or c.asset_id == asset_id)
-        )
-
-    async def has_asset_chunks(self, project_id, asset_id):
-        # project_id mirrors the interface and both real backends. The fake
-        # took only asset_id, so a call with both raised TypeError — the same
-        # drift count_project_chunks had above.
-        return any(
-            c.asset_id == asset_id and str(c.project_id) == str(project_id)
-            for c in self.items
-        )
-
     async def set_chunk_summaries(self, summaries: dict) -> int:
         written = 0
 
@@ -289,17 +263,28 @@ class FakeChunkRepository:
         return written
 
     async def count_unsummarised(self, project_id) -> int:
+        return sum(1 for c in self.items if c.project_id == project_id and not c.summary)
+
+    async def count_project_chunks(self, project_id, asset_id=None):
+        # asset_id mirrors the real repositories, which scope the count the
+        # same way iter_project_chunks scopes its walk. The fake was missing
+        # it, so an asset-scoped count raised TypeError rather than returning
+        # a number — invisible until something actually passed one.
         return sum(
-            1 for c in self.items if c.project_id == project_id and not c.summary
+            1
+            for c in self.items
+            if str(c.project_id) == str(project_id) and (asset_id is None or c.asset_id == asset_id)
         )
+
+    async def has_asset_chunks(self, project_id, asset_id):
+        # project_id mirrors the interface and both real backends. The fake
+        # took only asset_id, so a call with both raised TypeError — the same
+        # drift count_project_chunks had above.
+        return any(c.asset_id == asset_id and str(c.project_id) == str(project_id) for c in self.items)
 
     async def get_chunks_by_orders(self, asset_id, chunk_orders):
         wanted = set(chunk_orders)
-        return {
-            c.chunk_order: c
-            for c in self.items
-            if c.asset_id == asset_id and c.chunk_order in wanted
-        }
+        return {c.chunk_order: c for c in self.items if c.asset_id == asset_id and c.chunk_order in wanted}
 
     async def delete_chunks_for_project(self, project_id):
         before = len(self.items)
@@ -309,13 +294,89 @@ class FakeChunkRepository:
     async def delete_chunks_for_asset(self, project_id, asset_id):
         # Returns the removed ids, as both real backends do — the caller pulls
         # exactly those out of the project's chunks_ids.
-        gone = [
-            c
-            for c in self.items
-            if c.asset_id == asset_id and str(c.project_id) == str(project_id)
-        ]
+        gone = [c for c in self.items if c.asset_id == asset_id and str(c.project_id) == str(project_id)]
         self.items = [c for c in self.items if c not in gone]
         return [str(c.id) for c in gone]
+
+
+class FakeVectorRepository:
+    """Records what was indexed; search returns whatever was staged."""
+
+    def __init__(self, hits=None):
+        self.collections: dict[str, dict] = {}
+        self.points: dict[str, list[dict]] = {}
+        self.hits = hits if hits is not None else []
+        self.searched: list[dict] = []
+        self.indexed: list[dict] = []
+
+    async def collection_exists(self, collection_name):
+        return collection_name in self.collections
+
+    async def list_collections(self):
+        return list(self.collections)
+
+    async def get_collection_info(self, collection_name):
+        return {"name": collection_name, "points_count": len(self.points.get(collection_name, []))}
+
+    async def create_collection(self, collection_name, embedding_size, reset=False):
+        existed = collection_name in self.collections
+        if reset or not existed:
+            self.collections[collection_name] = {"embedding_size": embedding_size}
+            self.points[collection_name] = []
+        return not existed or reset
+
+    async def create_index(self, collection_name, embedding_size, index_type=None, reset=False):
+        """Records the build; both real backends do it after the bulk load.
+
+        Absent until now, which every upload test hit as a bare 500 —
+        NLPService.index_chunks() has called this since the ANN build moved
+        after insertion, and a fake that stops matching the interface fails in
+        the one place that says nothing about why.
+        """
+        self.indexed.append(
+            {
+                "collection_name": collection_name,
+                "embedding_size": embedding_size,
+                "index_type": index_type,
+                "reset": reset,
+            }
+        )
+        return True
+
+    async def delete_collection(self, collection_name):
+        # The points go with it. The real backends drop the table (Postgres) or
+        # the collection (Qdrant), so a fake that kept them would let a test
+        # pass while vectors outlived whatever owned them.
+        existed = self.collections.pop(collection_name, None) is not None
+        self.points.pop(collection_name, None)
+        return existed
+
+    async def insert_many(self, collection_name, texts, vectors, metadata=None, record_ids=None, batch_size=64):
+        rows = self.points.setdefault(collection_name, [])
+        for i, text in enumerate(texts):
+            rows.append(
+                {
+                    "id": record_ids[i] if record_ids else str(i),
+                    "text": text,
+                    "vector": vectors[i],
+                    "metadata": (metadata or [{}] * len(texts))[i],
+                }
+            )
+        return True
+
+    async def delete_by_metadata(self, collection_name, key, value):
+        rows = self.points.get(collection_name, [])
+        keep = [r for r in rows if (r["metadata"] or {}).get(key) != value]
+        removed = len(rows) - len(keep)
+        self.points[collection_name] = keep
+        return removed
+
+    async def search_by_vector(self, collection_name, vector, limit=5, asset_ids=None):
+        self.searched.append({"collection": collection_name, "limit": limit, "asset_ids": asset_ids})
+        return self.hits[:limit]
+
+
+_FAKE_IN_FLIGHT = ("QUEUED", "STARTED")
 
 
 class FakeArtifactRepository:
@@ -378,98 +439,6 @@ class FakeArtifactRepository:
         return len(doomed)
 
 
-class FakeVectorRepository:
-    """Records what was indexed; search returns whatever was staged."""
-
-    def __init__(self, hits=None):
-        self.collections: dict[str, dict] = {}
-        self.points: dict[str, list[dict]] = {}
-        self.hits = hits if hits is not None else []
-        self.searched: list[dict] = []
-        self.indexed: list[dict] = []
-
-    async def collection_exists(self, collection_name):
-        return collection_name in self.collections
-
-    async def list_collections(self):
-        return list(self.collections)
-
-    async def get_collection_info(self, collection_name):
-        return {
-            "name": collection_name,
-            "points_count": len(self.points.get(collection_name, [])),
-        }
-
-    async def create_collection(self, collection_name, embedding_size, reset=False):
-        existed = collection_name in self.collections
-        if reset or not existed:
-            self.collections[collection_name] = {"embedding_size": embedding_size}
-            self.points[collection_name] = []
-        return not existed or reset
-
-    async def create_index(
-        self, collection_name, embedding_size, index_type=None, reset=False
-    ):
-        """Records the build; both real backends do it after the bulk load.
-
-        Absent until now, which every upload test hit as a bare 500 —
-        NLPController.index_chunks() has called this since the ANN build moved
-        after insertion, and a fake that stops matching the interface fails in
-        the one place that says nothing about why.
-        """
-        self.indexed.append(
-            {
-                "collection_name": collection_name,
-                "embedding_size": embedding_size,
-                "index_type": index_type,
-                "reset": reset,
-            }
-        )
-        return True
-
-    async def delete_collection(self, collection_name):
-        # The points go with it. The real backends drop the table (Postgres) or
-        # the collection (Qdrant), so a fake that kept them would let a test
-        # pass while vectors outlived whatever owned them.
-        existed = self.collections.pop(collection_name, None) is not None
-        self.points.pop(collection_name, None)
-        return existed
-
-    async def insert_many(
-        self,
-        collection_name,
-        texts,
-        vectors,
-        metadata=None,
-        record_ids=None,
-        batch_size=64,
-    ):
-        rows = self.points.setdefault(collection_name, [])
-        for i, text in enumerate(texts):
-            rows.append(
-                {
-                    "id": record_ids[i] if record_ids else str(i),
-                    "text": text,
-                    "vector": vectors[i],
-                    "metadata": (metadata or [{}] * len(texts))[i],
-                }
-            )
-        return True
-
-    async def delete_by_metadata(self, collection_name, key, value):
-        rows = self.points.get(collection_name, [])
-        keep = [r for r in rows if (r["metadata"] or {}).get(key) != value]
-        removed = len(rows) - len(keep)
-        self.points[collection_name] = keep
-        return removed
-
-    async def search_by_vector(self, collection_name, vector, limit=5, asset_ids=None):
-        self.searched.append(
-            {"collection": collection_name, "limit": limit, "asset_ids": asset_ids}
-        )
-        return self.hits[:limit]
-
-
 class FakeTaskRepository:
     """In-memory task_executions, keyed by Celery task id."""
 
@@ -497,31 +466,29 @@ class FakeTaskRepository:
         return next(
             (
                 t
-                for t in sorted(
-                    self.items.values(), key=lambda t: t.created_at, reverse=True
-                )
-                if t.task_name == task_name
-                and t.args_hash == args_hash
-                and t.status in IN_FLIGHT
+                for t in sorted(self.items.values(), key=lambda t: t.created_at, reverse=True)
+                if t.task_name == task_name and t.args_hash == args_hash and t.status in IN_FLIGHT
             ),
             None,
         )
 
     async def find_active_for_project(self, project_id):
-        return next(
-            (
-                t
-                for t in sorted(
-                    self.items.values(), key=lambda t: t.created_at, reverse=True
-                )
-                if t.project_id == project_id and t.status in IN_FLIGHT
-            ),
-            None,
-        )
+        """Running before queued, then oldest first — same rule as Postgres.
 
-    async def update_status(
-        self, task_id, status, result=None, error="", error_type=""
-    ):
+        A chain writes all of its rows in one instant, so ordering by recency
+        returns the *last* link, which is queued behind the others and reports
+        no stage for the whole run.
+        """
+        candidates = [t for t in self.items.values() if t.project_id == project_id and t.status in _FAKE_IN_FLIGHT]
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda t: (t.status != "STARTED", t.created_at))
+
+        return candidates[0]
+
+    async def update_status(self, task_id, status, result=None, error="", error_type=""):
         task = self.items.get(task_id)
         if task is None:
             return
@@ -549,9 +516,7 @@ class FakeTaskRepository:
         task.stage, task.done, task.total = stage, done, total
 
     async def iter_project_tasks(self, project_id):
-        for task in sorted(
-            self.items.values(), key=lambda t: t.created_at, reverse=True
-        ):
+        for task in sorted(self.items.values(), key=lambda t: t.created_at, reverse=True):
             if task.project_id == project_id:
                 yield task
 
@@ -561,11 +526,7 @@ class FakeTaskRepository:
             TaskExecutionStatus.FAILURE,
             TaskExecutionStatus.DEAD,
         }
-        doomed = [
-            k
-            for k, v in self.items.items()
-            if v.status in terminal and v.created_at < cutoff
-        ]
+        doomed = [k for k, v in self.items.items() if v.status in terminal and v.created_at < cutoff]
         for k in doomed:
             del self.items[k]
         return len(doomed)
@@ -574,19 +535,12 @@ class FakeTaskRepository:
         marked = 0
         for task in self.items.values():
             stale_run = (
-                task.status is TaskExecutionStatus.STARTED
-                and task.started_at
-                and task.started_at < started_before
+                task.status is TaskExecutionStatus.STARTED and task.started_at and task.started_at < started_before
             )
-            stale_queue = (
-                task.status is TaskExecutionStatus.QUEUED
-                and task.created_at < queued_before
-            )
+            stale_queue = task.status is TaskExecutionStatus.QUEUED and task.created_at < queued_before
             if stale_run or stale_queue:
                 task.status = TaskExecutionStatus(status)
-                task.error = (
-                    "no completion recorded; the worker running this task is gone"
-                )
+                task.error = "no completion recorded; the worker running this task is gone"
                 task.error_type = "WorkerLost"
                 task.completed_at = datetime.now(timezone.utc)
                 marked += 1
@@ -594,6 +548,62 @@ class FakeTaskRepository:
 
     async def delete_tasks_for_project(self, project_id):
         self.items = {k: v for k, v in self.items.items() if v.project_id != project_id}
+
+
+class FakeIngestBatchRepository:
+    """Parsed page batches, and the single-winner collection claim.
+
+    The claim is the interesting part and the reason this is not a plain
+    _Store: `claim_collection` must succeed exactly once, so the test that
+    fires it twice has something real to fail against.
+    """
+
+    def __init__(self):
+        self.runs: dict = {}
+        self.batches: dict = {}
+
+    async def start_run(self, run):
+        self.runs[run.asset_id] = run.model_copy(update={"collected_at": None})
+
+    async def find_run(self, asset_id):
+        return self.runs.get(asset_id)
+
+    async def claim_collection(self, asset_id):
+        run = self.runs.get(asset_id)
+
+        if run is None or run.collected_at is not None:
+            return False
+
+        if await self.count_corrected(asset_id) != run.total_batches:
+            return False
+
+        from data.models.project import utcnow
+
+        self.runs[asset_id] = run.model_copy(update={"collected_at": utcnow()})
+        return True
+
+    async def save_batch(self, batch):
+        self.batches[(batch.asset_id, batch.batch_index)] = batch
+
+    async def find_batch(self, asset_id, batch_index):
+        return self.batches.get((asset_id, batch_index))
+
+    async def count_corrected(self, asset_id):
+        from data.models.ingest import IngestBatchStatus
+
+        return sum(
+            1 for (aid, _), b in self.batches.items() if aid == asset_id and b.status == IngestBatchStatus.CORRECTED
+        )
+
+    async def iter_batches(self, asset_id):
+        rows = [b for (aid, _), b in self.batches.items() if aid == asset_id]
+        for batch in sorted(rows, key=lambda b: b.batch_index):
+            yield batch
+
+    async def clear_run(self, asset_id):
+        self.runs.pop(asset_id, None)
+        for key in [k for k in self.batches if k[0] == asset_id]:
+            del self.batches[key]
 
 
 class FakeDb:
@@ -610,6 +620,7 @@ class FakeDb:
         self._chunks = FakeChunkRepository()
         self._vectors = FakeVectorRepository(hits=hits)
         self._tasks = FakeTaskRepository()
+        self._ingest_batches = FakeIngestBatchRepository()
         self.connected = False
 
     async def connect(self):
@@ -645,8 +656,19 @@ class FakeDb:
     def chunks(self):
         return self._chunks
 
+    def ingest_batches(self):
+        return self._ingest_batches
+
     def vectors(self):
         return self._vectors
 
     def tasks(self):
         return self._tasks
+
+    def personal_user_info(self):
+        # Matches DbProvider's own default (data/repositories/interfaces/provider.py):
+        # `/memory` is Postgres-only, and routes are expected to catch this and
+        # carry on without it rather than fail outright. No fake repository to
+        # back it, since nothing here is meant to exercise the memory path --
+        # that has its own fixtures where it is actually tested.
+        raise NotImplementedError("personal_user_info() is only implemented on the Postgres backend")

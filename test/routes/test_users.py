@@ -2,7 +2,7 @@
 
 import pytest
 
-from models.db_schema import User
+from data.models import User
 
 
 @pytest.fixture
@@ -119,8 +119,8 @@ async def test_deleting_a_user_removes_their_vectors(ingest, client, seed, fake_
 
 
 async def test_deleting_a_user_removes_their_messages(client, seed, fake_db):
-    from models.db_schema import Message
-    from enums import ChatRole
+    from data.models import Message
+    from shared.enums import ChatRole
 
     fake_db.messages().items.append(
         Message(message_id="m1", chat_id="c1", role=ChatRole.USER, content="hello")
@@ -147,7 +147,7 @@ async def test_the_response_reports_what_went(ingest, client, seed, fake_db):
 
 async def test_deleting_a_user_leaves_another_users_data_alone(ingest, client, seed, fake_db):
     """The delete is scoped by ownership, not by "everything that looks similar"."""
-    from models.db_schema import Chat, Project, Session, User
+    from data.models import Chat, Project, Session, User
 
     fake_db.users().items["u2"] = User(user_id="u2", label="Someone else")
     fake_db.sessions().items["s2"] = Session(session_id="s2", user_id="u2")

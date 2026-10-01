@@ -8,18 +8,21 @@ nomic-embed-text for chat and llama3.1:8b for embedding on exactly that basis.
 """
 
 import asyncio
+
 import httpx
 import pytest
 
-from controllers import ModelController
-from controllers.ModelController import (
+from application.services import ModelService
+from application.services.llm.NvidiaModelService import NvidiaModelService
+from shared.utils import (
     COMPLETION,
     EMBEDDING,
-    NvidiaModelController,
-    _can,
+    LOCAL,
+    can,
+    parameters_of,
+    reached_generation,
+    unavailable_reason,
 )
-from utils import LOCAL
-
 
 # --- the predicate ------------------------------------------------------------
 
@@ -38,8 +41,8 @@ from utils import LOCAL
 def test_can(capabilities, chat, embed):
     model = {"capabilities": capabilities}
 
-    assert _can(model, COMPLETION) is chat
-    assert _can(model, EMBEDDING) is embed
+    assert can(model, COMPLETION) is chat
+    assert can(model, EMBEDDING) is embed
 
 
 # --- the split ----------------------------------------------------------------
@@ -50,7 +53,7 @@ def catalogue_of(monkeypatch):
     """A catalogue built from one fake host, with no network anywhere."""
 
     async def build(models, widths):
-        host = ModelController(source=LOCAL)
+        host = ModelService(source=LOCAL)
         # These tests exercise the fake Ollama catalogue only. Do not let
         # optional developer credentials from src/.env add hosted models to
         # exact-list assertions.
@@ -67,9 +70,9 @@ def catalogue_of(monkeypatch):
         monkeypatch.setattr(host, "_probe_all", probe)
         # _hosts now takes an optional source filter, so the stand-in has to
         # accept it too — the fixture drives the real catalogue() code path.
-        monkeypatch.setattr(ModelController, "_hosts", lambda self, sources=None: [host])
+        monkeypatch.setattr(ModelService, "_hosts", lambda self, sources=None: [host])
 
-        return await ModelController().catalogue()
+        return await ModelService().catalogue()
 
     return build
 
@@ -189,9 +192,9 @@ def nvidia(monkeypatch, settings):
         # patching the attribute on httpx itself is what it will pick up.
         monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **kw: client)
         monkeypatch.setattr(
-            NvidiaModelController, "_host_url", lambda self, source: "https://nvidia.invalid/v1"
+            NvidiaModelService, "_host_url", lambda self, source: "https://nvidia.invalid/v1"
         )
-        controller = NvidiaModelController()
+        controller = NvidiaModelService()
         controller._access_cache.clear()
         return controller, client
 
@@ -239,7 +242,7 @@ async def test_an_unentitled_model_costs_only_the_free_probe(nvidia):
 async def test_the_probe_sends_the_field_the_provider_sends(nvidia, monkeypatch):
     """A probe testing a shape the provider no longer uses would pass models
     that then fail on first use — which is exactly what happened."""
-    from factories.llmchatting import NvidiaChatProvider
+    from application.providers.chatting import NvidiaChatProvider
 
     sent = {}
 
@@ -281,7 +284,7 @@ async def test_the_verdict_is_cached_across_controllers(nvidia):
     controller, client = nvidia({"meta/ok": (400, 200)})
 
     await controller._only_callable([_nv("meta/ok")])
-    await NvidiaModelController()._only_callable([_nv("meta/ok")])
+    await NvidiaModelService()._only_callable([_nv("meta/ok")])
 
     assert [tag for tag, _ in client.asked] == ["meta/ok", "meta/ok"]  # both stages, once
 
@@ -304,7 +307,7 @@ async def test_forget_probes_clears_the_access_cache(nvidia):
     controller, client = nvidia({"meta/ok": (400, 200)})
 
     await controller._only_callable([_nv("meta/ok")])
-    ModelController.forget_probes()
+    ModelService.forget_probes()
     await controller._only_callable([_nv("meta/ok")])
 
     assert len(client.asked) == 4      # both stages, twice
@@ -372,7 +375,7 @@ async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(
     ("poolside/laguna-xs-2.1", None),
 ])
 def test_parameters_are_read_from_the_tag(tag, parameters):
-    assert NvidiaModelController._parameters_of(tag) == parameters
+    assert parameters_of(tag) == parameters
 
 
 # --- configured hosted models: listed is not the same as callable -------------
@@ -410,10 +413,10 @@ class _FakeChat:
 @pytest.fixture
 def configured(monkeypatch):
     """A controller with both hosted keys set and no host discovery."""
-    ModelController.forget_probes()
-    ModelController._probes_in_flight.clear()
+    ModelService.forget_probes()
+    ModelService._probes_in_flight.clear()
 
-    controller = ModelController(source=LOCAL)
+    controller = ModelService(source=LOCAL)
     monkeypatch.setattr(controller.settings, "ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setattr(controller.settings, "ANTHROPIC_MODEL_ID", "claude-x")
     monkeypatch.setattr(controller.settings, "GOOGLE_API_KEY", None)
@@ -421,15 +424,15 @@ def configured(monkeypatch):
 
     def install(client):
         monkeypatch.setattr(
-            "factories.provider_cache.ProviderCache.chatting",
+            "application.providers.provider_cache.ProviderCache.chatting",
             lambda self, model_id=None: client,
         )
         return client
 
     yield controller, install
 
-    ModelController.forget_probes()
-    ModelController._probes_in_flight.clear()
+    ModelService.forget_probes()
+    ModelService._probes_in_flight.clear()
 
 
 @pytest.mark.parametrize("message, reason", [
@@ -443,13 +446,13 @@ def configured(monkeypatch):
 def test_a_refusal_is_reduced_to_a_phrase_that_fits_a_row(message, reason):
     """The vendor sentences are long and their wording changes; the picker has
     room for a few words."""
-    assert ModelController._unavailable_reason(Exception(message)) == reason
+    assert unavailable_reason(Exception(message)) == reason
 
 
 def test_an_unrecognised_refusal_keeps_the_vendors_own_words():
     """Better a trimmed sentence the user can search for than a category
     invented to cover something nobody has seen before."""
-    reason = ModelController._unavailable_reason(Exception("Teapot mode engaged. Retry."))
+    reason = unavailable_reason(Exception("Teapot mode engaged. Retry."))
 
     assert reason == "Teapot mode engaged"
 
@@ -463,7 +466,7 @@ def test_running_out_of_budget_counts_as_reaching_the_model():
         "finish_reason=<FinishReason.MAX_TOKENS: 'MAX_TOKENS'>)"
     )
 
-    assert ModelController._reached_generation(truncated)
+    assert reached_generation(truncated)
 
 
 def test_a_complaint_about_the_max_tokens_field_is_not_a_pass():
@@ -471,7 +474,7 @@ def test_a_complaint_about_the_max_tokens_field_is_not_a_pass():
     Both halves of the test matter, which is why finish_reason is required."""
     rejected = Exception("400 invalid_request_error: max_tokens: must be >= 1")
 
-    assert not ModelController._reached_generation(rejected)
+    assert not reached_generation(rejected)
 
 
 async def test_a_refused_model_is_marked_rather_than_dropped(configured):
@@ -575,7 +578,7 @@ async def test_forget_probes_clears_the_configured_verdicts(configured):
     await controller._probe_configured("anthropic/claude-x")
     assert controller._configured_cache
 
-    ModelController.forget_probes()
+    ModelService.forget_probes()
 
     assert not controller._configured_cache
     assert not controller._probe_cooldown

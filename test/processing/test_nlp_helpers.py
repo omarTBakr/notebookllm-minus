@@ -1,8 +1,8 @@
-"""Pure helpers on NLPController: naming and point keys."""
+"""Pure helpers on NLPService: naming and point keys."""
 
 import pytest
 
-from controllers import NLPController
+from application.services import NLPService
 
 
 @pytest.mark.parametrize("project_id, expected", [
@@ -17,11 +17,11 @@ from controllers import NLPController
     ("drop table;", "project_drop_table_"),
 ])
 def test_collection_name_is_sanitised(project_id, expected):
-    assert NLPController.collection_name(project_id) == expected
+    assert NLPService.collection_name(project_id) == expected
 
 
 def test_collection_names_are_stable():
-    assert NLPController.collection_name("x") == NLPController.collection_name("x")
+    assert NLPService.collection_name("x") == NLPService.collection_name("x")
 
 
 class _Chunk:
@@ -33,9 +33,9 @@ class _Chunk:
 
 def test_point_key_pairs_the_asset_and_the_order():
     """Stable ids mean re-indexing overwrites in place instead of duplicating."""
-    assert NLPController._point_key(_Chunk("a1", 3)) == "a1:3"
+    assert NLPService._point_key(_Chunk("a1", 3)) == "a1:3"
 
 
 def test_point_key_falls_back_to_the_document_id():
-    assert NLPController._point_key(_Chunk(id="507f1f77bcf86cd799439011")) == \
+    assert NLPService._point_key(_Chunk(id="507f1f77bcf86cd799439011")) == \
            "507f1f77bcf86cd799439011"

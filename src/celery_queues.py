@@ -1,6 +1,8 @@
 """Celery queue declarations and routing policy."""
 
-from enums import CeleryTaskFunction
+from kombu import Queue
+
+from shared.enums import CeleryTaskFunction
 
 
 def celery_queue_config(settings) -> dict:
@@ -8,9 +10,11 @@ def celery_queue_config(settings) -> dict:
     queues = (
         settings.CELERY_TASK_DEFAULT_QUEUE,
         settings.CELERY_QUEUE_PROCESS,
+        settings.CELERY_QUEUE_POSTPROCESS,
         settings.CELERY_QUEUE_INDEX,
         settings.CELERY_QUEUE_STUDIO,
         settings.CELERY_QUEUE_MAINTENANCE,
+        settings.CELERY_QUEUE_MEMORY,
     )
     # x-queue-type is what Celery's detect_quorum_queues() looks for, and
     # finding it is what makes the worker turn global QoS off — the deprecated
@@ -43,10 +47,40 @@ def celery_queue_config(settings) -> dict:
     arguments = {"x-queue-type": settings.CELERY_TASK_QUEUE_TYPE}
 
     return {
-        "task_queues": {name: {"routing_key": name, "queue_arguments": dict(arguments)} for name in queues},
+        # Queue objects, not a {name: options} dict. Celery takes either, but
+        # Flower reads `q.name` off each entry when it lists queues, and a dict
+        # hands it the bare name strings -- its Broker tab failed with "'str'
+        # object has no attribute 'name'" and showed no queues at all. No
+        # exchange is given, so Celery binds each to the default exchange
+        # exactly as it did for the dict form.
+        "task_queues": [Queue(name, routing_key=name, queue_arguments=dict(arguments)) for name in queues],
         "task_routes": {
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.PROCESS.value}": {
                 "queue": settings.CELERY_QUEUE_PROCESS
+            },
+            # PARSE and ASSEMBLE share PROCESS's queue for the same reason
+            # BUILD_INDEX shares INDEX's, below: celery-process already consumes
+            # it, and a queue whose `-Q` consumer was never added to compose
+            # swallows tasks silently. They are also the same kind of work —
+            # CPU, on the machine holding the file.
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.PARSE.value}": {
+                "queue": settings.CELERY_QUEUE_PROCESS
+            },
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.ASSEMBLE.value}": {
+                "queue": settings.CELERY_QUEUE_PROCESS
+            },
+            # The exception, and the one queue this change adds. Correction
+            # waits on a local model for tens of seconds a page; behind an
+            # extraction on the shared queue it would stall every other
+            # document. Its worker ships in docker-compose.yml in the same
+            # change — see the note above about queues with no consumer.
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.POSTPROCESS.value}": {
+                "queue": settings.CELERY_QUEUE_POSTPROCESS
+            },
+            # Chunk summaries share the correction queue: the other model-bound
+            # stage, and one whose worker already exists.
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.SUMMARISE.value}": {
+                "queue": settings.CELERY_QUEUE_POSTPROCESS
             },
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.INDEX.value}": {"queue": settings.CELERY_QUEUE_INDEX},
             # Deliberately the *index* queue, not one of its own — the only
@@ -72,6 +106,13 @@ def celery_queue_config(settings) -> dict:
             },
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MAINTENANCE.value}": {
                 "queue": settings.CELERY_QUEUE_MAINTENANCE
+            },
+            # Its own queue, and its own worker in compose, for the same reason
+            # GENERATE_ARTIFACT has one: extraction waits on a model API, and a
+            # queue declared here with no `-Q` consumer leaves tasks QUEUED
+            # silently forever.
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MEMORY.value}": {
+                "queue": settings.CELERY_QUEUE_MEMORY
             },
         },
     }

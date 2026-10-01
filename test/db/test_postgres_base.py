@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from factories.db.postgres.base_repository import PostgresBaseRepository
-from models.db_schema import User
+from data.models import User
+from data.repositories.postgres.base_repository import PostgresBaseRepository
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def test_a_row_becomes_a_model(repo):
 def test_json_columns_are_decoded(repo):
     """asyncpg hands JSONB back as a string unless a codec is registered, so
     a list column would otherwise fail model validation."""
-    from models.db_schema import Chat
+    from data.models import Chat
 
     row = {
         "chat_id": "c1", "session_id": "s1", "user_id": "u1",
@@ -73,7 +73,8 @@ def test_every_objectid_field_is_coerced_not_just_the_primary_key(repo):
     """DataChunk has two: `_id` and project_id. A hardcoded `_id`-only
     conversion left the second one failing validation on every read."""
     from bson.objectid import ObjectId
-    from models.db_schema import DataChunk
+
+    from data.models import DataChunk
 
     project_oid = ObjectId()
 
@@ -92,7 +93,7 @@ def test_every_objectid_field_is_coerced_not_just_the_primary_key(repo):
 
 
 def test_the_objectid_field_list_is_derived_from_the_model(repo):
-    from models.db_schema import DataChunk, User
+    from data.models import DataChunk, User
 
     assert set(repo._objectid_fields(User)) == {"_id"}
     assert set(repo._objectid_fields(DataChunk)) == {"_id", "project_id"}
@@ -103,7 +104,8 @@ def test_a_list_of_objectids_is_coerced_element_by_element(repo):
     arrays of hex strings. Coercing only scalars left every project that had
     ever ingested a document failing validation on read."""
     from bson.objectid import ObjectId
-    from models.db_schema import Project
+
+    from data.models import Project
 
     chunk_oids = [ObjectId(), ObjectId()]
     asset_oid = ObjectId()
@@ -134,7 +136,7 @@ def test_an_orm_row_becomes_a_model(repo):
 
     from bson.objectid import ObjectId
 
-    from factories.db.postgres.base_repository import UserRow
+    from data.repositories.postgres.base_repository import UserRow
 
     now = datetime.now(timezone.utc)
     oid = ObjectId()

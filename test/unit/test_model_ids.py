@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils import CLOUD, LOCAL, NVIDIA, backend_for, qualify, split_source
+from shared.utils import CLOUD, LOCAL, NVIDIA, backend_for, qualify, split_source
 
 
 @pytest.mark.parametrize(
@@ -72,7 +72,7 @@ def test_backend_for(source, backend):
      "nvidia/meta/llama-3.2-11b-vision-instruct"),
 ])
 def test_a_default_is_qualified_by_its_backend(settings, backend, model, expected):
-    from utils import default_chat_model
+    from shared.utils import default_chat_model
 
     configured = settings.model_copy(
         update={"GENERATION_BACKEND": backend, "GENERATION_MODEL_ID": model}
@@ -83,7 +83,7 @@ def test_a_default_is_qualified_by_its_backend(settings, backend, model, expecte
 
 def test_a_qualified_default_survives_split_source(settings):
     """The whole point: what comes back out is the tag the vendor knows."""
-    from utils import default_embedding_model
+    from shared.utils import default_embedding_model
 
     configured = settings.model_copy(
         update={
@@ -98,7 +98,7 @@ def test_a_qualified_default_survives_split_source(settings):
 
 
 def test_source_of_is_the_inverse_of_backend_for(settings):
-    from utils import backend_for, source_of
+    from shared.utils import backend_for, source_of
 
     for source in (LOCAL, NVIDIA):
         assert source_of(backend_for(source)) == source

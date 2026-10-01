@@ -2,8 +2,8 @@
 
 import pytest
 
-from exceptions import LLMProviderError, NotebookLLMError
-from utils import CLOUD, LOCAL, NVIDIA, host_for
+from shared.exceptions import LLMProviderError, NotebookLLMError
+from shared.utils import CLOUD, LOCAL, NVIDIA, host_for
 
 
 def test_local_resolves_to_the_local_host(settings):

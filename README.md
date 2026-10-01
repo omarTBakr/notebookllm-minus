@@ -1,15 +1,20 @@
 # NotebookLLM⁻
+<p align="center">
+  <img src="demo/logo.svg" alt="NotebookLLM-minus logo" width="460">
+</p>
+
 
 <div align="center">
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/omarrbakr/)
-[![Email](https://img.shields.io/badge/Email-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:bakro0298@gmail.com)
-[![LeetCode](https://img.shields.io/badge/LeetCode-FFA116?style=for-the-badge&logo=leetcode&logoColor=black)](https://leetcode.com/u/omar_bakr/)
-[![Portfolio](https://img.shields.io/badge/Portfolio-333333?style=for-the-badge&logo=googlechrome&logoColor=white)](https://omartbakr.github.io/)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/omarrbakr/)[![Gmail](https://img.shields.io/badge/Email-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:bakro0298@gmail.com)[![LeetCode](https://img.shields.io/badge/LeetCode-FFA116?style=for-the-badge&logo=leetcode&logoColor=black)](https://leetcode.com/u/omar_bakr/)[![Portfolio](https://img.shields.io/badge/Portfolio-333333?style=for-the-badge&logo=googlechrome&logoColor=white)](https://omartbakr.github.io/)
 
 </div>
 
 > **NotebookLLM-minus** — NotebookLM, minus the parts that aren't built yet.
+
+**▶ [Watch the walkthrough](demo/walkthrough.gif)** — PDF, video and Arabic sources, cited answers that open the
+exact page or moment, and a mind map, flashcards and quiz that do the same. ([Jump to the demo](#demo) ·
+[frames](demo/e2e/))
 
 Upload documents, ask questions, get answers grounded in *those* documents, with citations
 back to the page they came from. A small, deliberately readable RAG backend on **FastAPI**,
@@ -19,25 +24,38 @@ Every backend is swappable from `.env` — chat model, embedding model, document
 store — and the whole stack runs **offline against a local Ollama** if you want it to. Models
 are discovered from what is actually installed and reachable, never pinned in code.
 
-- [Demo](#demo) · [Quickstart](#quickstart) · [Configuration](#configuration) · [Features](#features)
-- [Architecture](#architecture) · [Providers](#providers) · [Choosing models](#choosing-models)
-- [Database backends](#database-backends) · [Data model](#data-model) · [API](#api)
-- [Deployment](#deployment) · [Observability](#observability) · [Error handling](#error-handling)
-- [Logging](#logging) · [Project structure](#project-structure)
+- [Demo](#demo)
+- [Quickstart](#quickstart) 
+
+- [Configuration](#configuration) 
+- [Features](#features)
+- [Architecture](#architecture)
+- [Ingesting a document](#ingesting-a-document) 
+- [Asking a question](#asking-a-question)
+- [Providers](#providers) 
+- [Choosing models](#choosing-models)
+- [Database backends](#database-backends) 
+- [Migrations](#migrations)
+- [Data model](#data-model) 
+-  [API](#api) 
+- [Background processing](#background-processing) ·
+- [Code quality](#code-quality)
+- [Deployment](#deployment) 
+- [Observability](#observability) 
+- [Error handling](#error-handling)
+- [Logging](#logging) 
+- [Project structure](#project-structure)
 
 ## Demo
 
-![Chat UI with sources, chat, and Studio panels](demo/GeneralApp.png)
-Sources, chat, and Studio side by side. Answers that don't cite a document say so — "No
-sources attached" — instead of inventing a page reference.
-
-![Studio flashcards generated from an uploaded source](demo/FlashCardsWithAssets.png)
-Flashcards generated in Studio from the source open in the sidebar, reviewable without leaving
-the chat.
-
-![Studio quiz generated from an uploaded source](demo/QuizeWithAssets.png)
-A Studio quiz question generated from the same source, multiple choice with one correct
-answer per card.
+![End-to-end walkthrough: add a PDF link, a YouTube video and an Arabic article, ask about each, open the cited page, video moment or highlighted passage, browse the model picker with OpenRouter, then generate a mind map, flashcards and a quiz that each open their source](demo/walkthrough.gif)
+End to end on a live stack, with three kinds of source added by link — an arXiv PDF, a YouTube video
+and an Arabic Wikipedia article. Ask about each: a PDF answer cites its page and highlights the
+passage, a video answer cites the moment and opens the player there, an Arabic question gets an
+Arabic answer with its own highlighted source. The model picker lists local, NVIDIA and OpenRouter
+models with what each can do, read from their own catalogues. Studio then builds a mind map,
+flashcards and a quiz, and each node, card and question opens the passage it came from. The
+individual frames are in [`demo/e2e/`](demo/e2e/).
 
 A reader's path through it — what [Architecture](#architecture) below breaks into requests,
 queues and prompts:
@@ -67,15 +85,13 @@ flowchart TD
 ```bash
 cd Docker
 cp -r env.example env           # per-service env files; fill in the REPLACE_ME values
-cp -r services.example services # per-service config; set requirepass in services/redis/redis.conf
-export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
 docker compose up -d --build    # postgres profile: app, pgvector, nginx, prometheus, grafana
 ```
 
-Three of the env files (`.env.nginx`, `.env.mongo`, `.env.postgres`) are read by compose itself
-for `${...}` substitution, which it only does through `--env-file` — hence the `export`, which
-is the shorthand for repeating `--env-file` on every command. Without them compose refuses to
-start and says which one it wanted. `Docker/README.md` has the full layout.
+No `--env-file` flags, on this or any other compose command: every service reads its own file
+in `Docker/env/` through `env_file:`, and the only compose-level setting (the nginx host port)
+is in `Docker/.env`, which compose picks up by itself. Each service's own config lives under
+`Docker/services/`; `Docker/README.md` has the full layout.
 
 Then configure the app itself and run it:
 
@@ -86,7 +102,7 @@ uv sync
 uv run uvicorn main:app --reload
 ```
 
-- UI and API — <http://localhost:8000> (`:8080` through nginx)
+- UI and API — <http://localhost:8000> (`:8081` through nginx)
 - Interactive API docs — <http://localhost:8000/docs>
 - Grafana — <http://localhost:3000>, Prometheus — <http://localhost:9090>
 - Flower (Celery) — <http://localhost:5555>, RabbitMQ — <http://localhost:15672>
@@ -114,8 +130,13 @@ startup with the full list rather than on first use. The ones worth knowing abou
 | `OLLAMA_CLOUD_BASE_URL` | a second Ollama over the network; its models appear alongside the local ones |
 | `RETRIEVAL_TOP_K` / `RETRIEVAL_MIN_SCORE` | how many passages reach the prompt, and the floor they must clear |
 | `MIN_CHUNK_CHARS` | below this a chunk is debris, not a retrieval unit — merged into a neighbour on the same page |
-| `OCR_ENABLED` / `OCR_EXTRACTOR` | re-read Arabic pages whose text layer is unusable; `tesseract-best` by default |
+| `POSTPROCESS_ENABLED` / `POSTPROCESS_MODEL_ID` | hand each parsed page to a model to repair extraction damage; qualified as `<source>/<tag>` |
+| `PDF_BATCH_PAGES` | pages per queue message — one unit of parsing, and of retry |
+| `POSTPROCESS_PAGES_PER_CALL` | pages per *model call*, inside a batch. A different knob from the one above |
+| `POSTPROCESS_LENGTH_TOLERANCE` | how far a correction may differ in length before it is rejected as a summary |
+| `OCR_ENABLED` / `OCR_EXTRACTOR` | re-read Arabic pages with `qalam` (default) or Tesseract instead. **Off by default** — it loses the word boxes a highlight needs |
 | `OCR_WORKERS` | pages OCR'd at once. `0` = every CPU the process may use, bounded by memory |
+| `CELERY_WORKER_CONCURRENCY` | parse batches in flight per worker. `0` = one per available CPU (cgroup and affinity aware) |
 
 Only the API key for a backend you actually selected has to be filled in, and it is checked
 during startup — a blank key means the app refuses to boot rather than failing on the first
@@ -125,7 +146,7 @@ question someone asks. Ollama is exempt: it authenticates by host.
 glyphs, `pdfplumber` 52s and right-to-left text in *visual* order (reversed — not one real
 Arabic word survives), `pymupdf` no lost glyphs at all. pymupdf is the default and the only
 one that captures the word coordinates a citation highlight is drawn from; it is also much
-slower, which `PdfLayoutController` offsets by extracting pages across a process pool.
+slower, which `PdfLayoutService` offsets by extracting pages across a process pool.
 
 ## Features
 
@@ -142,14 +163,70 @@ slower, which `PdfLayoutController` offsets by extracting pages across a process
 - Text sanitised at extraction: damaged font encodings decode to NUL bytes, which PostgreSQL refuses in both `text` and `jsonb`
 - Unicode normalised to NFKC with bidi controls stripped, so Arabic extracted as presentation forms still matches a normally typed query
 
-**Arabic OCR**
-- A scanned or badly-produced Arabic PDF often carries a text layer that *looks* fine and is unsearchable: words fragment mid-token (`اليسار` extracted as `ا ليسا ر`), so no query ever matches them
-- Detected by codepoint script analysis plus a space-ratio check, then re-read with Tesseract against the `tessdata_best` Arabic model. **Per page and only when broken** — a healthy text layer is the characters the author typed, and OCR would trade those for a guess at the pixels
-- Ten extraction paths were benchmarked on two axes, because no single corpus answers both: **accuracy** on synthetic pages whose ground truth is known (`tesseract-best` 0.172 WER against 0.545 for the distro `ara` pack — the same engine, a different model), and **cost** on real book pages (2.29 s/page pinned to two cores). `tesseract-best` ships; Qari-OCR is far more accurate at 0.063 WER but wants 5 GB of VRAM and 33.9 s per real page, so it runs as an optional remote extractor on a Colab GPU behind ngrok (`src/arabic_extraction/benchmark/colab/`)
-- Word and character error rates diverge sharply on fragmented Arabic — every character survives while no word does — so both are reported. See `src/arabic_extraction/benchmark/reports/FINDINGS.md`
-- Pages are read concurrently (threads, since a prefork worker cannot fork and tesseract is a subprocess anyway): **1.07 → 0.17 s/page**. The pool is bounded by available memory as well as CPU count — sizing it on CPUs alone OOM-killed a worker mid-document
-- OCR returns no coordinates, so the original word boxes are kept and offsets scaled through them: citations still highlight, marked approximate
-- `OCR_ENABLED` is **on under Docker and off by default in code**: the image installs the `tessdata_best` model, a bare `uv run` does not. With the model missing the feature logs why and keeps the text layer rather than failing the upload
+**Repairing Arabic text**
+
+A scanned or badly-produced Arabic PDF often carries a text layer that *looks* fine and is
+unsearchable. PyMuPDF loses no glyphs, but a text layer is a list of drawing instructions
+rather than a document, and it breaks three ways at once:
+
+| Fault | Extracted | Should be |
+| --- | --- | --- |
+| a space inside a word | `لبنا ن` | `لبنان` |
+| a space lost between words | `منقضا ء` | `من قضاء` |
+| two letters transposed | `امل تن` | `المتن` |
+
+The third comes from the ligature decomposition emitting a joined pair in visual rather than
+logical order, so `لم` arrives as `مل`, `ير` as `ري`, `ين` as `ني`. There are two ways to fix
+this, and the project has measured both.
+
+**The correction pass (default).** Each page is handed to a model told to reproduce it and
+repair only extraction damage — see `src/application/ocr_prompts/`, where the rules are mostly prohibitions
+because a small model asked to "clean up" a page will translate it, summarise it, or answer a
+question it happens to contain. Three guards make a rewrite safe to store: the response is
+validated against a schema whose page list is *required*, corrections are mapped back through
+a **batch-local** number rather than a page index, and anything returning outside ±50% of the
+original length is rejected as a summary and the page keeps its extracted text.
+
+Measured on one page of a 222-page book, ten phrases whose correct form is not in doubt:
+
+| | correct | time |
+| --- | --- | --- |
+| raw extraction | 1/10 | — |
+| abstract rules, no examples | 9/10 | 79.1s |
+| worked examples in the prompt | 9/10 | 12.0s |
+
+Same score, six times faster — the examples save the model working the pattern out for itself.
+Both figures are with the reasoning scratchpad **off**: left on, the model spends its whole
+token budget thinking in prose and returns no JSON at all, which for a whole corpus looked
+exactly like a model that could not read Arabic. Repair is real but partial — strongest at the
+top of a page, thinner further down.
+
+**Re-reading with `qalam` or Tesseract (optional, `OCR_ENABLED`).** Detected by codepoint
+script analysis plus a space-ratio check, then re-read, per page and only when broken.
+`OCR_EXTRACTOR` defaults to `qalam` — Rust, no OCR, reads the PDF's own text layer in logical
+order rather than rasterising the page — which matched or beat `tesseract-best`'s accuracy on
+this corpus's ground truth at a fraction of the cost (a one-time per-document parse instead of
+seconds per page). **Known risk, accepted deliberately:** `qalam` 0.1.1 has a bug where some
+documents come back with 200-300x too much text per page, paired with a false
+`confidence: 1.0` and no guard against it yet — see
+`src/application/arabic_extraction/benchmark/reports/qalam/report/report.md`. `OCR_EXTRACTOR=tesseract-best`
+is the fallback, re-reading against the `tessdata_best` Arabic model. Ten extraction paths were
+benchmarked on two axes: **accuracy** on synthetic pages whose ground truth is known
+(`tesseract-best` 0.172 WER against 0.545 for the distro `ara` pack — the same engine, a
+different model), and **cost** on real book pages (2.29 s/page pinned to two cores). Qari-OCR is
+far more accurate at 0.063 WER but wants 5 GB of VRAM and 33.9 s per real page, so it runs as an
+optional remote extractor on a Colab GPU behind ngrok (`src/application/arabic_extraction/benchmark/colab/`).
+Word and character error rates diverge sharply on fragmented Arabic — every character survives
+while no word does — so both are reported; see `src/application/arabic_extraction/benchmark/reports/FINDINGS.md`.
+
+It is **off by default** now: whichever engine runs, this project only takes back plain text —
+neither `qalam`'s own structured blocks/coordinates nor Tesseract's rasterisation give this path
+the word boxes a citation highlight is drawn from. The correction pass keeps them.
+
+**Either way the highlight survives.** Both passes replace a page's text, so a chunk's
+character offsets no longer index the string the boxes were measured against. The length ratio
+is recorded per page and offsets are scaled through it, and the citation is marked
+approximate rather than silently pointing at the wrong sentence.
 
 **Grounded chat**
 - Users → sessions → notebooks → messages, streamed token by token over SSE
@@ -159,8 +236,8 @@ slower, which `PdfLayoutController` offsets by extracting pages across a process
 - Generation can be stopped mid-answer, and the partial reply is kept
 
 **Models**
-- Six chat and five embedding providers behind factories; nothing above the factory layer names a vendor
-- Local and remote Ollama, NVIDIA NIM, Anthropic, Google, OpenAI-compatible endpoints
+- Six chat and five embedding providers behind `application/providers/`; nothing above that layer names a vendor
+- Local and remote Ollama, NVIDIA NIM, OpenRouter, Anthropic, Google, OpenAI-compatible endpoints
 - The picker probes rather than trusts: capability and entitlement checks cut one vendor catalogue of 82 to the ~12 that actually answer
 - Per-notebook model choice; switching the embedding model rebuilds that notebook's index
 
@@ -172,8 +249,8 @@ slower, which `PdfLayoutController` offsets by extracting pages across a process
 - Answers can be copied, downloaded, or saved back into Sources as a new document
 
 **Operations**
-- Two interchangeable database backends behind eight repository interfaces, enforced by a parity test
-- Ingestion as a Celery chain, with every run recorded in `task_executions` and swept on a schedule
+- Two interchangeable database backends behind eleven repository interfaces, enforced by a parity test
+- Ingestion as four queue-decoupled stages — plan, parse, correct, collect — with every run recorded in `task_executions` and swept on a schedule
 - Repeat submissions join the run already in flight instead of paying for it twice
 - Prometheus metrics at `/metrics`: ingest duration per stage, embedding latency and batch size, time-to-first-token, retrieval latency, whether an answer was grounded — labels bounded to `provider`, `model` and `stage`, never a `chat_id`
 - Provisioned Grafana dashboards, Flower for Celery, structured logs with per-request correlation ids
@@ -185,8 +262,9 @@ slower, which `PdfLayoutController` offsets by extracting pages across a process
 
 ## Architecture
 
-Four layers, each talking only to the one below it. Nothing above `factories/` names a
-vendor, which is what makes the backends swappable from config.
+Three tiers, each talking only to the one below it, plus a `shared/` layer of cross-cutting
+vocabulary and infrastructure that all three depend on. Nothing above `application/providers/`
+or `data/repositories/` names a vendor, which is what makes the backends swappable from config.
 
 ```mermaid
 flowchart TB
@@ -194,23 +272,27 @@ flowchart TB
         UI["Jinja page + ES modules"]
     end
 
-    subgraph routes["Routes — HTTP only, no logic"]
+    subgraph routes["presentation/routes — HTTP only, no logic"]
         R1["/chat<br/>users · sessions · notebooks · SSE"]
         R2["/data · /process<br/>upload · chunk"]
         R3["/nlp<br/>index · search · health"]
     end
 
-    subgraph controllers["Controllers — the actual work"]
-        C1["ChatController<br/>retrieve → prompt → stream"]
-        C2["ProcessController<br/>load documents"]
-        C5["TextProcessingController<br/>sanitise → split → size guard"]
-        C3["NLPController<br/>embed → upsert → search"]
-        C4["ModelController<br/>discover and probe models"]
+    subgraph services["application/services — the actual work"]
+        C1["ChatService<br/>retrieve → prompt → stream"]
+        C2["ProcessService<br/>load documents"]
+        C6["TextCorrectionService<br/>repair extraction damage"]
+        C5["TextProcessingService<br/>sanitise → split → size guard"]
+        C3["NLPService<br/>embed → upsert → search"]
+        C4["ModelService<br/>discover and probe models"]
     end
 
-    subgraph providers["factories/ — swappable backends"]
+    subgraph providers["application/providers — swappable LLM vendors"]
         P1["LLMChattingInterface<br/>anthropic · openai · google<br/>cohere · nvidia · ollama"]
         P2["LLMEmbeddingInterface<br/>openai · google · nvidia<br/>cohere · ollama"]
+    end
+
+    subgraph data["data/repositories — swappable storage"]
         P3["DbProvider<br/>mongo+qdrant · postgres+pgvector"]
     end
 
@@ -220,6 +302,8 @@ flowchart TB
     R1 --> C1
     R1 --> C4
     R2 --> C2
+    C2 --> C6
+    C6 --> P1
     R3 --> C3
     C1 --> C3
     C1 --> P1
@@ -230,6 +314,45 @@ flowchart TB
     P2 -.->|"local"| O
 ```
 
+### Ingesting a document
+
+Four stages, joined by queues rather than by a Celery canvas. Nothing waits on a callback:
+each stage hands off through a queue, and completion is a row count the database answers.
+
+```mermaid
+flowchart LR
+    U["upload<br/>202 Accepted"] --> P
+
+    subgraph process["process queue"]
+        P["process_data_task<br/>plan the page batches"]
+        A["assemble_chunks_task<br/>order → chunk → store"]
+        PA["parse_batch_task<br/>× N, in parallel"]
+    end
+
+    subgraph correct["postprocess queue"]
+        C["postprocess_batch_task<br/>repair pages with a model"]
+    end
+
+    subgraph index["index queue"]
+        I["index_project_task<br/>embed → upsert"]
+        B["build_vector_index_task"]
+    end
+
+    DB[("ingest_batches<br/>ingest_runs")]
+
+    P -->|"one message per batch"| PA
+    PA -->|"pages"| DB
+    PA -->|"(asset_id, batch_index)"| C
+    C -->|"corrected pages"| DB
+    C -->|"last one claims the run"| A
+    DB -.->|"read in page order"| A
+    A --> I --> B
+```
+
+The claim is the whole of the coordination: every batch asks whether it was the last, and one
+atomic `UPDATE` answers yes exactly once. See [Background processing](#background-processing)
+for why that replaced a chord, and what the chord did instead.
+
 ### Asking a question
 
 ```mermaid
@@ -237,7 +360,7 @@ sequenceDiagram
     autonumber
     participant U as Browser
     participant R as POST /chat/chats/{id}/message
-    participant CC as ChatController
+    participant CC as ChatService
     participant V as Vector store
     participant L as Chat model
 
@@ -268,14 +391,15 @@ across re-processing, so re-indexing overwrites in place instead of orphaning ve
 
 ## Providers
 
-Each subsystem under `src/factories/` is one abstract interface, one implementation per
-vendor, and a factory turning a name from `.env` into a configured instance.
+Each subsystem below is one abstract interface, one implementation per vendor, and a factory
+turning a name from `.env` into a configured instance — the LLM ones under
+`src/application/providers/`, storage under `src/data/repositories/`.
 
-| Subsystem | Backends | Interface |
-| --- | --- | --- |
-| `llmchatting` | `anthropic`, `openai`, `google`, `cohere`, `nvidia`, `ollama` | `generate_text(prompt, chat_history, max_tokens, temperature)` |
-| `llmembedding` | `openai`, `google`, `cohere`, `nvidia`, `ollama` | `embed(texts, input_type)` |
-| `db` | `mongo` (+ Qdrant), `postgres` (+ pgvector) | eight repository ABCs |
+| Subsystem | Tier | Backends | Interface |
+| --- | --- | --- | --- |
+| `providers/chatting` | application | `anthropic`, `openai`, `google`, `cohere`, `nvidia`, `ollama` | `generate_text(prompt, chat_history, max_tokens, temperature)` |
+| `providers/embedding` | application | `openai`, `google`, `cohere`, `nvidia`, `ollama` | `embed(texts, input_type)` |
+| `repositories` | data | `mongo` (+ Qdrant), `postgres` (+ pgvector) | eleven repository ABCs |
 
 **One neutral message format.** Callers build `{"role", "content"}` dicts using `ChatRole`
 and each provider translates on the way out — Anthropic and Google lift the system turn into
@@ -312,8 +436,19 @@ its publisher (`meta/llama-3.2-11b-vision-instruct`). `NvidiaEmbeddingProvider` 
 `passage`/`query`), a request is capped at 256 inputs — under `CHUNKING_BATCH_SIZE`, so the
 provider splits the batch itself — and the width is fixed, so `dimensions` is never sent.
 
+**`openrouter` is the same idea, with a dialect.** One `OPENROUTER_API_KEY` (shared with the
+OCR extractor of the same name) puts hundreds of publishers' models behind an OpenAI-compatible
+API, so `OpenRouterChatProvider` is `OpenAIChatProvider` again, differing in two fields: the
+cap is `max_tokens`, and the think toggle is `reasoning: {enabled}` rather than NIM's
+`chat_template_kwargs`. Ids read `openrouter/<publisher>/<model>`; the publisher in the middle
+may itself be a source name (`anthropic/...`), which is why only the first segment is a source.
+Discovery needs no probing, unlike NVIDIA: `GET /models` already says what each model reads and
+writes and which parameters it accepts, so vision, tools and reasoning are read off the listing
+and image-output and guard models are dropped. Embedding models come from a separate listing
+and are the only ones asked for their width.
+
 No provider class holds a URL, a limit or a wire string. Endpoints and limits are `Settings`
-fields; vendor spellings (`passage`, `END`) are tables in `enums/ProviderMappings.py`; and
+fields; vendor spellings (`passage`, `END`) are tables in `shared/enums/providers/*_mappings.py`; and
 which settings reach which constructor is one more table walked by `setting_kwargs()`.
 Giving a provider a new knob is a line in that table plus a field on `Settings` — the
 factories never branch per vendor.
@@ -321,7 +456,7 @@ factories never branch per vendor.
 ## Choosing models
 
 A notebook can name its own chat and embedding model, and the picker is built from what is
-genuinely available rather than a hardcoded list. `ModelController` merges every configured
+genuinely available rather than a hardcoded list. `ModelService` merges every configured
 source and groups the result twice.
 
 **By source** — `local` and `cloud` are two Ollama hosts, `nvidia` is a hosted vendor. A
@@ -384,7 +519,7 @@ is no `DATABASE_URL` to keep in sync and no password in a committed file.
 
 ### Migrations
 
-Tables are declared once as SQLAlchemy models in `factories/db/postgres/base_repository.py`.
+Tables are declared once as SQLAlchemy models in `data/repositories/postgres/base_repository.py`.
 Alembic reads that metadata and every repository queries the same classes, so a column that
 does not exist is an `AttributeError` at import rather than a 503 on first request.
 
@@ -393,8 +528,8 @@ Postgres advisory lock, so several workers booting at once cannot race. To drive
 from `src/` (the config lives beside the backend it migrates, hence `-c`):
 
 ```bash
-uv run alembic -c factories/db/postgres/alembic.ini upgrade head
-uv run alembic -c factories/db/postgres/alembic.ini revision --autogenerate --rev-id 0008 -m "…"
+uv run alembic -c data/repositories/postgres/alembic.ini upgrade head
+uv run alembic -c data/repositories/postgres/alembic.ini revision --autogenerate --rev-id 0008 -m "…"
 ```
 
 Revision ids are numbered by hand so `ls versions/` reads in order. **An autogenerate run
@@ -578,11 +713,44 @@ Ingestion runs in Celery rather than inside the FastAPI request. Attaching a doc
 the file and returns `202 Accepted` immediately with an `asset_id` and a `task_id`; chunking
 and embedding then happen on the workers.
 
-**Processing and indexing are one chain.** `chain(process → index)` is queued as a unit, so a
-document can never be left chunked-but-unindexed — the state where a notebook looks grounded
-and retrieves nothing. The signatures are immutable (`.si`) on purpose: a mutable one would
-bind the first task's result dict to the second's `project_id`, and `reset` means "delete this
-asset's chunks" upstream but "drop the whole vector collection" downstream.
+**Ingesting a PDF is four stages joined by queues.** `process_data_task` plans the page
+batches and publishes one `parse_batch_task` each; every parse stores its pages and queues a
+`postprocess_batch_task`; whichever of those finishes last claims the run and dispatches
+`assemble_chunks_task`, which chunks, stores, and publishes the indexing stage. Only the
+correction stage gets a queue of its own — it is the only one that waits on a model rather
+than a CPU, and behind an extraction on the shared queue one large document's corrections
+would stall every other document's parsing.
+
+**Completion is a row, not a callback.** This was a Celery chord and the chord did not work:
+`self.replace(chord(group(chain(parse, postprocess)), assemble))` marked one of twenty-three
+chain-tails as a chord member, its accumulator reached 1, and a 222-page book whose every
+batch had succeeded produced no chunks at all — silently, with the results still sitting in
+the result backend. It is now a count over `ingest_batches` and one atomic claim:
+
+```sql
+UPDATE ingest_runs SET collected_at = now()
+WHERE asset_id = :a AND collected_at IS NULL
+  AND (SELECT count(*) FROM ingest_batches
+       WHERE asset_id = :a AND status = 'corrected') = total_batches
+RETURNING asset_id
+```
+
+`collected_at IS NULL` makes it single-winner however many batches finish together; the
+subquery in the same statement stops it firing early, where a count-then-claim could be told
+23 of 23 and then claim after a retry had reset one. Unlike the chord it survives a worker
+restart — rebuilding the containers mid-run resumes at the batch it had reached — and is
+unbothered by redelivery.
+
+**Only ids ride the queue.** A ten-page batch carries every word and bounding box of those
+pages, which is megabytes. Through the broker that would make RabbitMQ a file server, and in
+the result backend it would meet a 512 MB cap with an LRU eviction policy, so the payload goes
+to `ingest_batches` and the message carries `(asset_id, batch_index)`. The rows are scratch:
+the collector deletes them once the chunks are stored, and a row still present is an ingestion
+that did not finish.
+
+Progress is the same count — `done` over a unique `(asset_id, batch_index)` — which is what
+makes it structurally incapable of passing the total. The Redis counter it replaced was an
+unbounded `INCR`, and one redelivered task pushed a progress bar to 104%.
 
 **Every run is recorded.** `task_executions` holds one row per task — name, arguments, status,
 stage, progress, trimmed result, timings — so history survives the Redis result TTL, can be
@@ -591,31 +759,37 @@ state cannot do any of that, and cannot report a task whose worker was killed: t
 say `STARTED` forever, because the process that would have written the ending is gone.
 
 Statuses are `QUEUED`, `STARTED`, `SUCCESS`, `FAILURE` and `DEAD`. The last has no Celery
-equivalent and is the point of the table — work cancelled because the chain ahead of it
+equivalent and is the point of the table — work cancelled because the stage ahead of it
 failed, or abandoned when its worker vanished.
 
-**Repeat submissions join the run in progress.** `IdempotencyController` fingerprints
+**Repeat submissions join the run in progress.** `IdempotencyService` fingerprints
 `(task_name, args)` and returns `200` with the existing `task_id` instead of `202`, so a
 double-click does not pay for the same embedding twice. It is a query rather than a unique
 constraint by choice: both tasks are already re-runnable — processing skips assets that are
 already chunked, indexing upserts on a deterministic point id — so a constraint would turn a
 harmless race into a `500` rather than preventing anything that matters.
 
-The workloads are isolated into `process`, `index` and `maintenance` queues. Session CRUD,
+The workloads are isolated into `process`, `postprocess`, `index` and `maintenance` queues.
+Parse, plan and collect share the `process` queue: a queue absent from a worker's `-Q` list
+has no consumer, and a task published to it sits `QUEUED` for ever with no error to say so. Session CRUD,
 listings, health checks and semantic reads remain in FastAPI because they are short
 transactional or streaming operations and do not benefit from an extra broker round trip.
 
 The API and workers must share the same broker and result backend. From `src/`:
 
 ```bash
-uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.process_data_task" --loglevel=INFO --concurrency=2
+uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.process_data_task" --loglevel=INFO
+uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.postprocess_batch_task" --loglevel=INFO --concurrency=2
 uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.index_project_task" --loglevel=INFO --concurrency=1
 uv run celery -A celery_app.celery_app worker -Q "$CELERY_PROJECT_NAME.maintenance_task" --loglevel=INFO --concurrency=1
 uv run celery -A celery_app.celery_app beat --loglevel=INFO
 ```
 
-Compose runs the same set as `celery-process`, `celery-index`, `celery-studio`,
-`celery-maintenance` and `celery-beat`.
+Compose runs the same set as `celery-process`, `celery-postprocess`, `celery-index`,
+`celery-studio`, `celery-memory`, `celery-maintenance` and `celery-beat`. The process worker
+passes no `--concurrency`: it takes it from `CELERY_WORKER_CONCURRENCY`, which defaults to one
+per available CPU — a CLI flag would override the setting, and a compose shell cannot read a
+cgroup quota.
 
 **The sweep.** `maintenance_task` runs every `CELERY_MAINTENANCE_INTERVAL_HOURS` (default 24)
 and does two things: marks work that can no longer be running as `DEAD`, and deletes finished
@@ -662,31 +836,41 @@ The unit itself is `Type=oneshot` with `RemainAfterExit=yes`, running `docker co
 --build` in `Docker/` in the checkout. The restart *is* the deployment only because the checkout
 moved first; that is why the workflow pulls before restarting.
 
-The unit has to pass the compose-substitution env files, or compose refuses to start (by
-design — the alternative was a database with an empty password). In its existing
-`docker compose ... up -d --build` line, add the flags after `compose`:
+The unit needs no `--env-file` flags and no `COMPOSE_ENV_FILES`: every service reads `env/`
+through `env_file:`, and compose reads `Docker/.env` by itself. A unit written before this
+still passes `--env-file env/.env.nginx`, a file that no longer exists, and compose refuses to
+start with it. Its `ExecStart` should be exactly
 
 ```
-docker compose --env-file env/.env.nginx --env-file env/.env.mongo --env-file env/.env.postgres up -d --build
+ExecStart=/usr/bin/docker compose up -d --build
 ```
 
-or, equivalently, `Environment=COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres`
-on the unit; follow either with `systemctl daemon-reload`. The unit itself is not in the repo,
-so this is a one-time manual edit on the server. Until it is made, a deploy fails loudly and
-leaves the running containers untouched.
+with any `Environment=COMPOSE_ENV_FILES=...` line removed, followed by
+`sudo systemctl daemon-reload`. The unit itself is not in the repo, so this is a one-time
+manual edit on the server. Until it is made, a deploy fails loudly and leaves the running
+containers untouched.
 
 ## Observability
 
-Prometheus scrapes five targets, all addressed by compose service name so nothing depends on
+Prometheus scrapes six jobs, all addressed by compose service name so nothing depends on
 a published port:
 
 | Job | Source |
 | --- | --- |
-| `notebookllm` | the app's own `/metrics` |
+| `notebookllm` | the API's own `/metrics` |
+| `celery` | each Celery worker, on `WORKER_METRICS_PORT` (9808) |
 | `postgres` | `postgres-exporter` |
 | `rabbitmq` | `rabbitmq_prometheus`, on `/metrics/per-object` |
 | `prometheus` | itself |
 | `node` | `node_exporter` **on the host**, not in the stack |
+
+The `celery` job exists because ingest, embedding and LLM generation run in the workers, not
+the API, so the histograms they record never reached the API's `/metrics` — the ingest-stage
+and generation-latency panels sat on "No data" while documents were being processed. Workers
+are prefork, so each one runs prometheus_client in multiprocess mode: every child writes its
+samples under `PROMETHEUS_MULTIPROC_DIR` (a tmpfs, set only on the workers in compose) and the
+worker's parent serves the merged view (`celery_app.py`). The API does not get the variable;
+it would switch it to file-backed metrics too.
 
 The RabbitMQ job needs `/metrics/per-object` specifically. The default `/metrics` aggregates
 everything into one series per metric with no `queue` label, which is why the queue panels
@@ -704,9 +888,12 @@ of a second copy of the DSN in compose that could drift. Task history needs even
 once in `celery_app.py` (`worker_send_task_events`, `task_send_sent_event`) rather than as
 `-E` on four worker commands that could fall out of step.
 
-![Flower task history](demo/Flower.png)
-Task history, paged — per-task state, runtime, and worker, so a failure is a click away instead
-of a log grep.
+Flower's Broker tab lists the app's queues through RabbitMQ's management API, whose URL
+`src/flowerconfig.py` builds from the broker credentials (so no password is written into
+compose); the same file works around Flower 2.1.0 requesting `/api/queues//` instead of
+`/api/queues/%2F` on the default vhost. The per-queue *counts* there read N/A by design:
+`rabbitmq.conf` turns the management metrics collector off, a deprecated feature, and queue
+depths come from the Prometheus plugin into Grafana instead.
 
 Note that `FLOWER_BASIC_AUTH=""` does **not** mean "no authentication" — Flower reads an empty
 string as "auth is on, with no valid users" and answers `401` to every route except
@@ -726,20 +913,16 @@ Grafana provisions its dashboards by scanning `Docker/services/grafana/dashboard
 there is picked up without being listed anywhere: FastAPI observability, PostgreSQL, host, and
 RabbitMQ broker/queue health.
 
-![FastAPI dashboard](demo/GrafanaFastAPI.png)
-Request volume by method, a per-route latency heatmap, and the 2xx/5xx split that would catch
-a bad deploy.
-
-![Host dashboard](demo/GrafanaHost.png)
-The `node` job — CPU, memory, disk, and network from `node_exporter` on the host, not from a
-container.
-
-![PostgreSQL dashboard](demo/GrafanaPostgresql.png)
-Connection count, commit/rollback rates, and buffer settings from `postgres-exporter`.
-
-![RabbitMQ dashboard](demo/GrafanaRabbimq.png)
-Ready and unacknowledged messages per queue — filtered to the queues that mean something, per
-the relabeling above.
+![Observability walkthrough: Flower workers, task history and a task's detail, Prometheus targets, then the Grafana FastAPI, ingest, latency, PostgreSQL, host and RabbitMQ views](demo/observability.gif)
+The stack after ingesting a Wikipedia article and generating a quiz and flashcards from it, in
+order: Flower's workers and task history — per-task state, runtime and worker, so a failure is a
+click away instead of a log grep — and one Studio task's arguments and result; every Prometheus
+target up, the six workers included; then Grafana. The FastAPI dashboard shows request volume,
+per-route latency and the 2xx/5xx split; the next two frames are its worker panels, the p95 of
+each ingest stage (summarising and generating dominate) and embedding versus LLM generation
+latency; then PostgreSQL, the host from `node_exporter`, and RabbitMQ's ready and
+unacknowledged messages per queue, filtered to the queues that mean something per the
+relabeling above. The individual frames are in [`demo/observability/`](demo/observability/).
 
 ## Error handling
 
@@ -759,30 +942,46 @@ what should not be sitting in a log file.
 
 ## Project structure
 
+Three tiers, plus one cross-cutting layer nothing else depends on for its own sake:
+
 ```
 src/
-├── main.py                 # app, lifespan, providers, error handler
-├── routes/                 # HTTP only — base, data, process, nlp, ui
-│   ├── chat/               # users · sessions · chats · messages · assets · models
-│   └── schemas/            # request models
-├── controllers/            # the work: chat, process, text processing, nlp, models, pdf layout
-├── task/                   # Celery adapters and background-processing services
-│   ├── process.py           # task submission, execution lifecycle, result lookup
-│   └── process_service.py   # asset validation, chunking and persistence workflow
-├── factories/              # swappable backends
-│   ├── llmchatting/        # interface + 6 providers + factory
-│   ├── llmembedding/       # interface + 5 providers + factory
-│   ├── db/                 # mongo/ and postgres/ behind 8 repository ABCs, + alembic/
-│   └── setting_kwargs.py   # {kwarg: settings field} tables -> constructor kwargs
-├── models/                 # pydantic documents + the model classes that read them
-├── templates/locales/      # prompts sent TO the model, per language
-├── web/                    # templates/ and static/ sent TO the browser
-├── enums/                  # every .env choice, plus ProviderMappings' lookup tables
-└── utils/                  # Settings, logging, metrics, model id vocabulary
-Docker/                     # compose, nginx, prometheus, grafana dashboards
-test/                       # unit + route tests, fakes for every backend
+├── main.py                   # the API process entrypoint: app, lifespan, error handlers
+├── celery_app.py             # the worker process entrypoint, sibling to main.py
+├── celery_queues.py          # queue declarations and task routing
+├── presentation/              # tier 1 — HTTP and the browser-facing UI
+│   ├── dependencies.py          # request -> services; the only reader of app.db / app.providers
+│   ├── routes/                 # HTTP only — base, data, process, nlp, ui
+│   │   ├── chat/                 # users · sessions · chats · messages · assets · models
+│   │   └── schemas/              # request models
+│   ├── web/                    # templates/ and static/ sent to the browser
+│   └── middleware/              # request logging
+├── application/                # tier 2 — the actual work
+│   ├── services/                 # the work, grouped: account · conversation (sessions, chats, messages, sources) · core · ingest · llm · memory · rag · studio
+│   ├── providers/                 # LLM vendor adapters: chatting/, embedding/, provider_cache
+│   ├── tasks/                     # Celery task bodies
+│   │   ├── jobs/                    # ingest/ (plan · parse · postprocess · assemble · summarise) · index · studio · memory · maintenance
+│   │   ├── runtime.py               # the resources and timeout handling every job shares
+│   │   ├── tracking/                # task_executions rows, progress, status lookup
+│   │   └── workflows.py             # the ids a run is published under
+│   ├── prompts/                   # chat and studio prompts sent to the model, per language
+│   ├── ocr_prompts/                # ingest-correction prompts sent to the model, per language
+│   └── arabic_extraction/         # the OCR pipeline
+├── data/                       # tier 3 — persistence
+│   ├── models/                    # pydantic schemas + the thin XModel(db) adapters
+│   └── repositories/               # mongo/ and postgres/ behind 11 repository ABCs, + alembic/
+└── shared/                     # cross-cutting, used by all three tiers — not itself a tier
+    ├── enums/                    # every .env choice, plus provider lookup tables
+    ├── utils/                    # Settings, logging, metrics, model id vocabulary
+    └── exceptions.py             # the domain exception hierarchy
+Docker/                        # compose, nginx, prometheus, grafana dashboards
+test/                          # unit + route tests, fakes for every backend
 ```
 
-**Two directories are called templates on purpose.** `templates/` holds prompts sent to the
-model; `web/templates/` holds Jinja HTML sent to the browser. Different audiences, so they
-never share a file.
+`application/prompts/` and `application/ocr_prompts/` answer different questions and stay two
+separate resolvers on purpose: `prompts/` (chat and studio) answers *a user*, resolved from the
+notebook's own language, where a missing key raises rather than silently answering an Arabic
+question in English; `ocr_prompts/` answers *a document* during ingestion, where there is no
+conversation and falling back to English is correct rather than a bug. They used to be named
+`templates/` and `prompts/` — a collision with `web/templates/` (Jinja HTML, a different
+audience entirely) that the current names exist to remove.

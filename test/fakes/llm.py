@@ -7,8 +7,8 @@ message building and validation all come for free and stay under test.
 
 from collections.abc import AsyncIterator
 
-from factories.llmchatting import LLMChattingInterface
-from factories.llmembedding import LLMEmbeddingInterface
+from application.providers.chatting import LLMChattingInterface
+from application.providers.embedding import LLMEmbeddingInterface
 
 
 class FakeChatClient(LLMChattingInterface):
@@ -21,9 +21,7 @@ class FakeChatClient(LLMChattingInterface):
         self.closed = False
 
     async def _generate_text(self, messages, max_tokens, temperature) -> str:
-        self.calls.append(
-            {"messages": messages, "max_tokens": max_tokens, "temperature": temperature}
-        )
+        self.calls.append({"messages": messages, "max_tokens": max_tokens, "temperature": temperature})
         return self.reply
 
     async def aclose(self) -> None:
@@ -34,8 +32,7 @@ class FakeStreamingChatClient(FakeChatClient):
     """Yields thinking then content, the way a reasoning model does."""
 
     async def _stream_text(self, messages, max_tokens, temperature) -> AsyncIterator[dict]:
-        self.calls.append({"messages": messages, "max_tokens": max_tokens,
-                           "temperature": temperature})
+        self.calls.append({"messages": messages, "max_tokens": max_tokens, "temperature": temperature})
         yield {"kind": "thinking", "text": "hmm"}
         for word in self.reply.split():
             yield {"kind": "content", "text": word + " "}
@@ -77,8 +74,8 @@ class FakeProviderCache:
         self._embedding = embedding or FakeEmbeddingClient()
         self.asked_for: list = []
 
-    def chatting(self, model_id=None):
-        self.asked_for.append(("chatting", model_id))
+    def chatting(self, model_id=None, num_ctx=None, thinking=None):
+        self.asked_for.append(("chatting", model_id, num_ctx, thinking))
         return self._chatting
 
     def embedding(self, model_id=None, dimensions=None):

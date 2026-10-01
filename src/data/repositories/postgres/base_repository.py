@@ -1,0 +1,532 @@
+"""Shared Postgres plumbing: the ORM schema, and rows back into models.
+
+The tables are declared once, here, as SQLAlchemy classes. Alembic reads
+``Base.metadata`` to generate migrations and the repositories build their
+queries against the same classes, so a column that does not exist is an
+AttributeError at import rather than a 503 on the first request. That is the
+whole point: the previous hand-written SQL drifted from both the DDL and the
+pydantic models without anything noticing.
+
+Two naming rules keep this readable:
+
+* ORM classes carry a ``Row`` suffix, because the pydantic model of the same
+  name (``User``, ``Chat``, ...) is imported into every repository alongside it.
+* Instances of them are called ``row``, never ``chat``/``user``. The static
+  check in test/db/test_postgres_field_mapping.py greps for ``chat.<attr>`` to
+  catch fields read off a model that does not have them; naming an ORM instance
+  ``chat`` would feed it false positives.
+"""
+
+import json
+from datetime import datetime
+from functools import lru_cache
+from typing import Any, Type, TypeVar, get_args
+
+from bson.objectid import ObjectId
+from pydantic import BaseModel
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    func,
+    text,
+)
+from sqlalchemy import (
+    inspect as sa_inspect,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+T = TypeVar("T", bound=BaseModel)
+
+
+class Base(DeclarativeBase):
+    """Declarative base. ``Base.metadata`` is what Alembic migrates."""
+
+
+# Row ids are 24-hex strings holding a str(ObjectId()) — see _generate_id. The
+# pydantic models are shared verbatim with the Mongo backend, where `id` is a
+# real bson.ObjectId, so Postgres stores that same shape and converts back on
+# read. Native UUIDs would mean changing models that Mongo also uses.
+_OID = String(24)
+_BIZ_ID = String(200)
+
+
+def _utcnow_column():  # -> MappedColumn; annotated on the class attribute instead
+    return mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class UserRow(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    user_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+    # User.label is `str` with a default, not Optional — a NULL here would fail
+    # pydantic validation on every read. Same reasoning for every NOT NULL
+    # DEFAULT below: the column has to be at least as strict as the model.
+    label: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class PersonalUserInfoRow(Base):
+    __tablename__ = "personal_user_information"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    user_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    key: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class SessionRow(Base):
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    session_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    # Missing from the old DDL entirely, so every read resurrected the model's
+    # default and a renamed session forgot its name on the next request.
+    title: Mapped[str] = mapped_column(String(200), nullable=False, server_default="New session")
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class ChatRow(Base):
+    __tablename__ = "chats"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    chat_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+    session_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    user_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    lang: Mapped[str] = mapped_column(String(8), nullable=False, server_default="en")
+
+    # None means "whatever .env says", so these stay genuinely nullable.
+    generation_model: Mapped[str | None] = mapped_column(String(200))
+    embedding_model: Mapped[str | None] = mapped_column(String(200))
+    embedding_dimensions: Mapped[int | None] = mapped_column(Integer)
+    temperature: Mapped[float | None] = mapped_column(Float)
+    max_tokens: Mapped[int | None] = mapped_column(Integer)
+    chunk_size: Mapped[int | None] = mapped_column(Integer)
+    overlap_size: Mapped[int | None] = mapped_column(Integer)
+
+    web_search: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    highlight_color: Mapped[str] = mapped_column(String(7), nullable=False, server_default=text("'#FFFF00'"))
+    excluded_assets: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    has_documents: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class MessageRow(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    message_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+    chat_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+
+    role: Mapped[str] = mapped_column(String(50), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    citations: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+
+    created_at: Mapped[datetime] = _utcnow_column()
+
+
+class ProjectRow(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    project_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+
+    # Lists of 24-hex row ids, as strings — ObjectId is not JSON-serialisable.
+    chunks_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    assets_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class AssetRow(Base):
+    __tablename__ = "assets"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    asset_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+    # The *business* project_id, unlike ChunkRow.project_id below.
+    project_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+
+    asset_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    file_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, server_default=text(r"'\x'::bytea"))
+    # sha256 of file_bytes, hex. Unique per project — see migration 0003.
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    # The link a source was added from; '' for an upload. See migration 0012.
+    source_url: Mapped[str] = mapped_column(String(2048), nullable=False, server_default="")
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class ChunkRow(Base):
+    __tablename__ = "chunks"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    # The project's *row* id, not its business project_id — DataChunk.project_id
+    # is an ObjectId. AssetRow.project_id holds the other one. That
+    # inconsistency is why none of these columns carry a foreign key: adding one
+    # would have to pick a side, and ON DELETE CASCADE would quietly change what
+    # delete_project() removes. Left as a follow-up.
+    project_id: Mapped[str] = mapped_column(_OID, nullable=False)
+    asset_id: Mapped[str | None] = mapped_column(_BIZ_ID)
+
+    chunk_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_content: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_metadata: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    # Written lazily by the Studio generation task; "" means "not yet". Not
+    # nullable, so the "needs summarising" test is a plain equality rather than
+    # a three-valued one.
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default=text("''"))
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class TaskExecutionRow(Base):
+    __tablename__ = "task_executions"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    task_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+    task_name: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    project_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    # "" for a whole-project run, never NULL: TaskExecution.asset_id is `str`
+    # with a default, so a NULL would fail pydantic validation on read.
+    asset_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    stage: Mapped[str] = mapped_column(String(50), nullable=False, server_default="")
+    done: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    total: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+
+    args: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+    # sha256 over the canonical encoding of (task_name, args). "" when not
+    # computed — see Asset.content_hash for the same sentinel.
+    args_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    result: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+
+    error: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    error_type: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+
+    # Genuinely absent until they happen, so these two are the only nullable
+    # columns here — the model types them Optional to match.
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class ArtifactRow(Base):
+    __tablename__ = "artifacts"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, unique=True)
+
+    # The notebook's business id, the string a URL carries -- the same
+    # identifier AssetRow.project_id holds, and deliberately not the project
+    # row's ObjectId that ChunkRow uses. Artifacts are reached from chat
+    # routes, and confusing those two has already cost this project a bug.
+    chat_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # A list, not an object, so append is a jsonb concatenation at the
+    # database rather than a read-modify-write from the worker.
+    items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+
+    source_task_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+    error: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class IngestRunRow(Base):
+    """One asset's ingestion, from planning to collection. Scratch: deleted
+    once the document is chunked. See data/models/ingest.py."""
+
+    __tablename__ = "ingest_runs"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    asset_id: Mapped[str] = mapped_column(_BIZ_ID, unique=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+
+    total_batches: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+
+    request_data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+
+    project_object_id: Mapped[str] = mapped_column(_OID, nullable=False, server_default="")
+
+    parent_task_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+    index_task_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+    build_task_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+
+    # The single-winner claim. Nullable because "not yet claimed" is its whole
+    # meaning, and an UPDATE ... WHERE collected_at IS NULL is what makes
+    # exactly one concurrent finisher run the collector.
+    collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = _utcnow_column()
+
+
+class IngestBatchRow(Base):
+    """One batch of parsed pages. Both the store and the completion counter."""
+
+    __tablename__ = "ingest_batches"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    asset_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    project_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+    batch_index: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    asset_name: Mapped[str] = mapped_column(_BIZ_ID, nullable=False, server_default="")
+
+    # The pages: text, words, char offsets and bounding boxes, plus the
+    # corrected text once the model has been through them. Large on purpose,
+    # and transient for the same reason -- see the module docstring of
+    # data/models/ingest.py for why this is the one place the rule against
+    # storing a document in a row is suspended.
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    updated_at: Mapped[datetime] = _utcnow_column()
+
+
+# Declared out here rather than in __table_args__ so they can reference the
+# mapped columns directly. Plain ascending, even where the query sorts DESC:
+# Postgres scans a btree backwards at the same cost, and a DESC index reflects
+# back differently enough to show up as spurious autogenerate churn.
+# One row per (user, key): a second `/memory` call naming the same key is an
+# update, not a second fact. `upsert_fact` relies on this index for its
+# ON CONFLICT target.
+Index(
+    "uq_personal_user_info_user_key",
+    PersonalUserInfoRow.user_id,
+    PersonalUserInfoRow.key,
+    unique=True,
+)
+Index("idx_sessions_user_id", SessionRow.user_id, SessionRow.created_at)
+Index("idx_chats_session_id", ChatRow.session_id, ChatRow.created_at)
+Index("idx_chats_user_id", ChatRow.user_id, ChatRow.created_at)
+Index("idx_messages_chat_id", MessageRow.chat_id, MessageRow.created_at)
+Index("idx_assets_project_id", AssetRow.project_id, AssetRow.created_at)
+# One copy of a document per notebook, and the thing find_by_content_hash's
+# dedupe lookup rides on. Partial, exactly like Mongo's version: content_hash
+# defaults to "" and every row written before migration 0003 carries that
+# sentinel, so an unconditional unique index would make them all collide with
+# each other. `content_hash != ''` excludes them, so the constraint applies
+# only to rows that actually have an identity.
+#
+# Declared here as well as in migration 0007 so `alembic --autogenerate`
+# against a database at head produces nothing: this index existed in the
+# database from 0003 onward but not in the metadata, and so came back as a
+# spurious "removed index" on every autogenerate run.
+Index(
+    "uq_assets_project_content",
+    AssetRow.project_id,
+    AssetRow.content_hash,
+    unique=True,
+    postgresql_where=AssetRow.content_hash != "",
+)
+# One current set per notebook per kind. Unique rather than merely indexed:
+# regenerating replaces, and two rows for the same (notebook, kind) would make
+# "the deck for this book" ambiguous with nothing to break the tie.
+Index("uq_artifacts_chat_kind", ArtifactRow.chat_id, ArtifactRow.kind, unique=True)
+Index("idx_chunks_project_id", ChunkRow.project_id, ChunkRow.created_at)
+Index("idx_chunks_project_asset", ChunkRow.project_id, ChunkRow.asset_id)
+Index(
+    "idx_chunks_project_asset_order",
+    ChunkRow.project_id,
+    ChunkRow.asset_id,
+    ChunkRow.chunk_order,
+)
+# Without project_id in front: a citation resolves a search hit back to its
+# page by (asset_id, chunk_order), and the hit carries no project row id to
+# lead with. Every index above starts with project_id, so that lookup had
+# nothing to use. See migration 0004.
+Index("idx_chunks_asset_order", ChunkRow.asset_id, ChunkRow.chunk_order)
+# The progress poll: one project's most recent unfinished task.
+Index(
+    "idx_tasks_project_created",
+    TaskExecutionRow.project_id,
+    TaskExecutionRow.created_at,
+)
+# The idempotency lookup. Deliberately NOT unique: the same arguments may
+# legitimately be submitted again once the first run has finished, and a
+# unique constraint would turn a harmless concurrent double-submit into a
+# 500 rather than the second caller simply joining the first.
+Index(
+    "idx_tasks_name_hash_status",
+    TaskExecutionRow.task_name,
+    TaskExecutionRow.args_hash,
+    TaskExecutionRow.status,
+)
+
+
+# One row per batch of an asset, and the reason the completion count is
+# trustworthy: a redelivered parse task upserts its own row instead of adding a
+# second, so `corrected == total_batches` cannot be reached before every batch
+# really is corrected.
+Index(
+    "uq_ingest_batches_asset_index",
+    IngestBatchRow.asset_id,
+    IngestBatchRow.batch_index,
+    unique=True,
+)
+# The completion count, and the collector's read.
+Index(
+    "idx_ingest_batches_asset_status",
+    IngestBatchRow.asset_id,
+    IngestBatchRow.status,
+)
+
+
+def _as_objectid(value):
+    """A 24-hex string becomes an ObjectId. Anything else is left alone —
+    including a string that is not a valid one, so pydantic reports it."""
+    if isinstance(value, str) and ObjectId.is_valid(value):
+        return ObjectId(value)
+    return value
+
+
+def _as_objectids(value):
+    """Same, but also reaching one level into a list.
+
+    Project.chunks_ids and assets_ids are `list[ObjectId]` stored as JSONB
+    arrays of hex strings, so the scalar conversion alone left every project
+    that had ever ingested a document failing validation on read.
+    """
+    if isinstance(value, list):
+        return [_as_objectid(item) for item in value]
+    return _as_objectid(value)
+
+
+class PostgresBaseRepository:
+    """Base repository for Postgres that provides common utility methods."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self.session_factory = session_factory
+
+    def _generate_id(self) -> str:
+        """Generate a 24-char hex string to mimic MongoDB ObjectId behavior."""
+        return str(ObjectId())
+
+    @classmethod
+    def _scrub(cls, value: Any) -> Any:
+        """Strip NUL bytes from anything on its way into a row.
+
+        PostgreSQL refuses \\x00 in both text and jsonb — it stores strings
+        NUL-terminated, so no encoding or client setting makes it storable.
+        Mongo accepts them, so this constraint belongs to this backend alone
+        and none of the callers know about it.
+
+        The ingest path already strips them at extraction, which is where PDF
+        text acquires them. This is the second line: a batch INSERT fails
+        *whole*, so one NUL arriving from anywhere else — a filename, a note
+        title, metadata assembled after extraction — would cost every row in
+        the batch. Cheap on clean input: str.replace returns the same object
+        when there is nothing to replace.
+        """
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        if isinstance(value, dict):
+            return {cls._scrub(k): cls._scrub(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [cls._scrub(v) for v in value]
+        return value
+
+    def _record_to_model(self, record: Any | None, model_class: Type[T]) -> T | None:
+        """Convert a database row to a Pydantic model.
+
+        Takes an ORM instance, or any mapping — SQLAlchemy ``RowMapping``, or a
+        plain dict, which is what the tests use so they need no server.
+        """
+        if record is None:
+            return None
+
+        if isinstance(record, Base):
+            mapper = sa_inspect(type(record)).mapper
+            data = {attr.key: getattr(record, attr.key) for attr in mapper.column_attrs}
+        else:
+            if not record:
+                return None
+            data = dict(record)
+
+        # Built as a new dict rather than mutated in place: the previous
+        # version popped a key while iterating the same dict, which raises
+        # "dictionary keys changed during iteration" whenever the removal and
+        # the insertion happen to make CPython resize.
+        decoded = {}
+
+        for key, value in data.items():
+            # The JSONB type hands back real lists and dicts, so this is a
+            # no-op on live rows. It stays for the raw-string case (a dict
+            # handed straight to this method, or a text column holding JSON).
+            if isinstance(value, str) and value[:1] in ("{", "["):
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+
+            # The models alias the primary key as `_id`.
+            decoded["_id" if key == "id" else key] = value
+
+        # The schemas are shared with the Mongo backend, so any id field is
+        # typed as a real ObjectId. Postgres stores the 24-hex string form and
+        # pydantic will not take a str for such a field, so every read failed
+        # validation. Driven off the model rather than a hardcoded list of
+        # names: `_id` is one, DataChunk.project_id is another, and the next
+        # one should not need a code change here.
+        for name in self._objectid_fields(model_class):
+            if name in decoded:
+                decoded[name] = _as_objectids(decoded[name])
+
+        return model_class.model_validate(decoded)
+
+    @staticmethod
+    @lru_cache(maxsize=None)
+    def _objectid_fields(model_class: Type[T]) -> tuple[str, ...]:
+        """Field names on *model_class* that hold an ObjectId, by alias."""
+        names = []
+
+        for name, field in model_class.model_fields.items():
+            annotation = field.annotation
+            candidates = (annotation,) + get_args(annotation)
+            if any(c is ObjectId for c in candidates):
+                names.append(field.alias or name)
+
+        return tuple(names)
+
+    def _records_to_models(self, records: list, model_class: Type[T]) -> list[T]:
+        return [self._record_to_model(r, model_class) for r in records if r is not None]

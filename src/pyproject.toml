@@ -8,7 +8,7 @@ dependencies = [
     # --- OCR ---
     # Arabic PDFs in this corpus carry text layers that cannot be searched:
     # the word-box path splits inside words and the raw path fuses them. OCR of
-    # the rendered page beats both, measured (see src/arabic_extraction/benchmark/reports/FINDINGS.md).
+    # the rendered page beats both, measured (see src/application/arabic_extraction/benchmark/reports/FINDINGS.md).
     # pytesseract is a thin wrapper; the engine and its ara model are installed
     # in the image, not here. qalam is OCR_EXTRACTOR's default -- Rust
     # bindings published on PyPI, no build toolchain or external model needed.
@@ -26,7 +26,7 @@ dependencies = [
     # --- observability ---
     # Metrics are scraped from /metrics; the instrumentator supplies the HTTP
     # RED signals, prometheus-client the app-specific collectors in
-    # utils/metrics.py.
+    # shared/utils/metrics.py.
     "prometheus-client>=0.21",
     "prometheus-fastapi-instrumentator>=7.0",
     # --- config and validation ---
@@ -56,6 +56,13 @@ dependencies = [
     # NLTKTextSplitter's sentence tokenizer. langchain-text-splitters imports
     # it lazily and does not depend on it, so it has to be named here.
     "nltk>=3.9",
+    # --- link sources ---
+    # An article's main text without its menus, footers and cookie banners,
+    # which a plain HTML-to-text loader indexes right next to it.
+    "trafilatura>=2.0",
+    # Captions as the player shows them, with timestamps. The official Data
+    # API only downloads captions for videos the caller owns.
+    "youtube-transcript-api>=1.0",
     # --- llm providers ---
     "anthropic>=0.40.0",
     "cohere>=5.13.0",
@@ -102,7 +109,7 @@ ocr-benchmark = [
 target-version = ["py312"]
 line-length = 120
 extend-exclude = '''
-/(\.git|\.mypy_cache|\.pytest_cache|\.ruff_cache|\.venv|assets|web/static/js/vendor)/
+/(\.git|\.mypy_cache|\.pytest_cache|\.ruff_cache|\.venv|assets|presentation/web/static/js/vendor)/
 '''
 
 [tool.ruff]
@@ -115,7 +122,7 @@ extend-exclude = [
     ".ruff_cache",
     ".venv",
     "assets",
-    "web/static/js/vendor",
+    "presentation/web/static/js/vendor",
 ]
 
 [tool.ruff.lint]

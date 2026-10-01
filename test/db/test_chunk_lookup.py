@@ -7,7 +7,7 @@ no concrete repository is left abstract.
 
 from bson.objectid import ObjectId
 
-from models.db_schema import DataChunk
+from data.models import DataChunk
 
 
 def chunk(asset_id, order, page=None):

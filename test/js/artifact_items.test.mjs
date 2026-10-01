@@ -19,7 +19,7 @@ import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(
-  resolve(here, "../../src/web/static/js/artifact_items.js"),
+  resolve(here, "../../src/presentation/web/static/js/artifact_items.js"),
   "utf8",
 );
 

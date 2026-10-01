@@ -1,6 +1,6 @@
 """Who builds the ANN index, now that index_chunks no longer does.
 
-The build moved out of NLPController.index_chunks into build_index() so it
+The build moved out of NLPService.index_chunks into build_index() so it
 could be its own link in the ingestion chain. That leaves two obligations, and
 missing either is silent — a collection with no index still answers every
 search, correctly, by exact scan:
@@ -12,14 +12,14 @@ search, correctly, by exact scan:
 
 from bson.objectid import ObjectId
 
-from controllers import NLPController
+from application.services import NLPService
 from test.fakes.db import FakeVectorRepository
 from test.fakes.llm import FakeEmbeddingClient
 
 
 def _controller(embedding_size=8):
     vectors = FakeVectorRepository()
-    return NLPController(
+    return NLPService(
         embedding_client=FakeEmbeddingClient(embedding_size=embedding_size),
         vectordb_client=vectors,
     ), vectors

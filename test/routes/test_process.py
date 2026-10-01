@@ -4,25 +4,22 @@ import pytest
 from kombu.exceptions import OperationalError as BrokerOperationalError
 from redis.exceptions import RedisError
 
+from shared.exceptions import ProjectNotFoundError
 
-def _fake_chain(calls, build_id="build-1", index_id="index-1", process_id="task-123"):
-    """Stand in for ingestion_chain, recording how it was built.
 
-    A chain's AsyncResult names its *last* task and reaches the earlier ones
-    through .parent, so the fake reproduces that nesting or the route's
-    per-link bookkeeping is not actually exercised. Three deep since the ANN
-    build became its own task: process → index → build index.
+def _fake_chain(calls):
+    """Stand in for ingestion_signature, recording how it was called.
+
+    Flat, where this used to reproduce a three-deep `.parent` nesting:
+    ingestion is no longer a Celery chain, so the route takes its three ids
+    from `QueuedChain` rather than walking a published one. The route's
+    per-stage bookkeeping still runs against those ids, which is the thing
+    under test.
     """
-    def build(project_id, request_data, asset_id=None, batch_size=None):
-        calls.append((project_id, request_data, asset_id, batch_size))
-        return SimpleNamespace(
-            apply_async=lambda: SimpleNamespace(
-                id=build_id,
-                parent=SimpleNamespace(
-                    id=index_id, parent=SimpleNamespace(id=process_id, parent=None)
-                ),
-            )
-        )
+
+    def build(project_id, request_data, queued):
+        calls.append((project_id, request_data, queued))
+        return SimpleNamespace(apply_async=lambda *a, **k: None)
 
     return build
 
@@ -31,10 +28,10 @@ async def test_process_queues_the_whole_chain(client, monkeypatch):
     """One POST now queues process *and* index. The client used to have to
     poll /process and then call /nlp/index/push itself, and a client that
     stopped halfway left a project chunked but unindexed."""
-    import routes.process as process_route
+    import presentation.routes.process as process_route
 
     calls = []
-    monkeypatch.setattr(process_route, "ingestion_chain", _fake_chain(calls))
+    monkeypatch.setattr(process_route, "ingestion_signature", _fake_chain(calls))
 
     response = await client.post(
         "/process/project-1",
@@ -43,40 +40,48 @@ async def test_process_queues_the_whole_chain(client, monkeypatch):
 
     assert response.status_code == 202
     body = response.json()
-    assert body["task_id"] == "task-123"             # the process half
-    assert body["index_task_id"] == "index-1"        # queued without a second call
-    assert body["build_index_task_id"] == "build-1"  # and the ANN build after it
     assert body["queued"] is True
-    assert calls == [
-        (
-            "project-1",
-            {"asset_id": "asset-1", "chunk_size": 800, "overlap_size": 100, "reset": False},
-            "asset-1",
-            None,
-        )
-    ]
+
+    # Three distinct ids, handed back so a client can poll any stage.
+    ids = {body["task_id"], body["index_task_id"], body["build_index_task_id"]}
+    assert len(ids) == 3
+
+    project_id, request_data, queued = calls[0]
+    assert project_id == "project-1"
+    assert request_data["asset_id"] == "asset-1"
+    assert request_data["chunk_size"] == 800
+    assert request_data["overlap_size"] == 100
+    assert request_data["reset"] is False
+    # The ids the route reported are the ones it published under.
+    assert body["task_id"] == queued.process_id
+    assert body["index_task_id"] == queued.index_id
+    assert body["build_index_task_id"] == queued.build_id
 
 
-async def test_every_link_of_the_chain_gets_a_row(client, monkeypatch):
-    """A chain's AsyncResult knows only its last task, so without walking
-    .parent as well the earlier links would report UNKNOWN for their whole
-    run."""
-    import routes.process as process_route
+async def test_every_stage_gets_a_row(client, monkeypatch):
+    """All three rows are written before any of the work runs.
 
-    monkeypatch.setattr(process_route, "ingestion_chain", _fake_chain([]))
+    Index and build are published by the collector minutes later, so without a
+    row apiece the browser would poll two ids that do not exist yet and be told
+    UNKNOWN for the whole run."""
+    import presentation.routes.process as process_route
+
+    calls = []
+    monkeypatch.setattr(process_route, "ingestion_signature", _fake_chain(calls))
 
     await client.post("/process/project-1", json={"asset_id": "asset-1"})
 
     rows = client._transport.app.db.tasks().items
+    _, _, queued = calls[0]
 
-    assert sorted(rows) == ["build-1", "index-1", "task-123"]
+    assert sorted(rows) == sorted(queued.ids)
     # Each id is recorded under the name of the task it actually is — pairing
     # them the wrong way round would make every status poll answer about a
     # different stage than the one it asked for.
     assert {task_id: row.task_name.split(".")[-1] for task_id, row in rows.items()} == {
-        "task-123": "process_data_task",
-        "index-1": "index_project_task",
-        "build-1": "build_vector_index_task",
+        queued.process_id: "process_data_task",
+        queued.index_id: "index_project_task",
+        queued.build_id: "build_vector_index_task",
     }
 
 
@@ -84,10 +89,10 @@ async def test_an_identical_submission_joins_the_running_one(client, monkeypatch
     """A double-click must not queue a second ingestion of the same document:
     it costs the embedding twice and hands the caller an id that is not the
     run they are watching."""
-    import routes.process as process_route
+    import presentation.routes.process as process_route
 
     calls = []
-    monkeypatch.setattr(process_route, "ingestion_chain", _fake_chain(calls))
+    monkeypatch.setattr(process_route, "ingestion_signature", _fake_chain(calls))
 
     body = {"asset_id": "asset-1", "chunk_size": 800, "overlap_size": 100}
 
@@ -105,22 +110,20 @@ async def test_an_identical_submission_joins_the_running_one(client, monkeypatch
 async def test_different_arguments_are_not_deduplicated(client, monkeypatch):
     """Only *identical* work joins an existing run — re-ingesting the same
     project with reset=true is a different request and must queue."""
-    import routes.process as process_route
+    import presentation.routes.process as process_route
 
     calls = []
-    monkeypatch.setattr(process_route, "ingestion_chain", _fake_chain(calls))
+    monkeypatch.setattr(process_route, "ingestion_signature", _fake_chain(calls))
 
     await client.post("/process/project-1", json={"asset_id": "asset-1"})
-    second = await client.post(
-        "/process/project-1", json={"asset_id": "asset-1", "reset": True}
-    )
+    second = await client.post("/process/project-1", json={"asset_id": "asset-1", "reset": True})
 
     assert second.status_code == 202
     assert len(calls) == 2
 
 
 async def test_process_returns_503_when_broker_rejects_task(client, monkeypatch):
-    import routes.process as process_route
+    import presentation.routes.process as process_route
 
     def enqueue(*args, **kwargs):
         # What kombu actually raises when the broker is unreachable. Not
@@ -130,7 +133,7 @@ async def test_process_returns_503_when_broker_rejects_task(client, monkeypatch)
 
     monkeypatch.setattr(
         process_route,
-        "ingestion_chain",
+        "ingestion_signature",
         lambda *a, **k: SimpleNamespace(apply_async=enqueue),
     )
 
@@ -141,7 +144,7 @@ async def test_process_returns_503_when_broker_rejects_task(client, monkeypatch)
 
 
 async def test_process_status_returns_result(client, monkeypatch):
-    import tasks.status as status_module
+    import application.tasks.tracking.status as status_module
 
     class CompletedResult:
         status = "SUCCESS"
@@ -167,7 +170,7 @@ async def test_process_status_returns_result(client, monkeypatch):
 
 
 async def test_process_status_returns_503_when_result_backend_fails(client, monkeypatch):
-    import tasks.status as status_module
+    import application.tasks.tracking.status as status_module
 
     class BrokenResult:
         @property
@@ -186,7 +189,7 @@ async def test_process_status_returns_503_when_result_backend_fails(client, monk
 
 
 def test_celery_errors_are_application_errors():
-    from exceptions import (
+    from shared.exceptions import (
         CeleryBrokerError,
         CeleryError,
         CeleryResultError,
@@ -200,50 +203,76 @@ def test_celery_errors_are_application_errors():
 
 
 @pytest.mark.asyncio
-async def test_process_task_disconnects_database_after_processing(monkeypatch):
+async def test_planning_disconnects_the_database_even_when_it_fails(monkeypatch, fake_db):
+    """The planner opens its own connection and must close it on both paths.
+
+    A worker is a separate process tree with its own pool, and planning can
+    raise on perfectly ordinary input -- an asset that was deleted between the
+    upload and the worker picking it up. A leaked connection per failed upload
+    exhausts the pool and then every *later* upload fails for a reason that has
+    nothing to do with it."""
     import importlib
 
-    process_tasks = importlib.import_module("tasks.process")
+    process_tasks = importlib.import_module("application.tasks.jobs.ingest.process")
+    runtime = importlib.import_module("application.tasks.runtime")
     calls = []
 
-    class FakeDb:
+    class WatchedDb:
+        def __init__(self, inner):
+            self._inner = inner
+
         async def connect(self):
             calls.append("connect")
 
         async def disconnect(self):
             calls.append("disconnect")
 
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
     class FakeFactory:
         def __init__(self, settings):
-            calls.append(("settings", settings))
+            pass
 
         def create(self):
-            return FakeDb()
+            return WatchedDb(fake_db)
 
-    async def fake_process(project_id, request, db, recorder=None):
-        calls.append((project_id, request.asset_id, request.reset))
-        return {"status": "ok"}
-
-    # DbFactory on tasks.runtime: `job_resources` is what opens the connection
-    # now, and this test is about what the planner does with the one it is given.
-    import tasks.runtime as runtime
-
-    monkeypatch.setattr(runtime, "get_settings", lambda: "settings")
+    # On tasks.runtime: `job_resources` is what builds the connection now, and
+    # the connect/disconnect pairing this test guards lives there.
     monkeypatch.setattr(runtime, "DbFactory", FakeFactory)
-    monkeypatch.setattr(process_tasks, "process_data", fake_process)
 
-    result = await process_tasks._run_process_task(
-        "project-1",
-        {"asset_id": "asset-1", "chunk_size": 1000, "overlap_size": 200, "reset": True},
-    )
+    with pytest.raises(ProjectNotFoundError):
+        await process_tasks._run_plan("project-with-nothing-in-it", {})
 
-    assert result == {"status": "ok"}
-    assert calls == [
-        ("settings", "settings"),
-        "connect",
-        ("project-1", "asset-1", True),
-        "disconnect",
-    ]
+    assert calls == ["connect", "disconnect"], "the planner must disconnect on the failure path too"
+
+
+@pytest.mark.asyncio
+async def test_a_batch_covers_every_page_exactly_once(monkeypatch):
+    """The page ranges must tile the document: no gap, no overlap.
+
+    A gap is a page silently missing from the notebook and a overlap is a page
+    chunked twice, and neither shows up as an error anywhere -- the ingest
+    reports success either way."""
+    import importlib
+    from types import SimpleNamespace
+
+    process_tasks = importlib.import_module("application.tasks.jobs.ingest.process")
+
+    settings = SimpleNamespace(PDF_BATCH_PAGES=10, PDF_LOADER="pymupdf")
+    asset = SimpleNamespace(asset_id="a1", name="book.pdf", file_bytes=b"%PDF-fake")
+
+    for total in (1, 9, 10, 11, 274):
+        monkeypatch.setattr(process_tasks, "_cache_file", lambda *a, **k: "/tmp/x.pdf")
+        monkeypatch.setattr(process_tasks, "page_count", lambda _p, n=total: n)
+
+        ranges = process_tasks._batches_for(asset, settings)
+
+        assert all(end - start <= 10 for start, end in ranges), f"a batch exceeded 10 pages at {total}"
+
+        covered = [page for start, end in ranges for page in range(start, end)]
+
+        assert covered == list(range(total)), f"pages were dropped or repeated at {total}"
 
 
 async def test_a_bug_in_enqueueing_is_not_reported_as_a_broker_outage(client, monkeypatch):
@@ -251,14 +280,14 @@ async def test_a_bug_in_enqueueing_is_not_reported_as_a_broker_outage(client, mo
     programming error inside .delay() answered 503 "Could not queue document
     processing" — blaming RabbitMQ for a fault in this process, and hiding the
     real traceback behind a status that reads as infrastructure."""
-    import routes.process as process_route
+    import presentation.routes.process as process_route
 
     def enqueue(*args, **kwargs):
         raise RuntimeError("a genuine bug, not an outage")
 
     monkeypatch.setattr(
         process_route,
-        "ingestion_chain",
+        "ingestion_signature",
         lambda *a, **k: SimpleNamespace(apply_async=enqueue),
     )
 
@@ -276,7 +305,7 @@ async def test_an_id_that_was_never_queued_is_unknown_not_pending(client, monkey
     a task waiting for a worker were indistinguishable — and the ambiguity ran
     the wrong way: the client was told to keep polling something that would
     never arrive."""
-    import tasks.status as status_module
+    import application.tasks.tracking.status as status_module
 
     class NoRecord:
         status = "PENDING"
@@ -299,7 +328,7 @@ async def test_an_id_that_was_never_queued_is_unknown_not_pending(client, monkey
 async def test_a_queued_id_still_reports_pending(client, monkeypatch):
     """The other half of the same distinction: a real task that no worker has
     picked up yet must stay PENDING, or the client stops polling too early."""
-    import tasks.status as status_module
+    import application.tasks.tracking.status as status_module
 
     class NoRecord:
         status = "PENDING"
@@ -322,7 +351,7 @@ async def test_a_queued_id_still_reports_pending(client, monkeypatch):
 async def test_a_failure_reports_its_exception_type(client, monkeypatch):
     """`str(exc)` alone threw away half the diagnosis: a missing project and a
     broker timeout both arrived as an untyped string."""
-    import tasks.status as status_module
+    import application.tasks.tracking.status as status_module
 
     class FailedResult:
         status = "FAILURE"
@@ -347,7 +376,7 @@ async def test_a_missing_marker_backend_does_not_invent_unknown(monkeypatch):
     """When the backend is not Redis there is no marker to read. Reporting a
     real task as UNKNOWN would be worse than reporting a typo as PENDING, so
     the unknowable case resolves to the harmless one."""
-    import tasks.status as status_module
+    import application.tasks.tracking.status as status_module
 
     monkeypatch.setattr(status_module, "_redis", lambda: None)
 
@@ -364,8 +393,8 @@ def test_a_soft_timeout_is_reported_as_a_celery_task_error(monkeypatch):
     through the task's own error handling rather than dying mid-frame."""
     from celery.exceptions import SoftTimeLimitExceeded
 
-    import tasks.process as process_tasks
-    from exceptions import CeleryError, CeleryTaskError
+    import application.tasks.jobs.ingest.process as process_tasks
+    from shared.exceptions import CeleryError, CeleryTaskError
 
     closed = []
 
@@ -375,7 +404,7 @@ def test_a_soft_timeout_is_reported_as_a_celery_task_error(monkeypatch):
         finally:
             closed.append("db disconnected")
 
-    monkeypatch.setattr(process_tasks, "_run_process_task", slow)
+    monkeypatch.setattr(process_tasks, "_run_plan", slow)
 
     with pytest.raises(CeleryTaskError) as caught:
         # The task is bound (bind=True, for self.request.id); calling it
@@ -393,7 +422,7 @@ def test_the_soft_limit_must_be_below_the_hard_limit():
     restores the exact behaviour it was added to prevent."""
     from pydantic import ValidationError
 
-    from utils.config import Settings
+    from shared.utils.config import Settings
 
     with pytest.raises(ValidationError, match="must be below"):
         Settings(CELERY_TASK_SOFT_TIME_LIMIT=600, CELERY_TASK_TIME_LIMIT=600)
@@ -409,7 +438,7 @@ def test_the_rest_of_a_failed_chain_is_marked_dead():
     table was added to remove."""
     from types import SimpleNamespace as NS
 
-    from tasks.recorder import downstream_ids
+    from application.tasks.tracking.recorder import downstream_ids
 
     request = NS(
         id="proc-1",
@@ -424,7 +453,7 @@ def test_a_task_outside_a_chain_has_no_downstream():
     no chain at all, and must not raise on the failure path."""
     from types import SimpleNamespace as NS
 
-    from tasks.recorder import downstream_ids
+    from application.tasks.tracking.recorder import downstream_ids
 
     assert downstream_ids(NS(id="solo", chain=None)) == []
     assert downstream_ids(NS(id="solo")) == []
@@ -433,9 +462,9 @@ def test_a_task_outside_a_chain_has_no_downstream():
 async def test_abandoning_records_a_terminal_state(fake_db):
     """DEAD, not FAILURE: this task did not fail, it was cancelled by one that
     did — and Celery has no state for that, which is why the row does."""
-    from enums import TaskExecutionStatus
-    from models.db_schema import TaskExecution
-    from tasks.recorder import TaskRecorder
+    from application.tasks.tracking.recorder import TaskRecorder
+    from data.models import TaskExecution
+    from shared.enums import TaskExecutionStatus
 
     await fake_db.tasks().create_task(
         TaskExecution(
@@ -463,8 +492,8 @@ async def test_the_sweep_marks_a_run_whose_worker_vanished(fake_db):
     have written the ending no longer exists."""
     from datetime import datetime, timedelta, timezone
 
-    from enums import TaskExecutionStatus
-    from models.db_schema import TaskExecution
+    from data.models import TaskExecution
+    from shared.enums import TaskExecutionStatus
 
     now = datetime.now(timezone.utc)
     tasks = fake_db.tasks()
@@ -505,8 +534,8 @@ async def test_queued_work_is_given_far_longer_than_running_work(fake_db):
     otherwise a deploy would be reported as lost work."""
     from datetime import datetime, timedelta, timezone
 
-    from enums import TaskExecutionStatus
-    from models.db_schema import TaskExecution
+    from data.models import TaskExecution
+    from shared.enums import TaskExecutionStatus
 
     now = datetime.now(timezone.utc)
     tasks = fake_db.tasks()
@@ -535,8 +564,8 @@ async def test_the_sweep_never_deletes_unfinished_work(fake_db):
     queued would lose the record of work that is about to happen."""
     from datetime import datetime, timedelta, timezone
 
-    from enums import TaskExecutionStatus
-    from models.db_schema import TaskExecution
+    from data.models import TaskExecution
+    from shared.enums import TaskExecutionStatus
 
     old = datetime.now(timezone.utc) - timedelta(days=30)
     tasks = fake_db.tasks()

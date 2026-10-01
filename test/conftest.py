@@ -2,7 +2,7 @@
 
 Two things make this app awkward to test, and both are handled here.
 
-First, settings are read at *import* time: ``main.py`` and ``routes/data.py``
+First, settings are read at *import* time: ``main.py`` and ``presentation/routes/data.py``
 each bind a ``Settings`` object at module scope, and ``get_settings`` is
 lru_cached. So the environment has to be right before anything under ``src``
 is imported for the first time — which is why the env block below runs at
@@ -18,7 +18,7 @@ Nothing here talks to Mongo, Postgres, Qdrant or Ollama. The fakes in
 import os
 
 # Flip to True while debugging a 500 to see the real traceback.
-RAISE_APP_EXCEPTIONS = os.environ.get('TEST_RAISE') == '1'
+RAISE_APP_EXCEPTIONS = os.environ.get("TEST_RAISE") == "1"
 
 # --- environment, before the first `src` import -------------------------------
 #
@@ -50,6 +50,13 @@ _ENV = {
     # not need a broker; anything that reaches for one is faking too little.
     "CELERY_HOST": "rabbit.invalid",
     "CELERY_BACKEND_HOST": "redis.invalid",
+    # Off for the same reason OLLAMA_HOST is unreachable: the correction pass
+    # dials a local model, and a test that reaches one is a test that faked too
+    # little. It stays *called* in the drained pipeline (see fakes/ingest.py) so
+    # the stage cannot break unnoticed -- it just returns the batch untouched.
+    # The tests that exercise correction itself hand it a fake client and turn
+    # this back on for their own settings copy.
+    "POSTPROCESS_ENABLED": "false",
     # Keep the logging config from installing a rotating file handler that
     # would fight caplog and write into the repo.
     "LOG_TO_FILE": "false",
@@ -60,7 +67,7 @@ os.environ.update(_ENV)
 
 import pytest  # noqa: E402
 
-from utils import get_settings  # noqa: E402
+from shared.utils import get_settings  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -73,12 +80,12 @@ def _reset_settings_cache():
 
 @pytest.fixture(autouse=True)
 def _reset_probe_cache():
-    """ModelController caches embed probes on the *class*, so they persist."""
-    from controllers import ModelController
+    """ModelService caches embed probes on the *class*, so they persist."""
+    from application.services import ModelService
 
-    ModelController.forget_probes()
+    ModelService.forget_probes()
     yield
-    ModelController.forget_probes()
+    ModelService.forget_probes()
 
 
 @pytest.fixture
@@ -114,8 +121,9 @@ def app(fake_db, fake_providers):
     """
     import main
 
-    saved = {name: getattr(main.app, name, None)
-             for name in ("db", "providers", "generation_client", "embedding_client")}
+    saved = {
+        name: getattr(main.app, name, None) for name in ("db", "providers", "generation_client", "embedding_client")
+    }
 
     main.app.db = fake_db
     main.app.providers = fake_providers
@@ -143,35 +151,35 @@ def ingest(client, app, monkeypatch):
     about the upload itself keep using `client` directly.
     """
     from types import SimpleNamespace
-    from uuid import uuid4
 
-    import routes.chat.assets as assets_route
+    import application.tasks.tracking.status as task_status
+    import application.tasks.workflows as workflows
     from test.fakes.ingest import drain_ingestion
 
-    def fake_chain(project_id, request_data, asset_id=None, batch_size=None):
+    def fake_signature(project_id, request_data, queued):
         """Stand in for the real publish. Nothing here touches a broker.
 
-        The route's own bookkeeping still runs against it — every task row is
-        written from the ids this hands back — so what the test exercises is
-        the route, not a shortcut around it. drain_ingestion then performs the
-        work those rows describe.
+        `QueuedChain` still generates the three ids and AssetIngestService
+        still writes a row per stage from them, so what the test exercises is
+        the real bookkeeping path rather than a shortcut around it.
+        drain_ingestion then performs the work those rows describe.
 
-        Three deep, matching ingestion_chain: process → index → build index. A
-        chain's AsyncResult names its last task and reaches the earlier ones
-        through .parent, so the fake has to reproduce that nesting or the route
-        records fewer rows than it really would.
+        Patched on `tasks.workflows` rather than on the caller's module: the
+        service imports these late, inside the method, to keep services
+        and tasks from importing each other at module scope. A late import
+        reads the name out of `workflows` when it runs, so this is the binding
+        it actually gets.
+
+        Flat, not a three-deep `.parent` chain as it used to be: ingestion is
+        no longer a Celery chain, and the ids come from QueuedChain rather than
+        from walking a published one.
         """
-        def link(depth):
-            return SimpleNamespace(
-                id=str(uuid4()), parent=link(depth - 1) if depth else None
-            )
-
-        return SimpleNamespace(apply_async=lambda: link(2))
+        return SimpleNamespace(apply_async=lambda *a, **k: None)
 
     async def _ingest(chat_id, files):
-        monkeypatch.setattr(assets_route, "ingestion_chain", fake_chain)
+        monkeypatch.setattr(workflows, "ingestion_signature", fake_signature)
         # Writes a marker into the result backend, which is equally absent.
-        monkeypatch.setattr(assets_route, "mark_queued", lambda task_id: None)
+        monkeypatch.setattr(task_status, "mark_queued", lambda task_id: None)
 
         response = await client.post(f"/chat/chats/{chat_id}/documents", files=files)
 
@@ -203,13 +211,12 @@ async def client(app):
 @pytest.fixture
 def seed(fake_db):
     """Put a user, session, chat and asset in the fake db and hand back the ids."""
-    from models.db_schema import Asset, Chat, Project, Session, User
-    from enums import AssetType
+    from data.models import Asset, Chat, Project, Session, User
+    from shared.enums import AssetType
 
     fake_db.users().items["u1"] = User(user_id="u1", label="Omar")
     fake_db.sessions().items["s1"] = Session(session_id="s1", user_id="u1")
-    fake_db.chats().items["c1"] = Chat(chat_id="c1", session_id="s1", user_id="u1",
-                                       title="A notebook")
+    fake_db.chats().items["c1"] = Chat(chat_id="c1", session_id="s1", user_id="u1", title="A notebook")
     fake_db.projects().items["c1"] = Project(project_id="c1", name="A notebook")
     fake_db.assets().items["a1"] = Asset(
         asset_id="a1",

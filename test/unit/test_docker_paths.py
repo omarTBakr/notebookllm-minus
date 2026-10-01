@@ -16,17 +16,6 @@ DOCKER_DIR = Path(__file__).resolve().parents[2] / "Docker"
 COMPOSE = DOCKER_DIR / "docker-compose.yml"
 REPO_ROOT = DOCKER_DIR.parent
 
-# services/ is gitignored and copied from services.example/ by hand, so a fresh
-# clone has only the template; check that, and the real copy once it exists.
-SERVICES = DOCKER_DIR / "services"
-HAS_SERVICES = SERVICES.is_dir()
-
-
-def _resolve(source: str) -> Path:
-    if not HAS_SERVICES and source.startswith("./services/"):
-        source = "./services.example/" + source.removeprefix("./services/")
-    return DOCKER_DIR / source
-
 
 def _compose_text() -> str:
     return COMPOSE.read_text()
@@ -38,8 +27,9 @@ def _mount_sources() -> list[str]:
 
 
 def _env_files() -> list[str]:
-    """`- ./env/.env.x` entries under an `env_file:` key."""
-    return re.findall(r"^\s*-\s*(\./env/[^\s]+)\s*$", _compose_text(), re.MULTILINE)
+    """`- ./env/.env.x` entries under an `env_file:` key, short or long form
+    (`- path: ./env/.env.x` with `required: false`)."""
+    return re.findall(r"^\s*-\s*(?:path:\s*)?(\./env/[^\s]+)\s*$", _compose_text(), re.MULTILINE)
 
 
 def _dockerfiles() -> list[str]:
@@ -59,7 +49,7 @@ def test_the_parsers_find_something():
 
 @pytest.mark.parametrize("source", _mount_sources())
 def test_every_bind_mount_source_exists(source):
-    assert _resolve(source).exists(), f"compose mounts {source}, which does not exist"
+    assert (DOCKER_DIR / source).exists(), f"compose mounts {source}, which does not exist"
 
 
 @pytest.mark.parametrize("source", _mount_sources())
@@ -72,43 +62,68 @@ def test_every_mount_lives_under_services(source):
 @pytest.mark.parametrize("path", _dockerfiles())
 def test_every_dockerfile_exists(path):
     """`dockerfile:` is relative to the build context, which is the repo root."""
-    if not HAS_SERVICES:
-        path = path.replace("Docker/services/", "Docker/services.example/", 1)
     assert (REPO_ROOT / path).is_file(), f"compose builds {path}, which does not exist"
 
 
 @pytest.mark.parametrize("path", _env_files())
 def test_every_env_file_has_a_template(path):
-    """env/ is gitignored; env.example/ is what a clone gets. A new env_file with
-    no template there is a file a fresh checkout can neither find nor create."""
+    """The real env files are tracked in the private repo only; the public repo
+    ships env.example/. A new env_file with no template there is a file a public
+    checkout can neither find nor create."""
     name = Path(path).name
     assert (DOCKER_DIR / "env.example" / name).is_file(), (
         f"{path} is listed under env_file: but Docker/env.example/{name} does not exist"
     )
 
 
-@pytest.mark.skipif(not HAS_SERVICES, reason="services/ not copied from the template yet")
 def test_services_example_mirrors_services():
-    """Same set of files, so the template cannot silently miss a config."""
+    """Same set of files, so the public copy cannot silently miss a config."""
     def files(root: Path) -> set[Path]:
         return {p.relative_to(root) for p in root.rglob("*") if p.is_file()}
 
     assert files(DOCKER_DIR / "services") == files(DOCKER_DIR / "services.example")
 
 
-def test_the_compose_substitution_templates_exist():
-    """These three are read through --env-file, never env_file:, so the check
-    above cannot see them."""
-    for name in (".env.nginx", ".env.mongo", ".env.postgres"):
-        assert (DOCKER_DIR / "env.example" / name).is_file(), name
+def _env_keys(path: Path) -> set[str]:
+    return {
+        line.split("=", 1)[0].strip()
+        for line in path.read_text().splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    }
 
 
-def test_the_postgres_variables_are_required():
-    """An unset ${POSTGRES_PASS} otherwise becomes an empty string without a word
-    and the database initialises with a blank password."""
-    text = _compose_text()
-    for var in ("POSTGRES_USERNAME", "POSTGRES_PASS", "POSTGRES_MAIN_DB"):
-        assert "${" + var + ":?" in text, f"{var} is not marked required in compose"
+def test_no_compose_command_needs_env_file_flags():
+    """Every ${...} left in the compose file has a default.
+
+    A substitution without one has to come from the shell or --env-file, and
+    that is what made every command -- `ps` and `logs` included -- need three
+    --env-file flags, and a run without them fail. Settings a container needs
+    go through env_file:, which compose loads by itself. $$VAR is the
+    container's own shell variable, not a compose substitution.
+    """
+    code = "\n".join(line.split("#", 1)[0] for line in _compose_text().splitlines())
+    substitutions = re.findall(r"(?<!\$)\$\{([^}]+)\}", code)
+
+    assert substitutions, "found no substitutions at all, so this checks nothing"
+    for expression in substitutions:
+        assert ":-" in expression, f"${{{expression}}} has no default, so a command without flags fails"
+
+
+def test_the_compose_dotenv_holds_no_secrets():
+    """Docker/.env is read by compose automatically and is safe to publish;
+    credentials belong in env/, which the public repository never receives."""
+    assert _env_keys(DOCKER_DIR / ".env") <= {"NGINX_PORT"}
+
+
+def test_postgres_credentials_use_the_images_own_names():
+    """pgvector reads env/.env.postgres directly, so the keys are the image's.
+    They are also .env.app's names for the same server: the old POSTGRES_PASS
+    spelling was one letter from the name everything else used."""
+    assert _env_keys(DOCKER_DIR / "env.example" / ".env.postgres") == {
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_DB",
+    }
 
 
 def test_the_example_redis_conf_carries_no_real_password():

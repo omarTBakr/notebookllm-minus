@@ -5,8 +5,8 @@ import io
 import pytest
 from fastapi import UploadFile
 
-from controllers import DataController
-from exceptions import InvalidFileError
+from application.services import DataService
+from shared.exceptions import InvalidFileError
 
 
 def upload(name="a.txt", content_type="text/plain", size=10):
@@ -18,7 +18,7 @@ def upload(name="a.txt", content_type="text/plain", size=10):
 
 @pytest.fixture
 def controller():
-    return DataController()
+    return DataService()
 
 
 def test_a_plain_text_upload_is_accepted(controller):

@@ -20,26 +20,22 @@ driven from `docker-compose.yml`; run every command from **this directory**.
 cd Docker
 
 cp -r env.example env                     # then fill in every file — see Configuration
-cp -r services.example services           # then set requirepass in services/redis/redis.conf
-
-# Three of the env files feed ${...} substitution inside docker-compose.yml, and
-# compose reads those only from --env-file. Set them once per shell:
-export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
+cp -r services.example services           # public clone only (the private repo tracks services/); set requirepass in redis.conf
 
 docker compose config                     # parses and resolves; fastest way to catch a typo
 docker compose up -d --build
 ```
 
-Without `COMPOSE_ENV_FILES` (or the equivalent `--env-file env/.env.nginx --env-file
-env/.env.mongo --env-file env/.env.postgres` on every command) compose refuses to run and says
-which variable it wanted — deliberately, since the alternative was a database started with an
-empty password. This needs Docker Compose ≥ 2.24 (`docker compose version`).
+No `--env-file` flags and nothing to export, on this or any other compose command: each
+service reads its own file in `env/` through `env_file:`, and `.env` here (the nginx host port,
+nothing secret) is read by compose automatically. This needs Docker Compose ≥ 2.24
+(`docker compose version`), for the optional `env_file` entry on postgres-exporter.
 
 Then:
 
 | | |
 | --- | --- |
-| the app | http://localhost:8080 — through nginx (`NGINX_PORT` in `env/.env.nginx`) |
+| the app | http://localhost:8081 — through nginx (`NGINX_PORT` in `.env`) |
 | the app, direct | http://localhost:8000 — bypasses nginx |
 | Grafana | http://localhost:3000 — `admin` / `admin` on first boot |
 | Prometheus | http://localhost:9090 — check `/targets` first |
@@ -52,7 +48,7 @@ Then:
 Docker/
 ├── docker-compose.yml            the whole stack
 ├── docker-composeV1.yml          the earlier mongo-only version, kept for reference
-├── services/                     each service's config, one directory apiece (copied from services.example/)
+├── services/                     each service's checked-in config, one directory apiece
 │   ├── nginx/proxy.conf          reverse proxy config
 │   ├── prometheus/prometheus.yml scrape targets
 │   ├── grafana/                  provisioning + dashboards
@@ -61,16 +57,16 @@ Docker/
 │   └── notebookllm-minus/        the application image
 │       ├── Dockerfile
 │       └── Dockerfile.dockerignore
-├── services.example/             the tracked templates for services/
-├── env/                          per-service environment (copied from env.example/) — two kinds, see Configuration
-│   ├── .env.app                  the application's own configuration      (container)
-│   ├── .env.grafana                                                       (container)
-│   ├── .env.rabbitmq             first-boot broker credentials            (container)
-│   ├── .env.redis                cache password + connection details      (container)
-│   ├── .env.postgres-exporter    optional override; DSN comes from compose (container)
-│   ├── .env.postgres             POSTGRES_* that compose substitutes      (compose)
-│   ├── .env.mongo                MONGO_INITDB_ROOT_* that compose substitutes (compose)
-│   └── .env.nginx                NGINX_PORT that compose substitutes      (compose)
+├── services.example/             scrubbed copy of services/ for the public repo
+├── .env                          compose's own settings: NGINX_PORT only, no secrets
+├── env/                          per-service environment, each read through env_file:
+│   ├── .env.app                  the application's own configuration
+│   ├── .env.grafana
+│   ├── .env.rabbitmq             first-boot broker credentials
+│   ├── .env.redis                cache password + connection details
+│   ├── .env.postgres             POSTGRES_USER/PASSWORD/DB: pgvector and postgres-exporter
+│   ├── .env.postgres-exporter    optional; a DATA_SOURCE_NAME here overrides the default
+│   └── .env.mongo                MONGO_INITDB_ROOT_*: mongo (profile mongo only)
 └── env.example/                  templates for env/ — placeholders, no real values
 ```
 
@@ -104,7 +100,7 @@ output reports a context in the hundreds of MB rather than single digits, this i
 
 | service | image | host port | notes |
 | --- | --- | --- | --- |
-| `nginx` | `nginx:1.27-alpine` | 8080 (`NGINX_PORT`) | reverse proxy; denies `/metrics` |
+| `nginx` | `nginx:1.27-alpine` | 8081 (`NGINX_PORT`) | reverse proxy; denies `/metrics` |
 | `fastapi` | built here | 8000 | the application |
 | `pgvector` | `pgvector/pgvector:0.8.6-pg18-trixie` | 5400 | documents *and* vectors |
 | `mongo` | `mongo:8.2` | 27017 | profile `mongo` only |
@@ -124,33 +120,32 @@ outage.
 
 ## Configuration
 
-Two kinds of file live in `env/`, and they are not interchangeable.
-
-**Compose-substitution files** — `env/.env.nginx`, `env/.env.mongo`, `env/.env.postgres`.
-Read by `docker compose` itself, for `${...}` substitution inside `docker-compose.yml`, and
-**never** handed to a container. Compose only reads these through `--env-file` (or
-`COMPOSE_ENV_FILES`); a service's `env_file:` cannot feed them. Pass all three on every compose
-command — `ps`, `logs` and `exec` included, because compose interpolates the whole file first.
+Every file in `env/` is listed as `env_file:` on the service that reads it and injected as that
+container's environment. Compose loads them itself, so no command ever needs `--env-file`:
 
 ```
-env/.env.nginx      NGINX_PORT
-env/.env.mongo      MONGO_INITDB_ROOT_USERNAME   MONGO_INITDB_ROOT_PASSWORD
-env/.env.postgres   POSTGRES_USERNAME            POSTGRES_PASS               POSTGRES_MAIN_DB
+env/.env.app                the application           the one you will actually edit
+env/.env.postgres           pgvector, postgres-exporter   POSTGRES_USER  POSTGRES_PASSWORD  POSTGRES_DB
+env/.env.mongo              mongo                     MONGO_INITDB_ROOT_USERNAME  MONGO_INITDB_ROOT_PASSWORD
+env/.env.rabbitmq, .env.redis, .env.grafana, .env.postgres-exporter   their own service
 ```
 
-The Postgres three are `${VAR:?...}` in the compose file, so leaving them out is an error that
-names the file to pass. (The Mongo ones are not, because compose interpolates services under
-an inactive profile too, and that would break every command for anyone not using Mongo.)
+`env/.env.postgres` uses the Postgres image's own names, which are also the names
+`env/.env.app` uses for the same server — the values must match there. postgres-exporter reads
+the same file and maps it onto its `DATA_SOURCE_*` variables at start-up, so the credentials
+exist in one place.
 
-**Container files** — `env/.env.app`, `.env.rabbitmq`, `.env.redis`, `.env.grafana`. Listed as
-`env_file:` on their service and injected as that container's environment. `env/.env.app` is
-the application's configuration and the one you will actually edit.
+**`.env`** (in this directory, not in `env/`) is the one file compose reads for `${...}`
+substitution, automatically. It holds only `NGINX_PORT`: a port mapping cannot come from
+`env_file:`, and it is no secret. Credentials are kept out of it on purpose — they stay in
+`env/`, which is what the public repository never receives.
 
-**What is committed where.** `env/` and `services/` are gitignored: they hold your real
-passwords. The repository carries only `env.example/` and `services.example/`, which use
-`REPLACE_ME__...` placeholders (each with the command that generates a value). Copy both
-directories once, as in the quick start, and fill the placeholders in. When you add a variable
-to a real file, add it to its template in the same change.
+**What is committed where.** The real files in `env/` (and `services/`) are tracked in the
+**private** repository, on purpose, so the deploy machine can `git pull` a working
+configuration. They are **never** pushed to the public repository: what the public side carries
+is `env.example/` and `services.example/`, which hold placeholders (`REPLACE_ME__...`) and no
+real values. When you add a variable to a real file, add it to its template in the same
+change.
 
 The image ships **no** `src/.env`; configuration comes entirely from `env/.env.app`. Several
 settings have no defaults — `APPLICATION_NAME`, `APP_VERSION`, `ALLOWED_TYPES`,
@@ -204,7 +199,7 @@ Same two-layer split as the app's own config:
 
 **Action required before the first `docker compose up`** — the templates in `env.example/`
 ship `REPLACE_ME__...` placeholders (each with the command that generates a value) that must
-become real values:
+become real values. In the private repo's `env/` they are already filled in:
 
 | variable | file | why it matters |
 | --- | --- | --- |
@@ -228,7 +223,7 @@ Prometheus scrapes; Grafana draws. Targets are in `services/prometheus/prometheu
 
 `prometheus` · `notebookllm` (the app's `/metrics`) · `postgres` · `node` · `qdrant`
 
-The app's own metrics are defined in one file, `src/utils/metrics.py`. Beyond the usual HTTP
+The app's own metrics are defined in one file, `src/shared/utils/metrics.py`. Beyond the usual HTTP
 rate/errors/duration, they cover the parts that actually cost time here: per-stage ingest
 duration, embedding latency and batch size, generation time-to-first-token and token counts,
 retrieval latency and hit counts, and whether an answer was grounded.
@@ -319,13 +314,14 @@ use — checking both a `--cpus` quota and a `--cpuset-cpus` pin and taking the 
 a quota alone is invisible to the usual affinity check. A container with no CPU limit set (the
 default in this compose file) sees the host's full core count; one capped with `--cpus` or
 `deploy.resources.limits.cpus` sees close to the serial cost once that quota is small. See
-`PDF_LOADER` in `src/utils/config.py` for the measurements.
+`PDF_LOADER` in `src/shared/utils/config.py` for the measurements.
 
 ## Troubleshooting
 
-**Compose says `pass --env-file env/.env.postgres`** (or a variable is required but not set) —
-the compose-substitution files were not passed. Export `COMPOSE_ENV_FILES` as in the quick
-start, or add the three `--env-file` flags.
+**Compose says `env file ... env/.env.X not found`** — that file is missing from `env/`; copy
+it from `env.example/` and fill it in. If the missing file is `env/.env.nginx`, something is
+still passing the old `--env-file` flags (a shell with `COMPOSE_ENV_FILES` exported, or a
+systemd unit written before they were dropped) — remove them; nothing needs them now.
 
 **`docker compose config` fails** — a YAML problem, and it names the line. Fix this before
 anything else; nothing downstream will work.

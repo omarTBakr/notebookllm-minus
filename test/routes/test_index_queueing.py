@@ -23,7 +23,7 @@ from bson.objectid import ObjectId
 @pytest.fixture
 def chunked(fake_db, seed):
     """A chat whose chunks already exist — what both routes below assume."""
-    from models.db_schema import DataChunk
+    from data.models import DataChunk
 
     project_oid = fake_db.projects().items["c1"].id
 
@@ -63,7 +63,7 @@ def _fake_chain(calls, index_id="index-1", build_id="build-1"):
 async def test_push_queues_the_build_after_the_indexing(client, chunked, monkeypatch):
     """A bare .delay() here would embed every chunk and stop, leaving the
     collection permanently unindexed."""
-    import routes.nlp as nlp_route
+    import presentation.routes.nlp as nlp_route
 
     calls = []
     monkeypatch.setattr(nlp_route, "index_chain", _fake_chain(calls))
@@ -83,7 +83,7 @@ async def test_push_queues_the_build_after_the_indexing(client, chunked, monkeyp
 async def test_push_records_a_row_for_both_links(client, chunked, monkeypatch):
     """Without walking .parent the index half would be unqueryable and report
     UNKNOWN for the whole of its run."""
-    import routes.nlp as nlp_route
+    import presentation.routes.nlp as nlp_route
 
     monkeypatch.setattr(nlp_route, "index_chain", _fake_chain([]))
     monkeypatch.setattr(nlp_route, "mark_queued", lambda task_id: None)
@@ -101,7 +101,7 @@ async def test_push_records_a_row_for_both_links(client, chunked, monkeypatch):
 async def test_push_passes_its_own_reset_through(client, chunked, monkeypatch):
     """Unlike the ingestion chain, reset here *is* the index's reset: this
     caller is asking for the collection to be dropped and rebuilt."""
-    import routes.nlp as nlp_route
+    import presentation.routes.nlp as nlp_route
 
     calls = []
     monkeypatch.setattr(nlp_route, "index_chain", _fake_chain(calls))
@@ -117,7 +117,7 @@ async def test_a_broker_outage_on_push_is_still_a_503(client, chunked, monkeypat
     has to have moved with it."""
     from kombu.exceptions import OperationalError as BrokerOperationalError
 
-    import routes.nlp as nlp_route
+    import presentation.routes.nlp as nlp_route
 
     def refuse():
         raise BrokerOperationalError("broker unavailable")
@@ -138,10 +138,13 @@ async def test_a_broker_outage_on_push_is_still_a_503(client, chunked, monkeypat
 @pytest.fixture
 def probeable(monkeypatch):
     """Make the embedding-capability probe answer without a network call."""
-    import routes.chat.models as models_route
+    import importlib
+
+    # The class shadows its module in the package namespace, hence import_module.
+    conversation = importlib.import_module("application.services.conversation.ConversationService")
 
     monkeypatch.setattr(
-        models_route,
+        conversation,
         "for_source",
         lambda source: SimpleNamespace(embedding_dimensions=_dimensions),
     )
@@ -179,3 +182,55 @@ async def test_a_chat_with_no_documents_indexes_nothing(client, chunked, fake_db
 
     assert response.status_code == 200
     assert fake_db.vectors().indexed == []
+
+
+# --- which link of the chain the browser watches -------------------------------
+
+
+async def test_the_upload_returns_the_first_link_not_the_last(ingest, client, seed, fake_db):
+    """`apply_async` hands back the *last* link and reaches the others through
+    `.parent`, so naming `.parent` positionally meant "the process task" only
+    while the chain was two links long.
+
+    A third link was added and the response silently began handing the browser
+    the *index* task — which is queued behind OCR and reports no stage, so the
+    progress row read "Queued" for seven minutes on a real upload and then
+    jumped straight to 74%.
+    """
+    files = {"file": ("first-link.txt", b"some bytes to ingest", "text/plain")}
+
+    response = await ingest("c1", files)
+    body = response.json()
+
+    rows = [t for t in fake_db.tasks().items.values() if t.project_id == "c1"]
+    by_id = {t.task_id: t for t in rows}
+
+    assert body["task_id"] in by_id, "the returned task_id is not a recorded task"
+    assert by_id[body["task_id"]].task_name.endswith("process_data_task"), (
+        f"the browser was pointed at {by_id[body['task_id']].task_name}, which is "
+        "queued behind the work the user is waiting for"
+    )
+
+
+async def test_progress_reports_the_running_link_not_the_newest(ingest, client, seed, fake_db):
+    """A chain writes every row in the same instant, so "most recent" is the
+    last link — queued, stageless, and doing nothing yet. Asking a project what
+    it is doing has to answer with the task that is actually running."""
+    await ingest("c1", {"file": ("running.txt", b"bytes", "text/plain")})
+
+    tasks = fake_db.tasks()
+    rows = sorted(
+        (t for t in tasks.items.values() if t.project_id == "c1"),
+        key=lambda t: t.created_at,
+    )
+    assert len(rows) >= 2, "expected a multi-link chain to have been recorded"
+
+    # The first link starts running; the rest stay queued behind it.
+    await tasks.update_status(rows[0].task_id, "STARTED")
+    await tasks.set_stage(rows[0].task_id, "extracting", 12, 222)
+
+    active = await tasks.find_active_for_project("c1")
+
+    assert active.task_id == rows[0].task_id
+    assert active.stage == "extracting"
+    assert (active.done, active.total) == (12, 222)

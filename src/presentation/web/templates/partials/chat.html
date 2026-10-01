@@ -1,0 +1,51 @@
+{# Middle panel: the notebook's conversation. The only region that scrolls. #}
+<section class="panel panel--chat" id="panel-chat">
+  <header class="panel__head">
+    <h2 data-i18n="chat"></h2>
+    <div class="panel__head-actions">
+      <button class="icon-btn" id="btn-chat-settings" aria-label="chat settings"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-tune"/></svg></button>
+      <button class="icon-btn" data-soon="Chat menu" aria-label="menu"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-more"/></svg></button>
+      <button class="panel__collapse" data-panel-hide="chat" aria-label="hide chat panel"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+  </header>
+
+  <div class="transcript" id="transcript">
+    {# The notebook's identity, shown above the first message. #}
+    <div class="hero" id="hero">
+      <span class="hero__icon"><svg class="ico ico--hero" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-book"/></svg></span>
+      <button class="btn btn--outline btn--pill hero__customize" data-soon="Customize">
+        <svg class="ico ico--sm" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-spark"/></svg> <span data-i18n="customize"></span>
+      </button>
+      <h3 class="hero__title" id="hero-title"></h3>
+      <p class="hero__meta muted" id="hero-meta"></p>
+    </div>
+
+    <div class="messages" id="messages"></div>
+  </div>
+
+  <footer class="composer">
+    <div class="composer__box">
+      {# The /memory command suggestion: a compact square chip, an inline
+         member of this row rather than an overlay floating above it --
+         shown/hidden from static/js/memory.js. #}
+      <div class="composer__chip" id="memory-suggest" hidden>
+        <button type="button" class="composer__chip-item" id="memory-suggest-item">memory</button>
+      </div>
+      <textarea id="question" rows="1" data-i18n-placeholder="startTyping" disabled></textarea>
+      <span class="composer__count" id="composer-count">0</span>
+      {# title set from static/js/memory.js — data-i18n only retitles
+         [data-i18n]/[data-i18n-placeholder], nothing else. #}
+      <button class="icon-btn" id="btn-memory-search" type="button" aria-label="memory"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-note"/></svg></button>
+      <button class="composer__send" id="btn-send" type="button" disabled aria-label="send"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-send"/></svg></button>
+      {# Results of the memory-search button above: the facts closest to the
+         current draft. Anchored to this box (not the footer around it), so
+         it reads as part of the input rather than a panel floating loose
+         above the whole composer -- filled in and toggled from
+         static/js/memory.js. #}
+      <div class="composer__suggest" id="memory-results" hidden>
+        <div class="composer__suggest-head" data-i18n="memoryResultsTitle"></div>
+        <ul class="sources-block__list" id="memory-results-list"></ul>
+      </div>
+    </div>
+  </footer>
+</section>

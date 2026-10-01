@@ -19,17 +19,7 @@ from typing import get_args
 
 import pytest
 
-from factories.db.postgres.base_repository import (
-    AssetRow,
-    ChatRow,
-    ChunkRow,
-    MessageRow,
-    ProjectRow,
-    SessionRow,
-    TaskExecutionRow,
-    UserRow,
-)
-from models.db_schema import (
+from data.models import (
     Asset,
     Chat,
     DataChunk,
@@ -38,6 +28,16 @@ from models.db_schema import (
     Session,
     TaskExecution,
     User,
+)
+from data.repositories.postgres.base_repository import (
+    AssetRow,
+    ChatRow,
+    ChunkRow,
+    MessageRow,
+    ProjectRow,
+    SessionRow,
+    TaskExecutionRow,
+    UserRow,
 )
 
 REPOSITORIES = [
@@ -63,7 +63,7 @@ TABLES = [
     (TaskExecution, TaskExecutionRow),
 ]
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "factories" / "db" / "postgres"
+SRC = Path(__file__).resolve().parents[2] / "src" / "data" / "repositories" / "postgres"
 
 # Empty now that the three stale repositories were brought back in line with
 # their models. Kept as the hook for the next one that drifts.

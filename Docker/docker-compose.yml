@@ -9,21 +9,20 @@
 # prometheus, grafana, rabbitmq, redis, the app Dockerfile); env/ holds the
 # per-service environment files.
 #
-# Two kinds of file live in env/, and only one kind reaches the containers:
-#   - env_file: entries below (.env.app, .env.rabbitmq, .env.redis, .env.grafana)
-#     are injected into that container at runtime.
-#   - .env.nginx, .env.mongo and .env.postgres feed the ${...} substitutions in
-#     THIS file. Compose reads those only from --env-file, never from env_file:,
-#     so they must be passed on every command:
+# Every service gets its settings the same way: an `env_file:` entry pointing
+# into env/, read by compose on its own. Nothing has to be passed on the
+# command line -- `docker compose up -d --build` is the whole command, from any
+# shell, a systemd unit or a CI job alike.
 #
-#       docker compose --env-file env/.env.nginx --env-file env/.env.mongo \
-#                      --env-file env/.env.postgres up -d --build
+# That rules out ${...} substitution for anything that must be set, because
+# compose only substitutes from the shell, --env-file, or Docker/.env. It used
+# to take the database credentials that way, which meant every command needed
+# three --env-file flags, and one run without them failed on a required
+# variable (or, before the guard, started Postgres with a blank password).
+# The one substitution left is the nginx host port: a port mapping cannot come
+# from env_file, it is not a secret, and it has a default. It lives in
+# Docker/.env, which compose reads automatically.
 #
-#     or, once per shell, the shorthand
-#       export COMPOSE_ENV_FILES=env/.env.nginx,env/.env.mongo,env/.env.postgres
-#
-# The Postgres variables are required (${VAR:?...}): without them compose would
-# silently substitute empty strings and start a database with a blank password.
 # Nothing else is hardcoded here.
 #
 # Two databases are declared but only one is used at a time: DOCUMENT_DB_BACKEND
@@ -42,6 +41,16 @@ x-celery-worker: &celery-worker
   restart: unless-stopped
   env_file:
     - ./env/.env.app
+  environment:
+    # prometheus_client's multiprocess mode: each prefork child writes its
+    # samples here and the worker's parent serves them on WORKER_METRICS_PORT
+    # (see celery_app.py). Set in compose, not .env.app, because the API must
+    # NOT have it -- it would switch the API to file-backed metrics too.
+    PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus-multiproc
+  # In memory and empty on every start, so no samples from a previous run are
+  # merged in as current.
+  tmpfs:
+    - /tmp/prometheus-multiproc:mode=1777
   networks:
     - backend
   depends_on:
@@ -101,10 +110,61 @@ services:
     # service_healthy honours it. Repeating it here was the same probe twice,
     # in two files that could drift.
 
+  # Three tasks on this one queue: `process_data_task` plans the ingestion,
+  # `parse_batch_task` extracts one page batch, and `assemble_chunks_task`
+  # puts the corrected batches back together and stores the chunks. They share
+  # a queue for the same reason the index build shares the index queue -- a
+  # queue absent from a -Q list has no consumer, and a task published to it
+  # sits QUEUED forever with no error to say so.
+  #
+  # Concurrency is what makes the batching worth anything. Extraction used to
+  # run a process pool inside one task, which a daemonic prefork worker is not
+  # allowed to start, so in practice a 274-page document was extracted serially
+  # -- ~520s of a 1800s budget. Now that the document arrives as ~28
+  # independent batch messages, this is what actually parallelises it.
+  #
+  # No --concurrency flag here, deliberately, and it is the only worker without
+  # one. CELERY_WORKER_CONCURRENCY defaults to 0 meaning "every CPU this
+  # container may use", and working that out needs the cgroup quota and the
+  # affinity mask -- which a compose shell cannot read and Python can. So
+  # celery_app sets `worker_concurrency` from the resolved setting, and a CLI
+  # flag would silently override it: the flag beats conf in Celery, so adding
+  # one back here would quietly pin this worker to whatever number it names.
   celery-process:
     <<: *celery-worker
     container_name: celery-process
-    command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.process_data_task\" --loglevel=INFO --concurrency=2"]
+    command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.process_data_task\" --loglevel=INFO"]
+
+  # The correction pass, and the one new queue in this pipeline.
+  #
+  # Separate because it is the only stage that waits on a *model* rather than a
+  # CPU: tens of seconds a page against milliseconds to parse one. Behind an
+  # extraction on the process queue, one large document's corrections would
+  # stall every other document's parsing for minutes.
+  #
+  # Concurrency 8. Was 2, on the reasoning that Ollama serialises requests
+  # per model so extra workers just queue inside it -- stopped being true
+  # the day POSTPROCESS_MODEL_ID moved to a hosted NVIDIA NIM endpoint
+  # (env/.env.app): a hosted API serves concurrent requests, this stage
+  # spends nearly all its time waiting on one, and CPU is not the
+  # constraint here the way it is for celery-process's genuinely CPU-bound
+  # parsing (which is why that one, not this one, is sized from
+  # CELERY_WORKER_CONCURRENCY).
+  #
+  # 8 rather than higher: this box has 24 cores but env/.env.app pins
+  # celery-process's CPU-bound work to just 2 of them, deliberately, to
+  # leave room for other projects sharing the machine (see NGINX_PORT's own
+  # comment above) -- and nothing here documents how many concurrent
+  # requests the NVIDIA key backing POSTPROCESS_MODEL_ID actually tolerates.
+  # 8 is a real, testable step up from 4 without either assumption. Each
+  # concurrent task holds one batch's pages (with word boxes) in memory for
+  # the length of the model call, so this trades roughly 2x the peak memory
+  # this worker used at 4 for roughly 2x the correction throughput -- watch
+  # both before raising it again.
+  celery-postprocess:
+    <<: *celery-worker
+    container_name: celery-postprocess
+    command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.postprocess_batch_task\" --loglevel=INFO --concurrency=8"]
 
   # Two tasks on this one queue, not one: `index_project_task` embeds the
   # chunks and `build_vector_index_task` builds the ANN index over them. The
@@ -120,12 +180,27 @@ services:
     command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.index_project_task\" --loglevel=INFO --concurrency=1"]
 
   # Studio generation: flashcard decks and quizzes. Its own queue and its own
-  # worker so a deck never sits behind an ingest. Concurrency 4: it spends
-  # nearly all its time waiting on a model API, so four runs cost almost no CPU.
+  # worker so a deck never sits behind an ingest -- the two have nothing in
+  # common but the broker, and a book takes minutes either way.
+  #
+  # Concurrency 4, unlike the ingest worker's 1. That worker is 1 because OCR
+  # burns cores and two documents at once each got half the machine; this one
+  # spends nearly all its time waiting on a model API, so four concurrent runs
+  # cost almost no CPU and four users get their decks at once instead of in
+  # series. The reasoning behind ingest's concurrency does not transfer.
   celery-studio:
     <<: *celery-worker
     container_name: celery-studio
     command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.generate_artifact_task\" --loglevel=INFO --concurrency=4"]
+
+  # `/memory` extraction: pull facts out of one chat message, upsert them,
+  # embed each one. Its own queue and worker for the same reason celery-studio
+  # has one -- it spends its time waiting on a model API, not on CPU, so
+  # several can run at once cheaply, and it must not sit behind an ingest.
+  celery-memory:
+    <<: *celery-worker
+    container_name: celery-memory
+    command: ["sh", "-c", "celery -A celery_app:celery_app worker -Q \"$${CELERY_PROJECT_NAME}.extract_memory_task\" --loglevel=INFO --concurrency=4"]
 
   # Consumes the periodic sweep of task_executions. Concurrency 1: there is
   # one scheduled job and running two copies of a sweep concurrently would
@@ -222,11 +297,17 @@ services:
     container_name: nginx
     restart: unless-stopped
     ports:
-      # Host port from NGINX_PORT in env/.env.nginx; 8080 if unset, not 80,
-      # because this machine already runs Apache (httpd) on 80. Inside the
+      # Not 80: this machine already runs Apache (httpd) there. Inside the
       # container nginx still listens on 80, which is what nginx.conf and the
       # other services expect.
-      - "${NGINX_PORT:-8080}:80"
+      #
+      # Not 8080 either, any more: this developer machine runs a Temporal UI on
+      # it for an unrelated project, and the collision failed the whole
+      # `compose up` at the last service with "Bind for 0.0.0.0:8080 failed:
+      # port is already allocated" -- after every other container had started.
+      # Overridable so a host with a different set of neighbours can say so
+      # without editing this file.
+      - "${NGINX_PORT:-8081}:80"
     volumes:
       # proxy.conf, not nginx.conf: Docker Desktop's file sharing cached the
       # old path as missing after an in-place replace on this external drive,
@@ -247,10 +328,11 @@ services:
     image: pgvector/pgvector:0.8.6-pg18-trixie
     container_name: pgvector-db
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USERNAME:?pass --env-file env/.env.postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASS:?pass --env-file env/.env.postgres}
-      POSTGRES_DB: ${POSTGRES_MAIN_DB:?pass --env-file env/.env.postgres}
+    # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB, under the image's own
+    # names. A missing file stops compose outright; a missing password stops
+    # the image, which refuses to initialise a database without one.
+    env_file:
+      - ./env/.env.postgres
     ports:
       - "5400:5432"
     volumes:
@@ -258,7 +340,8 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_MAIN_DB}"]
+      # $$: the container's own variables, from env_file, expanded by its shell.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -273,9 +356,8 @@ services:
     container_name: mongo-db
     profiles: ["mongo"]
     restart: unless-stopped
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    env_file:
+      - ./env/.env.mongo
     ports:
       - "27017:27017"
     volumes:
@@ -418,8 +500,25 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.16.0
     container_name: postgres-exporter
     restart: unless-stopped
-    environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASS}@pgvector:5432/${POSTGRES_MAIN_DB}?sslmode=disable"
+    # The same file pgvector reads, so the credentials live in one place.
+    # .env.postgres-exporter is optional and loaded second: a DATA_SOURCE_NAME
+    # there overrides the connection built below.
+    env_file:
+      - ./env/.env.postgres
+      - path: ./env/.env.postgres-exporter
+        required: false
+    # The exporter wants DATA_SOURCE_* rather than POSTGRES_*, so a shell maps
+    # one onto the other before starting it. User and password go in as
+    # separate variables, not spliced into a URL, so a password with an @ or a
+    # : in it still works. $$: expanded by this shell, not by compose.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        export DATA_SOURCE_URI="pgvector:5432/$${POSTGRES_DB}?sslmode=disable"
+        DATA_SOURCE_USER="$${POSTGRES_USER}" DATA_SOURCE_PASS="$${POSTGRES_PASSWORD}";
+        exec /bin/postgres_exporter "$$@"
+      - postgres_exporter
     # postmaster is off by default and the dashboard's "Start Time" panel needs
     # it. Not enabling --collector.stat_bgwriter: it queries the pre-PG17
     # pg_stat_bgwriter columns, and this is PostgreSQL 18, where the checkpoint

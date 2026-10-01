@@ -17,8 +17,8 @@ import types
 
 import pytest
 
-from arabic_extraction.base import Page
-from arabic_extraction.extractors.qalam_extractor import QalamExtractor
+from application.arabic_extraction.base import Page
+from application.arabic_extraction.extractors.qalam_extractor import QalamExtractor
 
 
 class FakeDocument:

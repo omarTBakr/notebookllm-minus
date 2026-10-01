@@ -7,8 +7,8 @@ page becomes a 1-based page number.
 
 from bson.objectid import ObjectId
 
-from models.db_schema import DataChunk
-from routes.chat._pages import keys_from_hits, resolve_pages
+from application.services.rag.citations import keys_from_hits, resolve_pages
+from data.models import DataChunk
 
 
 def chunk(asset_id="a1", order=0, metadata=None):

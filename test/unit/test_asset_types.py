@@ -2,7 +2,7 @@
 
 import pytest
 
-from enums import AssetType
+from shared.enums import AssetType
 
 
 @pytest.mark.parametrize("content_type, expected", [
@@ -21,7 +21,7 @@ def test_anything_else_is_other(content_type):
 @pytest.mark.xfail(
     strict=True,
     reason="KNOWN BUG: the lookup compares the raw header, so a media type "
-           "carrying a parameter misses. DataController.validate_file has the "
+           "carrying a parameter misses. DataService.validate_file has the "
            "same flaw and would reject the upload outright. Both should split "
            "on ';' before matching. Remove this marker with the fix.",
 )

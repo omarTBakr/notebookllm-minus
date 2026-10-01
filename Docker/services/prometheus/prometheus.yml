@@ -1,0 +1,106 @@
+# What Prometheus scrapes. Mounted read-only into the container — without this
+# file it starts happily and collects nothing but its own metrics, which is the
+# state the stack was in before.
+#
+# Every target below is addressed by its compose service name on the `backend`
+# network, not by a published port, so scraping does not depend on anything
+# being exposed to the host.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: notebookllm-minus
+
+scrape_configs:
+  # Prometheus itself. Cheap, and the first thing to check when a panel is
+  # empty — if this target is down, nothing else is trustworthy.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The application. Everything defined in src/shared/utils/metrics.py plus the HTTP
+  # RED signals from the instrumentator.
+  - job_name: notebookllm
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["fastapi:8000"]
+
+  # The Celery workers, each serving its own merged prefork metrics on
+  # WORKER_METRICS_PORT (see celery_app.py). Ingest, embedding and LLM
+  # generation happen here rather than in the API, so without this job those
+  # panels stay on "No data". celery-beat runs no tasks and is left out.
+  - job_name: celery
+    static_configs:
+      - targets:
+          - "celery-process:9808"
+          - "celery-postprocess:9808"
+          - "celery-index:9808"
+          - "celery-studio:9808"
+          - "celery-memory:9808"
+          - "celery-maintenance:9808"
+
+  - job_name: postgres
+    # 9187 is postgres_exporter's own default. The previous compose published
+    # it on 9100, which collides with node-exporter.
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # Qdrant serves Prometheus metrics itself; no exporter needed. Only runs on
+  # the mongo backend (compose profile "mongo"), so expect this target down
+  # when using postgres.
+  # Only reachable under `--profile mongo`; on the Postgres/pgvector stack this
+  # target is permanently DOWN and was the one red row in the target list.
+  # Left declared but commented so `--profile mongo` users can restore it.
+  # - job_name: qdrant
+  #   static_configs:
+  #     - targets: ["qdrant:6333"]
+
+  # RabbitMQ exposes its own Prometheus endpoint on 15692 via the
+  # rabbitmq_prometheus plugin, which the management image enables by default.
+  # It was running and unscraped: the broker's queue depths, consumer counts
+  # and publish/deliver rates were being produced and thrown away. This is
+  # also where the management UI's charts move to once
+  # management_agent.disable_metrics_collector is on.
+  #
+  # metrics_path matters: the default /metrics aggregates everything into one
+  # series per metric with no `queue` label, which is why every panel of the
+  # RabbitMQ dashboard rendered empty — `rabbitmq_queue_messages_ready` came
+  # back as a single {instance, job} series and the `$queue` variable had
+  # nothing to resolve. /metrics/per-object emits the per-queue labels the
+  # dashboard is written against.
+  - job_name: rabbitmq
+    metrics_path: /metrics/per-object
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+    metric_relabel_configs:
+      # Per-object is per *queue*, and Celery creates far more queues than the
+      # four this application defines: 28 `celery_delayed_N` queues for the
+      # native delayed-delivery feature, plus one `celeryev.<uuid>` and one
+      # `celery@<host>.celery.pidbox` per worker, all of them churning on every
+      # worker restart. Keeping them would multiply the stored series by ~15
+      # and fill the dashboard's queue picker with UUIDs.
+      - source_labels: [queue]
+        regex: 'celery_delayed_.*|celeryev\..*|.*\.pidbox'
+        action: drop
+
+  # Host CPU, memory, disk and network. node_exporter runs on the *host* as a
+  # systemd --user service, not as a container: this stack is on Docker
+  # Desktop, whose VM refuses the `/` slave-propagation mount node-exporter
+  # needs — and would report the VM rather than the machine even if it did not.
+  # host.docker.internal resolves to the host from Desktop's containers.
+  - job_name: node
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+
+  # cadvisor and gpu jobs are absent on purpose. Their exporters are not
+  # in docker-compose.yml: this stack runs on Docker Desktop, whose daemon is
+  # inside a VM, so a host monitor there would report the VM rather than the
+  # machine — or, in node-exporter's case, refuse to start at all. See the
+  # comment block in docker-compose.yml.
+
+  # Deliberately NOT scraped: /nlp/health. It performs a real embedding
+  # inference on every call, so a 15s scrape would fire a GPU inference four
+  # times a minute forever, pinning the embedding model in 8 GB of VRAM and
+  # evicting the chat model. It stays an on-demand tool. Liveness comes from
+  # the notebookllm job being up at all.

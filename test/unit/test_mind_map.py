@@ -3,8 +3,8 @@
 import pytest
 from pydantic import ValidationError
 
-from controllers.MindMapController import group_into_branches
-from models.db_schema import MindMapNodeSet, MindMapOutline
+from application.services.studio.MindMapService import group_into_branches
+from data.models import MindMapNodeSet, MindMapOutline
 
 
 def _items(n):

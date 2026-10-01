@@ -4,10 +4,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from exceptions import NotebookLLMError
-from factories import DbFactory, ProviderCache
-from middleware import RequestLoggingMiddleware
-from routes import (
+from application.providers import ProviderCache
+from data.repositories import DbFactory
+from presentation.middleware import RequestLoggingMiddleware
+from presentation.routes import (
     STATIC_DIR,
     RevalidatingStaticFiles,
     base_router,
@@ -17,7 +17,8 @@ from routes import (
     process_router,
     ui_router,
 )
-from utils import get_logger, get_settings, setup_logging
+from shared.exceptions import NotebookLLMError
+from shared.utils import get_logger, get_settings, setup_logging
 
 SETTINGS = get_settings()
 
@@ -72,9 +73,9 @@ async def lifespan(app: FastAPI):
     # empty for the best part of twenty seconds.
     async def warm_models() -> None:
         try:
-            from controllers import ModelController
+            from application.services import ModelService
 
-            catalogue = await ModelController().catalogue()
+            catalogue = await ModelService().catalogue()
             logger.info(
                 "Model catalogue warm (%d chat, %d embedding)",
                 len(catalogue["chat"]),
@@ -127,7 +128,7 @@ app.add_middleware(
 if SETTINGS.METRICS_ENABLED:
     from prometheus_fastapi_instrumentator import Instrumentator
 
-    from utils.metrics import HTTP_BUCKETS
+    from shared.utils.metrics import HTTP_BUCKETS
 
     # No registry= : the instrumentator drops its in-progress gauge when given
     # an explicit registry, and utils.metrics now uses the default one anyway.

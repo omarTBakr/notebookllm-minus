@@ -8,8 +8,11 @@ re-read at seconds per page for no gain — or worse, re-read *wrongly*.
 
 import pytest
 
-from arabic_extraction.base import ArabicExtractor, Page
-from arabic_extraction.pipeline import ArabicOcrPipeline, configured_pipeline
+from application.arabic_extraction.base import ArabicExtractor, Page
+from application.arabic_extraction.pipeline import (
+    ArabicOcrPipeline,
+    configured_pipeline,
+)
 
 GOOD_ARABIC = "اليسار حينئذ بديدو ومعناه الهاربة. وحدث في أيام بيكماليون أن رامان " * 3
 FRAGMENTED = "ا ليسا ر حينئذ بديد و و معنا ه ا لها ر بة. و حد ث في أ يا م بيكماليو ن " * 3

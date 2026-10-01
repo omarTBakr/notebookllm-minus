@@ -9,17 +9,16 @@ symptom was a grounded answer citing five single Arabic words and correctly
 reporting that they meant nothing.
 """
 
-import pytest
 from langchain_core.documents import Document
 
-from controllers.TextProcessingController import TextProcessingController
+from application.services.ingest.TextProcessingService import TextProcessingService
 
 BODY = "اليسار حينئذ بديدو ومعناه الهاربة وحدث في أيام بيكماليون أن رامان نيرار " * 20
 HEADER = "سورية"
 
 
 def _controller(floor=100, chunk_size=1000, overlap=200):
-    controller = TextProcessingController(chunk_size=chunk_size, chunk_overlap=overlap)
+    controller = TextProcessingService(chunk_size=chunk_size, chunk_overlap=overlap)
     controller.settings.MIN_CHUNK_CHARS = floor
     return controller
 
