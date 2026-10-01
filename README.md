@@ -1,6 +1,6 @@
 # NotebookLLM⁻
 <p align="center">
-  <img src="demo/logo.svg" alt="NotebookLLM-minus logo" width="460">
+  <img src="demo/logo-animated.svg" alt="NotebookLLM-minus logo" width="460">
 </p>
 
 
