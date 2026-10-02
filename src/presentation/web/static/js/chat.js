@@ -2,6 +2,7 @@
 
 import { api } from "./api.js";
 import { t } from "./i18n.js";
+import { citationLabel, citationTitle } from "./citation_label.js";
 import { renderInto } from "./markdown.js";
 import { state } from "./state.js";
 import { $ } from "./dom.js";
@@ -147,11 +148,7 @@ function citationsBlock(citations) {
     // number and is not one — it counts chunks within the document. A chunk
     // is an artefact of how the text was cut up and means nothing to a reader.
     // A video is cited by the moment the passage is spoken, a PDF by its page.
-    const label = cite.time_label
-      ? `${cite.source} · ${cite.time_label}`
-      : cite.page_label
-        ? `${cite.source} · ${t("page")} ${cite.page_label}`
-        : cite.source;
+    const label = citationLabel(cite, t);
 
     // Clickable whenever the chunk it names still exists — page_number is a
     // PDF-only concept (a .txt/.md chunk has none) but /locate finds its own
@@ -171,9 +168,7 @@ function citationsBlock(citations) {
       source = document.createElement("button");
       source.type = "button";
       source.className = "sources-block__link";
-      source.title = cite.time_label
-        ? t("openAtMoment")
-        : cite.page_number ? t("openAtPage") : t("openSource");
+      source.title = citationTitle(cite, t);
       source.addEventListener("click", () => {
         onCitationClick?.(cite.asset_id, cite.page_number, cite.chunk_order);
       });

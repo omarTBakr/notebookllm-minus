@@ -7,6 +7,7 @@ class FileExtension(str, Enum):
     # for later usage
     DOC = ".doc"
     DOCX = ".docx"
+    XLSX = ".xlsx"
     MD = ".md"
     JSON = ".json"
     CSV = ".csv"

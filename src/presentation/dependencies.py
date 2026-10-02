@@ -15,6 +15,7 @@ from application.services import (
     ChatService,
     ConversationService,
     DataService,
+    FetchQueue,
     IdempotencyService,
     IndexService,
     MemoryService,
@@ -25,6 +26,7 @@ from application.services import (
     UserService,
 )
 from application.tasks import generate_artifact_task
+from application.tasks.jobs.ingest.fetch import fetch_url_task
 from application.tasks.tracking.status import mark_queued
 
 # --- retrieval, memory and answering ------------------------------------------
@@ -152,7 +154,15 @@ def messages(request: Request) -> MessageService:
 
 
 def sources(request: Request) -> SourceService:
-    return SourceService(request.app.db, lambda chat: nlp_service(request, chat))
+    return SourceService(
+        request.app.db,
+        lambda chat: nlp_service(request, chat),
+        fetch_queue=FetchQueue(
+            task_name=fetch_url_task.name,
+            enqueue=lambda chat_id, url, task_id: fetch_url_task.apply_async(args=[chat_id, url], task_id=task_id),
+            on_queued=mark_queued,
+        ),
+    )
 
 
 def index_service(request: Request) -> IndexService:

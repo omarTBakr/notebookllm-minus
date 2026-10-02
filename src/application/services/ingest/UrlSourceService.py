@@ -66,6 +66,7 @@ _YOUTUBE_HOSTS = {
     "www.youtube-nocookie.com",
 }
 _VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_SHEET_ID = re.compile(r"/spreadsheets/d/([A-Za-z0-9_-]+)")
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,24 @@ def youtube_video_id(url: str) -> str | None:
             candidate = path[1]
 
     return candidate if candidate and _VIDEO_ID.match(candidate) else None
+
+
+def google_sheet_reference(url: str) -> tuple[str, str | None] | None:
+    """Return a public Google Sheets spreadsheet id and optional worksheet gid."""
+    parts = urlsplit(url.strip())
+    if (parts.hostname or "").lower() != "docs.google.com":
+        return None
+
+    match = _SHEET_ID.search(parts.path)
+    if not match:
+        return None
+
+    gid = (parse_qs(parts.query).get("gid") or [None])[0]
+    if gid is None:
+        fragment_match = re.search(r"(?:^|&)gid=(\d+)", parts.fragment)
+        gid = fragment_match.group(1) if fragment_match else None
+
+    return match.group(1), gid
 
 
 def transcript_page(file_bytes: bytes) -> dict:
@@ -172,11 +191,14 @@ class UrlSourceService(BaseService):
         url = self._validate(url)
 
         video_id = youtube_video_id(url)
+        sheet = google_sheet_reference(url)
 
         try:
             async with asyncio.timeout(self.settings.URL_FETCH_TIMEOUT):
                 if video_id:
                     return await self._youtube(video_id)
+                if sheet:
+                    return await self._google_sheet(url, *sheet)
 
                 final_url, content_type, headers, body = await self._download(url)
         except TimeoutError as exc:
@@ -285,6 +307,27 @@ class UrlSourceService(BaseService):
         return f"The file is larger than the {limit // (1024 * 1024)} MB limit."
 
     # --- PDF -------------------------------------------------------------------
+
+    async def _google_sheet(self, source_url: str, spreadsheet_id: str, gid: str | None) -> FetchedSource:
+        export_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=csv"
+        if gid is not None:
+            export_url += f"&gid={gid}"
+
+        _, content_type, _, body = await self._download(export_url)
+        if "html" in content_type or body.lstrip().startswith((b"<!doctype html", b"<html")):
+            raise LinkSourceError("This Google Sheet is not publicly accessible.")
+
+        if not body.strip():
+            raise LinkSourceError("This Google Sheet is empty.")
+
+        return FetchedSource(
+            name=f"Google Sheet {spreadsheet_id[:12]}.csv",
+            content=body,
+            content_type="text/csv",
+            asset_type=AssetType.CSV,
+            source_url=source_url,
+            content_hash=hashlib.sha256(f"google-sheets:{spreadsheet_id}:{gid or ''}".encode()).hexdigest(),
+        )
 
     def _pdf(self, url: str, headers: httpx.Headers, body: bytes) -> FetchedSource:
         return FetchedSource(

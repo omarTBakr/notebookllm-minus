@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterator
 
-from openai import AsyncOpenAI  # ty: ignore[unresolved-import]
+from openai import AsyncOpenAI, BadRequestError  # ty: ignore[unresolved-import]
 
 from shared.exceptions import LLMProviderError
 
@@ -29,6 +29,13 @@ class OpenAIChatProvider(LLMChattingInterface):
     # rather than ignoring it. Hence a name a subclass can change.
     _MAX_TOKENS_FIELD = "max_completion_tokens"
 
+    # OpenAI, NVIDIA NIM and OpenRouter all take `response_format` with a JSON
+    # Schema. Whether a *model* behind them honours it is another matter: some
+    # apply it, some ignore it, a few answer 400. The first is the point, the
+    # second costs nothing (the caller still validates and repairs), and the
+    # third is handled in `_generate_text` by asking again without it.
+    ENFORCES_SCHEMA = True
+
     def __init__(
         self,
         api_key: str,
@@ -54,6 +61,9 @@ class OpenAIChatProvider(LLMChattingInterface):
 
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
+        # Set the first time the endpoint refuses `response_format` for this model.
+        self._schema_rejected = False
+
     def _extra_body(self) -> dict:
         """Vendor-specific request fields the OpenAI schema has no place for.
 
@@ -66,18 +76,48 @@ class OpenAIChatProvider(LLMChattingInterface):
 
         return {"extra_body": {"chat_template_kwargs": {"thinking": self.thinking}}}
 
-    async def _generate_text(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+    @staticmethod
+    def _response_format(json_schema: dict) -> dict:
+        return {"type": "json_schema", "json_schema": {"name": "answer", "schema": json_schema}}
+
+    async def _generate_text(
+        self, messages: list[dict], max_tokens: int, temperature: float, json_schema: dict | None = None
+    ) -> str:
+
+        request = {
+            "model": self.model_id,
+            "messages": messages,
+            "temperature": temperature,
+            self._MAX_TOKENS_FIELD: max_tokens,
+            **self._extra_body(),
+        }
 
         # OpenAI takes the system turn inline, so the neutral format arrives
         # ready to send.
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model_id,
-                messages=messages,
-                temperature=temperature,
-                **{self._MAX_TOKENS_FIELD: max_tokens},
-                **self._extra_body(),
-            )
+            try:
+                if json_schema is not None and not self._schema_rejected:
+                    response = await self.client.chat.completions.create(
+                        **request, response_format=self._response_format(json_schema)
+                    )
+                else:
+                    response = await self.client.chat.completions.create(**request)
+
+            except BadRequestError as exc:
+                if json_schema is None or self._schema_rejected:
+                    raise
+
+                # This model does not take response_format. Remembered, so each
+                # later call goes straight to the prompt-and-repair path instead
+                # of paying for a failed request first.
+                self._schema_rejected = True
+                self.logger.warning(
+                    "%s rejected response_format for %s; falling back to prompting for the schema: %s",
+                    self._VENDOR,
+                    self.model_id,
+                    str(exc)[:200],
+                )
+                response = await self.client.chat.completions.create(**request)
 
         except Exception as exc:
             raise LLMProviderError(f"{self._VENDOR} generation failed: {exc}") from exc

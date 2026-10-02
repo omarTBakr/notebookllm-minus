@@ -35,7 +35,13 @@ const STRINGS = {
     // sources
     sources: "Sources",
     addSources: "Add sources",
-    // Adding a source from a link.
+    uploadFile: "Upload file",
+    chooseFile: "Choose a file",
+    supportedFiles: "PDF, text, Markdown, CSV or Excel",
+    googleSheets: "Google Sheets",
+    sheetsPlaceholder: "Paste a Google Sheets link",
+    sheetsHint: "The sheet must be shared with access for this link.",
+    connect: "Connect",
     linkPlaceholder: "Or paste a link: PDF, article or YouTube",
     addLink: "Add",
     openOriginal: "Open original ↗",
@@ -75,7 +81,9 @@ const STRINGS = {
     citations: "Sources",
     // Abbreviated because it sits inline in a citation, after the filename.
     page: "p.",
+    row: "row",
     openAtPage: "Open the source at this page",
+    openAtRow: "Open the source at this row",
     openAtMoment: "Play the video from this moment",
     // --- studio: generated study material ---
     previous: "Back",
@@ -224,6 +232,13 @@ const STRINGS = {
 
     sources: "المصادر",
     addSources: "إضافة مصادر",
+    uploadFile: "رفع ملف",
+    chooseFile: "اختيار ملف",
+    supportedFiles: "PDF أو نص أو Markdown أو CSV أو Excel",
+    googleSheets: "جداول Google",
+    sheetsPlaceholder: "ألصق رابط جدول Google",
+    sheetsHint: "يجب مشاركة الجدول والسماح بالوصول عبر هذا الرابط.",
+    connect: "ربط",
     linkPlaceholder: "أو الصق رابطًا: PDF أو مقال أو يوتيوب",
     addLink: "إضافة",
     openOriginal: "فتح الأصل ↗",
@@ -259,7 +274,9 @@ const STRINGS = {
     chars: "حرفًا",
     citations: "المصادر",
     page: "ص.",
+    row: "الصف",
     openAtPage: "افتح المصدر عند هذه الصفحة",
+    openAtRow: "افتح المصدر عند هذا الصف",
     openAtMoment: "شغّل الفيديو من هذه اللحظة",
     // --- الاستوديو: مواد المذاكرة المولّدة ---
     previous: "السابق",

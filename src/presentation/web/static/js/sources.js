@@ -7,6 +7,7 @@ import { renderInto } from "./markdown.js";
 import { toast } from "./soon.js";
 import { state } from "./state.js";
 import { $ } from "./dom.js";
+import { nextStep } from "./progress.js";
 
 let onSourcesChanged = () => {};
 
@@ -31,10 +32,24 @@ const EXTENSION = (name) => (name.split(".").pop() || "").toUpperCase().slice(0,
 const BADGE = (source) => {
   if (source.asset_type === "youtube") return "YT";
   if (source.asset_type === "pdf") return "PDF";
+  if (source.asset_type === "xlsx") return "XLSX";
+  // A public Google Sheet is fetched as CSV and stored as one; its link is what
+  // says where it came from.
+  if (source.asset_type === "csv" && /docs\.google\.com\/spreadsheets/.test(source.source_url ?? ""))
+    return "SHEET";
+  if (source.asset_type === "csv") return "CSV";
+  if (source.asset_type === "google_sheets") return "SHEET";
   return source.source_url ? "WEB" : "TXT";
 };
 
-const BADGE_CLASS = { YT: "source__icon--yt", WEB: "source__icon--web", TXT: "source__icon--txt" };
+const BADGE_CLASS = {
+  YT: "source__icon--yt",
+  WEB: "source__icon--web",
+  TXT: "source__icon--txt",
+  CSV: "source__icon--csv",
+  XLSX: "source__icon--csv",
+  SHEET: "source__icon--sheet",
+};
 
 function row(source) {
   const item = document.createElement("div");
@@ -927,24 +942,36 @@ async function ingestWithProgress(label, badge, start) {
 function trackProgress(chatId, taskId, nameEl, meter, fill, filename) {
   return new Promise((resolve, reject) => {
     let timer = null;
+    // A link is fetched by one task and ingested by another; the first names
+    // the second when it finishes, and polling moves across (see progress.js).
+    let current = taskId;
 
     const tick = async () => {
       let progress = null;
 
       try {
-        progress = await api.indexingProgress(chatId, taskId);
+        progress = await api.indexingProgress(chatId, current);
       } catch {
         // Leave whatever the row is already showing and try again.
         timer = setTimeout(tick, 600);
         return;
       }
 
-      if (progress.status === "FAILURE") {
+      const step = nextStep(progress);
+
+      if (step.kind === "fail") {
         reject(new Error(progress.error || t("uploadFailed")));
         return;
       }
 
-      if (!progress.active) {
+      if (step.kind === "follow") {
+        current = step.taskId;
+        meter.classList.add("is-waiting");
+        timer = setTimeout(tick, 250);
+        return;
+      }
+
+      if (step.kind === "done") {
         resolve();
         return;
       }
@@ -981,6 +1008,21 @@ export function bindSources() {
 
   $("preview-back").addEventListener("click", closePreview);
 
+  const modes = [
+    { button: $("upload-mode"), panel: $("upload-source") },
+    { button: $("sheet-mode"), panel: $("sheet-source") },
+  ];
+  modes.forEach(({ button, panel }) => {
+    button.addEventListener("click", () => {
+      modes.forEach(({ button: otherButton, panel: otherPanel }) => {
+        const active = otherButton === button;
+        otherButton.classList.toggle("is-active", active);
+        otherButton.setAttribute("aria-selected", String(active));
+        otherPanel.hidden = !active;
+      });
+    });
+  });
+
   $("file-input").addEventListener("change", (event) => {
     const [file] = event.target.files;
     if (file) add(file);
@@ -988,10 +1030,10 @@ export function bindSources() {
     event.target.value = "";
   });
 
-  $("link-form").addEventListener("submit", async (event) => {
+  async function submitLink(event, inputId, buttonId) {
     event.preventDefault();
-    const input = $("link-input");
-    const button = $("link-go");
+    const input = $(inputId);
+    const button = $(buttonId);
     const url = input.value.trim();
     if (!url) return;
 
@@ -1004,5 +1046,8 @@ export function bindSources() {
     } finally {
       input.disabled = button.disabled = false;
     }
-  });
+  }
+
+  $("link-form").addEventListener("submit", (event) => submitLink(event, "link-input", "link-go"));
+  $("sheets-form").addEventListener("submit", (event) => submitLink(event, "sheets-input", "sheets-go"));
 }

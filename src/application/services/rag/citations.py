@@ -44,8 +44,21 @@ def located_from_metadata(metadata: dict) -> dict | None:
 
     A page for a PDF; a moment for a video transcript, whose chunks carry
     ``time_range`` instead (see ProcessService.split_file). A video has no
-    page, so its citation is labelled by the time it starts at.
+    page, so its citation is labelled by the time it starts at. A spreadsheet
+    chunk carries ``row`` (and ``sheet``): the row as the file's own application
+    numbers it, which is what a reader will look for -- a row is not a page and
+    is never reported as one.
     """
+    row = (metadata or {}).get("row")
+
+    if isinstance(row, int) and (metadata or {}).get("table"):
+        return {
+            "page_number": None,
+            "page_label": None,
+            "row": row,
+            "sheet": (metadata or {}).get("sheet") or None,
+        }
+
     time_range = (metadata or {}).get("time_range")
 
     if isinstance(time_range, list) and time_range:

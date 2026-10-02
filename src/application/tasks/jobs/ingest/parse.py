@@ -41,6 +41,23 @@ from ...runtime import job_resources
 logger = get_logger(__name__)
 
 
+_TEXT_NATIVE_ASSET_TYPES = {
+    AssetType.TEXT,
+    AssetType.MARKDOWN,
+    AssetType.CSV,
+    AssetType.XLSX,
+    AssetType.HTML,
+    AssetType.JSON,
+    AssetType.XML,
+    AssetType.YOUTUBE,
+}
+
+
+def should_skip_correction(asset) -> bool:
+    """Whether an asset already contains trustworthy text for correction."""
+    return bool(asset.source_url) or asset.asset_type in _TEXT_NATIVE_ASSET_TYPES
+
+
 # One cached temp file per worker process, keyed by asset. A document is
 # normally 10-30 batches and a prefork worker takes them one after another, so
 # without this the same 50 MB blob is read out of Postgres and written to /tmp
@@ -87,8 +104,10 @@ def _whole_file(file_bytes: bytes, filename: str) -> list[dict]:
     """
     docs = ProcessService().process_bytes(file_bytes, filename)
 
-    return [
-        {
+    pages = []
+
+    for index, doc in enumerate(docs):
+        page = {
             "page_index": index,
             "page_label": str(doc.metadata.get("page_label") or index + 1),
             "width": 0.0,
@@ -98,8 +117,16 @@ def _whole_file(file_bytes: bytes, filename: str) -> list[dict]:
             "words": [],
             "boxes": [],
         }
-        for index, doc in enumerate(docs)
-    ]
+
+        # A spreadsheet row is read as a "page" so there is one pipeline, but it
+        # is not a page and must not be cited as one: its place in the file
+        # (sheet, row) rides along instead.
+        if doc.metadata.get("table"):
+            page["table"] = {key: doc.metadata.get(key) for key in ("sheet", "row", "identity")}
+
+        pages.append(page)
+
+    return pages
 
 
 def _fill_unreadable_pages(path: Path, start: int, end: int, pages: list[dict]) -> None:
@@ -149,11 +176,9 @@ async def parse_batch(project_id: str, asset_id: str, start, end, batch_index: i
         else:
             pages = _whole_file(asset.file_bytes, asset.name)
 
-        if asset.source_url:
-            # Added from a link: an article's extracted text or a transcript,
-            # neither of which has the broken text layer the repair pass is
-            # for. As one whole-document "page" it would only fail that pass's
-            # length guard after a long call.
+        if should_skip_correction(asset):
+            # Text-native files and link sources already contain usable text;
+            # correction is for damaged PDF text layers and OCR output.
             for page in pages:
                 page["skip_correction"] = True
 

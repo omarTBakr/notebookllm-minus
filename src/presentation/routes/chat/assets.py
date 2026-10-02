@@ -5,7 +5,8 @@ from urllib.parse import quote
 from fastapi import APIRouter, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from application.services import SourceService, UrlSourceService
+from application.services import SourceService
+from application.services.ingest.tabular import xlsx_preview_text
 from application.services.ingest.TextProcessingService import (
     normalize_text,
     strip_nulls,
@@ -13,7 +14,7 @@ from application.services.ingest.TextProcessingService import (
 from application.services.rag.citations import located_from_metadata
 from presentation import dependencies as deps
 from shared.enums import IN_FLIGHT, AssetType
-from shared.exceptions import DuplicateAssetError, InvalidInputError
+from shared.exceptions import DuplicateAssetError, InvalidFileError, InvalidInputError
 from shared.utils import get_settings
 from shared.utils.metrics import INGEST_DOCUMENTS
 
@@ -33,18 +34,23 @@ async def _drain(file: UploadFile) -> bytes:
     one in-flight upload adds at a time, and MAX_FILE_CHUNK_SIZE is what .env
     sets it with.
     """
-    piece_size = get_settings().MAX_FILE_CHUNK_SIZE
-    pieces: list[bytes] = []
+    settings = get_settings()
+    piece_size = settings.MAX_FILE_CHUNK_SIZE
+    content = bytearray()
 
-    while True:
-        piece = await file.read(piece_size)
-        if not piece:
-            break
-        pieces.append(piece)
+    try:
+        while True:
+            piece = await file.read(piece_size)
+            if not piece:
+                break
 
-    await file.close()
+            content.extend(piece)
+            if len(content) > settings.MAX_FILE_SIZE:
+                raise InvalidFileError(f"file size exceeds the {settings.MAX_FILE_SIZE} byte limit")
+    finally:
+        await file.close()
 
-    return b"".join(pieces)
+    return bytes(content)
 
 
 @assets_router.get("/chats/{chat_id}/assets")
@@ -182,6 +188,15 @@ async def asset_content(chat_id: str, asset_id: str, http_request: Request, down
         # ingest, so what the preview lists is what was cited.
         return Response(content=content, media_type="application/json", headers=headers)
 
+    if asset.asset_type == AssetType.XLSX and not download:
+        # A workbook is a zip archive: shown as text it is noise. The preview
+        # gets its rows instead, headed by the `Sheet · row N` a citation names.
+        return Response(
+            content=xlsx_preview_text(content).encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers=headers,
+        )
+
     if asset.asset_type != AssetType.PDF and not download:
         # The inline preview shows the *sanitised* text — NFKC-normalised,
         # NUL-stripped, whitespace-collapsed — which is what was actually
@@ -247,6 +262,9 @@ async def locate_chunk(chat_id: str, asset_id: str, chunk_order: int, http_reque
         content={
             "page_number": located.get("page_number"),
             "page_label": located.get("page_label"),
+            # A spreadsheet chunk: its row (and sheet), null for everything else.
+            "row": located.get("row"),
+            "sheet": located.get("sheet"),
             "highlight": metadata.get("highlight"),
             "text_range": text_range,
             # [start_s, end_s] of video, for a transcript's chunk; null otherwise.
@@ -308,38 +326,20 @@ async def attach_document(chat_id: str, file: UploadFile, http_request: Request)
 
 @assets_router.post("/chats/{chat_id}/sources/url")
 async def add_link(chat_id: str, request: AddLinkRequest, http_request: Request):
-    """Add a source from a link: an online PDF, an article, or a YouTube video.
+    """Add a source from a link: an online PDF, an article, a YouTube video or a Google Sheet.
 
-    The link is fetched here, in the request, rather than on a worker: what
-    can go wrong with it -- no transcript, a page that needs JavaScript, a dead
-    link, an address that is not public -- is the user's to fix, and a 400
-    naming it now is worth more than a failed row a minute later. From the
-    bytes on, it is an upload: the same dedupe, the same chain, the same 202.
+    Returns 202 at once with the id of the task that fetches it. The fetch runs on
+    a worker, which then attaches the bytes like an upload and queues the usual
+    ingestion; the task reports back, on the same status endpoint, whatever went
+    wrong with the link (unreachable, no transcript, not public, already attached)
+    and the id of the ingestion that follows (`next_task_id`).
     """
-    sources = deps.sources(http_request)
-    chat = await sources.get_chat(chat_id)
+    task_id = await deps.sources(http_request).queue_link(chat_id, request.url)
 
-    try:
-        fetched = await UrlSourceService().fetch(request.url)
-
-        return await _ingest(
-            sources,
-            chat,
-            filename=fetched.name,
-            content_type=fetched.content_type,
-            file_bytes=fetched.content,
-            asset_type=fetched.asset_type,
-            content_hash=fetched.content_hash,
-            source_url=fetched.source_url,
-        )
-
-    except DuplicateAssetError:
-        INGEST_DOCUMENTS.labels("duplicate").inc()
-        raise
-
-    except Exception:
-        INGEST_DOCUMENTS.labels("failed").inc()
-        raise
+    return JSONResponse(
+        status_code=202,
+        content={"chat_id": chat_id, "task_id": task_id, "status": "queued", "filename": request.url},
+    )
 
 
 async def _ingest(
@@ -417,6 +417,11 @@ async def indexing_progress(chat_id: str, http_request: Request, task_id: str | 
             # "no progress yet" from "0% done".
             "percent": round(100 * task.done / task.total) if task.total else None,
             "error": task.error,
+            # A task that only *starts* the real work (fetching a link, then
+            # queueing its ingestion) names the task that carries on, so the
+            # reader keeps one progress bar from the paste to the last chunk
+            # instead of seeing "done" while the indexing has not begun.
+            "next_task_id": task.result.get("ingestion_task_id") or None,
         },
     )
 

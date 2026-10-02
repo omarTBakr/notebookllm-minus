@@ -23,6 +23,7 @@ from shared.utils import available_memory_mb, cpu_count
 
 from ..core.BaseService import BaseService
 from .PdfLayoutService import extract_pages, highlight_metadata
+from .tabular import TabularLoader, continuation_prefix
 from .TextProcessingService import TextProcessingService
 
 
@@ -111,6 +112,10 @@ class ProcessService(BaseService):
         extension = file_path.suffix.lower()
         if extension == FileExtension.PDF:
             return self._pdf_loader(file_path)
+        elif extension in (FileExtension.CSV, FileExtension.XLSX):
+            # One Document per row, each saying what its values are. See tabular.py
+            # for what the stock CSV and Excel loaders did instead.
+            return TabularLoader(file_path)
         elif extension in (FileExtension.TXT, FileExtension.MD):
             # A markdown file's structure is exactly what get_splitter's
             # language-aware separators want to see, so it is read as plain
@@ -591,6 +596,8 @@ class ProcessService(BaseService):
         """
         chunks = self.text.split(docs, extension=extension)
 
+        self._repeat_row_identity(chunks)
+
         if self._pdf_pages:
             for chunk in chunks:
                 page = self._pdf_pages.get(chunk.metadata.get("page"))
@@ -619,6 +626,25 @@ class ProcessService(BaseService):
                 chunk.metadata["time_range"] = time_range_for(timeline, start, start + len(chunk.page_content))
 
         return chunks
+
+    def _repeat_row_identity(self, chunks: list[Document]) -> None:
+        """Head each continuation chunk of a long table row with whose row it is.
+
+        A row is one document, so it is normally one chunk. When a cell is long
+        enough to be split, only the first piece begins with the row's cells; the
+        rest are plain text that says nothing about which record it belongs to, and
+        a search that lands on one cannot tell. `start_index > 0` is what marks a
+        piece as a continuation.
+        """
+        limit = max(self.chunk_size // 4, 1)
+
+        for chunk in chunks:
+            metadata = chunk.metadata
+
+            if not metadata.get("table") or not metadata.get("start_index"):
+                continue
+
+            chunk.page_content = continuation_prefix(metadata, limit) + chunk.page_content
 
     async def process_and_split(self, file_bytes: bytes, filename: str, on_progress=None) -> list[Document]:
         """Extract and split, off the event loop.

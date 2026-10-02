@@ -31,6 +31,7 @@ celery_app = Celery(
     # for a chord member means the whole ingestion hangs on a callback that can
     # never fire.
     include=[
+        "application.tasks.jobs.ingest.fetch",
         "application.tasks.jobs.ingest.process",
         "application.tasks.jobs.ingest.parse",
         "application.tasks.jobs.ingest.postprocess",

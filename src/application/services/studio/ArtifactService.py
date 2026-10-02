@@ -27,6 +27,13 @@ logger = get_logger(__name__)
 #: starts padding.
 ITEMS_PER_BATCH = 3
 
+# What one batch may cost. Three flashcards or quiz questions are a few hundred
+# tokens; the old default of 4096 turned a model that would not stop into a
+# 2-3 minute attempt, three times over. A cap well above a real answer and well
+# below a runaway: a truncated answer is salvaged item by item anyway.
+BATCH_MAX_TOKENS = 1500
+BATCH_ATTEMPT_TIMEOUT = 150
+
 
 class ArtifactService:
     """Base: a batch of summarised chunks in, citable items out."""
@@ -76,7 +83,15 @@ class ArtifactService:
 
         # A set of independent items: the good ones are kept if the answer as
         # a whole cannot be, rather than losing the batch.
-        result = await generate_structured(client, prompt, self.schema, salvage=True)
+        result = await generate_structured(
+            client,
+            prompt,
+            self.schema,
+            salvage=True,
+            max_items=ITEMS_PER_BATCH,
+            max_tokens=BATCH_MAX_TOKENS,
+            attempt_timeout=BATCH_ATTEMPT_TIMEOUT,
+        )
         produced = getattr(result, self.field)
 
         # The prompt asks for at most ITEMS_PER_BATCH; enforced here, because
