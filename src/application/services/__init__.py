@@ -18,12 +18,11 @@ one flat directory.
 """
 
 from .account import UserService
-from .conversation import ConversationService, MessageService, SourceService
+from .conversation import ConversationService, FetchQueue, MessageService, SourceService
 from .core import BaseService, IdempotencyService
 from .ingest import (
     AssetIngestService,
     DataService,
-    FileService,
     ProcessService,
     TextCorrectionService,
     TextProcessingService,
@@ -56,7 +55,7 @@ __all__ = [
     "ChatService",
     "ConversationService",
     "DataService",
-    "FileService",
+    "FetchQueue",
     "FlashcardService",
     "ITEMS_PER_BATCH",
     "IdempotencyService",

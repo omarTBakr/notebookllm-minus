@@ -9,7 +9,7 @@ APP_VERSION="v2"
 
 # --- Uploads -------------------------------------------------------------------
 # MIME types accepted at upload.
-ALLOWED_TYPES=["application/pdf", "text/plain", "text/markdown"]
+ALLOWED_TYPES=["application/pdf", "text/plain", "text/markdown", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
 # Largest upload, in bytes (50 MB). nginx caps at 64 MB.
 MAX_FILE_SIZE=10485760
 # Bytes per streaming read while saving an upload.

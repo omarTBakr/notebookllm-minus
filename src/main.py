@@ -194,3 +194,32 @@ app.include_router(chat_router)
 # serves the css/js the Jinja page links to.
 app.mount("/static", RevalidatingStaticFiles(directory=str(STATIC_DIR)), name="static")
 app.include_router(ui_router)
+
+
+def create_app(*, lifespan_enabled: bool = True) -> FastAPI:
+    """Build an isolated application instance for tests and local tooling.
+
+    The module-level ``app`` remains the production ASGI entry point. A fresh
+    instance avoids mutating that singleton when tests replace its services
+    with fakes.
+    """
+    application = FastAPI(
+        title="NotebookLLM-minus",
+        lifespan=lifespan if lifespan_enabled else None,
+    )
+    application.add_middleware(
+        RequestLoggingMiddleware,
+        exclude_paths=("/static", SETTINGS.METRICS_PATH),
+    )
+    application.add_exception_handler(NotebookLLMError, domain_error_handler)
+    application.add_exception_handler(Exception, unhandled_error_handler)
+
+    application.include_router(base_router)
+    application.include_router(data_router)
+    application.include_router(process_router)
+    application.include_router(nlp_router)
+    application.include_router(chat_router)
+    application.mount("/static", RevalidatingStaticFiles(directory=str(STATIC_DIR)), name="static")
+    application.include_router(ui_router)
+
+    return application

@@ -19,6 +19,7 @@ at all, and a worker killed mid-run loses only the batch in flight. That
 mattered enough over the last few days to design for.
 """
 
+import asyncio
 import uuid
 
 from application.prompts.template_parser import TemplateParser
@@ -62,6 +63,19 @@ _CONTROLLERS = {
     ArtifactKind.QUIZ: QuizService,
     ArtifactKind.MIND_MAP: MindMapService,
 }
+
+
+def _failure_reason(exc: BaseException) -> str:
+    """What to tell the reader about a failed run -- never an empty string.
+
+    A run killed at its time limit is cancelled from outside, and a cancellation
+    carries no message: the reader was shown a failed quiz with a blank reason,
+    after a panel that had said "still adding..." for half an hour.
+    """
+    if isinstance(exc, asyncio.CancelledError):
+        return "Stopped before it finished (the time limit was reached)."
+
+    return (str(exc) or type(exc).__name__)[:500]
 
 
 async def _finalize(controller, client, parser, artifacts, chat_id: str, kind: ArtifactKind) -> None:
@@ -233,7 +247,7 @@ async def _run_generation(chat_id: str, kind: str, task_id: str | None = None) -
 
                 if existing is not None:
                     await ArtifactModel(db).finish_artifact(
-                        existing.artifact_id, ArtifactStatus.FAILED.value, str(exc)[:500]
+                        existing.artifact_id, ArtifactStatus.FAILED.value, _failure_reason(exc)
                     )
             except Exception:  # noqa: BLE001 - never mask the original failure
                 logger.warning("Could not mark the artifact failed", exc_info=True)

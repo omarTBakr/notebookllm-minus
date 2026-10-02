@@ -55,6 +55,9 @@ def celery_queue_config(settings) -> dict:
         # exactly as it did for the dict form.
         "task_queues": [Queue(name, routing_key=name, queue_arguments=dict(arguments)) for name in queues],
         "task_routes": {
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.FETCH_URL.value}": {
+                "queue": settings.CELERY_QUEUE_PROCESS
+            },
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.PROCESS.value}": {
                 "queue": settings.CELERY_QUEUE_PROCESS
             },

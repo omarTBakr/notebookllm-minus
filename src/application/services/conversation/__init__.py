@@ -2,6 +2,6 @@
 
 from .ConversationService import ConversationService
 from .MessageService import MessageService
-from .SourceService import SourceService
+from .SourceService import FetchQueue, SourceService
 
-__all__ = ["ConversationService", "MessageService", "SourceService"]
+__all__ = ["ConversationService", "FetchQueue", "MessageService", "SourceService"]

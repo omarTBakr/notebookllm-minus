@@ -16,6 +16,10 @@ class OllamaChatProvider(LLMChattingInterface):
     rather than an outage.
     """
 
+    # Ollama constrains decoding to a JSON Schema passed as `format`, for every
+    # model it can load, so unlike the hosted vendors this is a guarantee and not a hint.
+    ENFORCES_SCHEMA = True
+
     def __init__(
         self,
         model_id: str,
@@ -62,7 +66,9 @@ class OllamaChatProvider(LLMChattingInterface):
 
         return options
 
-    async def _generate_text(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+    async def _generate_text(
+        self, messages: list[dict], max_tokens: int, temperature: float, json_schema: dict | None = None
+    ) -> str:
 
         # Ollama takes the system turn inline, so the neutral format arrives
         # ready to send.
@@ -73,6 +79,8 @@ class OllamaChatProvider(LLMChattingInterface):
                 # Generation knobs live under `options`, and the token cap is
                 # called num_predict rather than max_tokens.
                 options=self._options(max_tokens, temperature),
+                # None leaves free-form text; a schema constrains every token.
+                format=json_schema,
             )
 
         except Exception as exc:

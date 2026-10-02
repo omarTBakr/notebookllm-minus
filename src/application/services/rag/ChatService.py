@@ -201,6 +201,11 @@ class ChatService(BaseService):
                     # page: seconds for the player, "12:34" for the reader.
                     "time_start": located.get("time_start"),
                     "time_label": located.get("time_label"),
+                    # A spreadsheet chunk has a row (and a sheet, for a workbook):
+                    # the row as Excel or Sheets numbers it. Labelled in the UI,
+                    # which owns the language.
+                    "row": located.get("row"),
+                    "sheet": located.get("sheet"),
                     # `is not None`, not truthiness: 0.0 is a real score — an
                     # orthogonal match — and reporting it as "no score"
                     # loses the one number that says the hit was poor.

@@ -15,7 +15,7 @@ belongs to none of them.
 | presentation | `presentation/routes/` | HTTP: what a request means, what comes back. Thin — the work is elsewhere. |
 | presentation | `presentation/web/` | The browser app: static CSS/JS and Jinja partials. |
 | presentation | `presentation/middleware/` | Cross-cutting request handling. |
-| application | `application/services/` | The work. Grouped by responsibility: `account`, `conversation`, `core`, `ingest`, `llm`, `memory`, `rag`, `studio`. Routes call these and never touch `data/`; `presentation/dependencies.py` is the one place that turns a request into services, and the only place that reads `app.db` or `app.providers` (`test/unit/test_layering.py` enforces both). |
+| application | `application/services/` | The work. Grouped by responsibility: `account`, `conversation`, `core`, `ingest`, `llm`, `memory`, `rag`, `studio`. Routes call these and never touch `data/`; `presentation/dependencies.py` is the one place that turns a request into services, and the only place that reads `app.db` or `app.providers` (`tests/architecture/test_layering.py` enforces both). |
 | application | `application/providers/` | The LLM vendor adapters: `chatting/`, `embedding/`, plus the cache and settings-mapping glue. |
 | application | `application/tasks/` | Background work: `jobs` (what Celery runs), `tracking` (progress and outcome), `workflows` (the ids a run is published under). |
 | application | `application/prompts/` | Chat and studio prompts, one file per group per locale. A missing key raises rather than silently falling back. |
@@ -76,7 +76,7 @@ error, ever. Task *names* are declared explicitly, so a module can move without
 invalidating messages already queued, but the include list must follow it.
 
 **A repository lands on both backends or neither.**
-`test/db/test_backend_contract.py` compares the Postgres and Mongo
+`tests/persistence/test_backend_contract.py` compares the Postgres and Mongo
 implementations method for method; adding one to a single backend fails there
 rather than in production on whichever machine runs the other. The comparison is
 driven by a hand-maintained `PAIRS` list, so a new repository also has to be

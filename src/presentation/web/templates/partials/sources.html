@@ -8,19 +8,43 @@
   <div class="panel__body">
     {# Two views, one panel: the list of sources, or one of them opened. #}
     <div class="sources__browse" id="sources-browse">
-    <label class="btn btn--outline btn--block">
-      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-plus"/></svg> <span data-i18n="addSources"></span>
-      <input type="file" id="file-input" accept=".pdf,.txt,.md,text/plain,text/markdown,application/pdf" hidden>
-    </label>
+    <div class="source-add" aria-label="add source">
+      <div class="source-add__modes" role="tablist" aria-label="source type">
+        <button class="source-add__mode is-active" id="upload-mode" type="button" role="tab" aria-selected="true" aria-controls="upload-source">
+          <svg class="ico" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-upload"/></svg>
+          <span data-i18n="uploadFile"></span>
+        </button>
+        <button class="source-add__mode" id="sheet-mode" type="button" role="tab" aria-selected="false" aria-controls="sheet-source">
+          <span class="source-add__sheet-mark" aria-hidden="true">S</span>
+          <span data-i18n="googleSheets"></span>
+        </button>
+      </div>
 
-    {# A link instead of a file: an online PDF, an article, or a YouTube video.
-       novalidate: the server says what is wrong with a link in words, which
-       beats the browser's generic "enter a URL" bubble. #}
+      <div class="source-add__panel" id="upload-source" role="tabpanel" aria-labelledby="upload-mode">
+        <label class="btn btn--outline btn--block">
+          <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-plus"/></svg> <span data-i18n="chooseFile"></span>
+          <input type="file" id="file-input" accept=".pdf,.txt,.md,.csv,.xlsx,text/plain,text/markdown,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+        </label>
+        <p class="source-add__hint" data-i18n="supportedFiles"></p>
+      </div>
+
+      <div class="source-add__panel" id="sheet-source" role="tabpanel" aria-labelledby="sheet-mode" hidden>
+        <form class="linkadd" id="sheets-form" novalidate>
+          <input class="linkadd__input" id="sheets-input" type="url" inputmode="url" autocomplete="off" spellcheck="false" data-i18n-placeholder="sheetsPlaceholder">
+          <button class="btn btn--outline linkadd__go" id="sheets-go" type="submit" data-i18n="connect"></button>
+        </form>
+        <p class="source-add__hint" data-i18n="sheetsHint"></p>
+      </div>
+    </div>
+
     <form class="linkadd" id="link-form" novalidate>
       <input class="linkadd__input" id="link-input" type="url" inputmode="url" autocomplete="off" spellcheck="false" data-i18n-placeholder="linkPlaceholder">
       <button class="btn btn--outline linkadd__go" id="link-go" type="submit" data-i18n="addLink"></button>
     </form>
 
+    {# A link instead of a file: an online PDF, an article, or a YouTube video.
+       novalidate: the server says what is wrong with a link in words, which
+       beats the browser's generic "enter a URL" bubble. #}
     {# Web search has no retrieval backend behind it yet — the whole box is
        marked rather than just the button, so nothing here looks usable. #}
     <div class="websearch" data-soon="Web search">

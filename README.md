@@ -1,6 +1,6 @@
 # NotebookLLM⁻
 <p align="center">
-  <img src="demo/logo.svg" alt="NotebookLLM-minus logo" width="460">
+  <img src="demo/logo-animated.svg" alt="NotebookLLM-minus logo" width="460">
 </p>
 
 
@@ -12,12 +12,12 @@
 
 > **NotebookLLM-minus** — NotebookLM, minus the parts that aren't built yet.
 
-**▶ [Watch the walkthrough](demo/walkthrough.gif)** — PDF, video and Arabic sources, cited answers that open the
-exact page or moment, and a mind map, flashcards and quiz that do the same. ([Jump to the demo](#demo) ·
-[frames](demo/e2e/))
+**▶ [Watch the walkthrough](demo/walkthrough.gif)** ([full-quality video](demo/walkthrough.mp4)) — links, files and a
+Google Sheet as sources, cited answers that open the exact page, row or moment, the model picker, and a mind map,
+flashcards and quiz that do the same. ([Jump to the demo](#demo))
 
-Upload documents, ask questions, get answers grounded in *those* documents, with citations
-back to the page they came from. A small, deliberately readable RAG backend on **FastAPI**,
+Add documents or links (PDFs, articles, YouTube videos, public Google Sheets), ask questions, get
+answers grounded in *those* sources, with citations back to the page or moment they came from. A small, deliberately readable RAG backend on **FastAPI**,
 with a web UI in English and Arabic.
 
 Every backend is swappable from `.env` — chat model, embedding model, document store, vector
@@ -31,8 +31,10 @@ are discovered from what is actually installed and reachable, never pinned in co
 - [Features](#features)
 - [Architecture](#architecture)
 - [Ingesting a document](#ingesting-a-document) 
+- [Adding a link](#adding-a-link)
 - [Asking a question](#asking-a-question)
 - [Providers](#providers) 
+- [Structured output](#structured-output)
 - [Choosing models](#choosing-models)
 - [Database backends](#database-backends) 
 - [Migrations](#migrations)
@@ -48,14 +50,22 @@ are discovered from what is actually installed and reachable, never pinned in co
 
 ## Demo
 
-![End-to-end walkthrough: add a PDF link, a YouTube video and an Arabic article, ask about each, open the cited page, video moment or highlighted passage, browse the model picker with OpenRouter, then generate a mind map, flashcards and a quiz that each open their source](demo/walkthrough.gif)
-End to end on a live stack, with three kinds of source added by link — an arXiv PDF, a YouTube video
-and an Arabic Wikipedia article. Ask about each: a PDF answer cites its page and highlights the
-passage, a video answer cites the moment and opens the player there, an Arabic question gets an
-Arabic answer with its own highlighted source. The model picker lists local, NVIDIA and OpenRouter
-models with what each can do, read from their own catalogues. Studio then builds a mind map,
-flashcards and a quiz, and each node, card and question opens the passage it came from. The
-individual frames are in [`demo/e2e/`](demo/e2e/).
+![End-to-end walkthrough in the light theme: rename the notebook, add a YouTube video, an Arabic article, an arXiv PDF and a Google Sheet by link plus a CSV and an XLSX by upload, ask about each and open the cited page, video moment or spreadsheet row, browse the OpenRouter models, then generate a mind map, flashcards and a quiz that each open their source, and switch the interface to Arabic](demo/walkthrough.gif)
+
+Recorded end to end against the running stack, in the light theme, with small sources only (a 15-page
+paper, a 19-second video, one Arabic article, two tiny spreadsheets). Stretches that are only waiting for
+the workers are fast-forwarded and labelled. In order:
+
+1. **Add sources** — three by link (a YouTube video, an Arabic Wikipedia article, an arXiv PDF), a public
+   Google Sheet, and a CSV and an XLSX from disk. The bar follows each link from the fetch through to the index.
+2. **Ask, and open the citation** — a PDF answer cites its page and highlights the passage; a video answer
+   opens the player at that moment; an Arabic question gets an Arabic answer with its own source.
+3. **Spreadsheets** — one chunk per row; a salary lookup cites `team.csv · row 8` and a revenue question cites
+   `sales.xlsx · Q1 Sales · row 6`, numbered as in Excel.
+4. **Model picker** — filter the catalogue by provider down to OpenRouter's models, each with what it can do.
+5. **Studio** — a mind map (expand a branch, open a topic's source), flashcards and a quiz, each opening the
+   passage it was written from.
+6. **Interface** — theme and English/Arabic switch.
 
 A reader's path through it — what [Architecture](#architecture) below breaks into requests,
 queues and prompts:
@@ -63,12 +73,12 @@ queues and prompts:
 ```mermaid
 flowchart TD
     reader(["Reader"])
-    upload["Upload a PDF, txt or markdown"]
+    upload["Add a source: upload a PDF, txt, markdown, CSV or XLSX,<br/>or paste a link — PDF, article, YouTube, Google Sheet"]
     index["Indexed: chunked and embedded —<br/>Arabic re-read if its text layer is broken"]
     ask["Ask a question"]
-    answer["Grounded answer, citing the exact page"]
+    answer["Grounded answer, citing the exact page,<br/>passage or video moment"]
     cite["Click the citation"]
-    open["PDF opens there, passage highlighted"]
+    open["Source opens there — page, passage or<br/>video moment — highlighted"]
     studio["Generate a Studio set"]
     cards["Flashcards or a quiz,<br/>from the same chunks"]
     memory["Type /memory I prefer short answers"]
@@ -120,7 +130,7 @@ startup with the full list rather than on first use. The ones worth knowing abou
 | Setting | Does what |
 | --- | --- |
 | `DOCUMENT_DB_BACKEND` | `mongo` (+ Qdrant) or `postgres` (+ pgvector, one service) |
-| `GENERATION_BACKEND` | `anthropic` · `openai` · `google` · `cohere` · `nvidia` · `ollama` |
+| `GENERATION_BACKEND` | `anthropic` · `openai` · `google` · `cohere` · `nvidia` · `openrouter` · `ollama` |
 | `EMBEDDING_BACKEND` | the same minus `anthropic`, which ships no embeddings API |
 | `GENERATION_MODEL_ID` / `EMBEDDING_MODEL_ID` | named the way the vendor names them (`gemma4:e4b`, `nvidia/nemotron-3-embed-1b`) |
 | `GENERATION_DEFAULT_MAX_TOKENS` | output cap. Sent as `max_tokens` to NVIDIA and `max_completion_tokens` to OpenAI — several NIM schemas reject the newer name outright |
@@ -151,7 +161,10 @@ slower, which `PdfLayoutService` offsets by extracting pages across a process po
 ## Features
 
 **Documents**
-- PDF, txt and markdown per notebook; validated on type and size, stored as bytes — nothing touches disk
+- PDF, txt, markdown, CSV and XLSX per notebook; validated on type and size, stored as bytes — nothing touches disk
+- **Spreadsheets are read row by row:** one chunk per row, each value labelled with its column (`name: Ada`), so a question about one record lands on that record. A row too long for one chunk repeats its short cells (id, name…) on the continuation chunks. CSV delimiters (`,` `;` tab `|`), BOMs, Arabic text, blank and duplicate headers are handled; hidden XLSX sheets are skipped. Citations read `Sheet1 · row 12`, numbered as in Excel or Google Sheets (header is row 1)
+- **Links as sources:** an online PDF, an article, a YouTube video (from its transcript, cited by the moment it is spoken) or a *public* Google Sheet (read as CSV). Only public addresses are fetched; a private or non-http link is refused
+- A link is fetched on a worker, not in the request: the route answers `202` with the fetch task's id, the task attaches the bytes like an upload, and the progress bar follows it on to the indexing (see [Adding a link](#adding-a-link))
 - Identity is the sha256 of the contents, scoped to one notebook: re-uploading the same file is refused with a 409 before anything is chunked, and renaming does not sneak it past
 - Enforced by a partial unique index, so two uploads racing each other collide in the database rather than both landing
 - Deleting a source removes it, its chunks and its vectors, derived-first
@@ -234,10 +247,17 @@ approximate rather than silently pointing at the wrong sentence.
 - Citations name the real **page** and open the document there, highlighting the passage in a built-in PDF.js viewer, in a per-notebook colour
 - Reasoning models stream their scratchpad into a collapsing panel — shown, never stored
 - Generation can be stopped mid-answer, and the partial reply is kept
+- `/memory I prefer short answers` stores a durable fact about the user, extracted on a worker and folded into every later answer
+
+**Studio**
+- A **mind map**, **flashcards** and a **quiz** generated from a notebook's own chunks, on a worker, as schema-validated structured output (see [Structured output](#structured-output))
+- Every node, card and question carries the chunk it came from and opens that page, passage or video moment
+- Generation runs on the studio worker, shows progress and, when it fails, the reason
 
 **Models**
-- Six chat and five embedding providers behind `application/providers/`; nothing above that layer names a vendor
-- Local and remote Ollama, NVIDIA NIM, OpenRouter, Anthropic, Google, OpenAI-compatible endpoints
+- Seven chat and six embedding backends behind `application/providers/`; nothing above that layer names a vendor
+- Local and remote Ollama, NVIDIA NIM, OpenRouter (one key, hundreds of models), Anthropic, Google, OpenAI, Cohere
+- Structured output is constrained at the provider where the backend can (see [Structured output](#structured-output)), with prompt-and-repair as the fallback
 - The picker probes rather than trusts: capability and entitlement checks cut one vendor catalogue of 82 to the ~12 that actually answer
 - Per-notebook model choice; switching the embedding model rebuilds that notebook's index
 
@@ -249,7 +269,7 @@ approximate rather than silently pointing at the wrong sentence.
 - Answers can be copied, downloaded, or saved back into Sources as a new document
 
 **Operations**
-- Two interchangeable database backends behind eleven repository interfaces, enforced by a parity test
+- Two interchangeable database backends behind twelve repository interfaces, enforced by a parity test
 - Ingestion as four queue-decoupled stages — plan, parse, correct, collect — with every run recorded in `task_executions` and swept on a schedule
 - Repeat submissions join the run already in flight instead of paying for it twice
 - Prometheus metrics at `/metrics`: ingest duration per stage, embedding latency and batch size, time-to-first-token, retrieval latency, whether an answer was grounded — labels bounded to `provider`, `model` and `stage`, never a `chat_id`
@@ -258,7 +278,8 @@ approximate rather than silently pointing at the wrong sentence.
 
 **Not yet**
 - Web-search grounding is stored per notebook and shown marked *soon*, with no backend behind it
-- Formats past pdf/txt/md are enumerated in `AssetType` and not implemented
+- Private Google Sheets (needs OAuth), and formats beyond pdf, txt, markdown and CSV/XLSX
+- Audio overview, slide deck, reports, infographic and data table tiles in Studio are placeholders
 
 ## Architecture
 
@@ -273,14 +294,18 @@ flowchart TB
     end
 
     subgraph routes["presentation/routes — HTTP only, no logic"]
-        R1["/chat<br/>users · sessions · notebooks · SSE"]
+        R1["/chat<br/>users · sessions · notebooks · SSE · studio"]
         R2["/data · /process<br/>upload · chunk"]
         R3["/nlp<br/>index · search · health"]
+        DEP["dependencies.py<br/>request → services<br/>(the only reader of app.db)"]
     end
 
     subgraph services["application/services — the actual work"]
         C1["ChatService<br/>retrieve → prompt → stream"]
         C2["ProcessService<br/>load documents"]
+        C7["SourceService · UrlSourceService<br/>attach · queue a link · fetch it"]
+        C9["ArtifactService<br/>mind map · flashcards · quiz"]
+        C8["structured_generation<br/>schema in, validated model out"]
         C6["TextCorrectionService<br/>repair extraction damage"]
         C5["TextProcessingService<br/>sanitise → split → size guard"]
         C3["NLPService<br/>embed → upsert → search"]
@@ -288,8 +313,8 @@ flowchart TB
     end
 
     subgraph providers["application/providers — swappable LLM vendors"]
-        P1["LLMChattingInterface<br/>anthropic · openai · google<br/>cohere · nvidia · ollama"]
-        P2["LLMEmbeddingInterface<br/>openai · google · nvidia<br/>cohere · ollama"]
+        P1["LLMChattingInterface<br/>anthropic · openai · google · cohere<br/>nvidia · openrouter · ollama"]
+        P2["LLMEmbeddingInterface<br/>openai · google · nvidia<br/>cohere · openrouter · ollama"]
     end
 
     subgraph data["data/repositories — swappable storage"]
@@ -299,10 +324,18 @@ flowchart TB
     UI -->|"fetch + SSE"| R1
     UI --> R2
     UI --> R3
-    R1 --> C1
-    R1 --> C4
+    R1 --> DEP
+    R2 --> DEP
+    R3 --> DEP
+    DEP --> C1
+    DEP --> C4
+    DEP --> C7
+    DEP --> C9
+    C9 --> C8
     R2 --> C2
     C2 --> C6
+    C6 --> C8
+    C8 --> P1
     C6 --> P1
     R3 --> C3
     C1 --> C3
@@ -321,9 +354,11 @@ each stage hands off through a queue, and completion is a row count the database
 
 ```mermaid
 flowchart LR
+    L["paste a link<br/>202 Accepted"] --> F
     U["upload<br/>202 Accepted"] --> P
 
     subgraph process["process queue"]
+        F["fetch_url_task<br/>fetch → attach"]
         P["process_data_task<br/>plan the page batches"]
         A["assemble_chunks_task<br/>order → chunk → store"]
         PA["parse_batch_task<br/>× N, in parallel"]
@@ -331,6 +366,7 @@ flowchart LR
 
     subgraph correct["postprocess queue"]
         C["postprocess_batch_task<br/>repair pages with a model"]
+        S["summarise_chunks_task<br/>one-line summaries for Studio"]
     end
 
     subgraph index["index queue"]
@@ -340,6 +376,7 @@ flowchart LR
 
     DB[("ingest_batches<br/>ingest_runs")]
 
+    F -->|"queues, and names it as next_task_id"| P
     P -->|"one message per batch"| PA
     PA -->|"pages"| DB
     PA -->|"(asset_id, batch_index)"| C
@@ -347,11 +384,30 @@ flowchart LR
     C -->|"last one claims the run"| A
     DB -.->|"read in page order"| A
     A --> I --> B
+    A --> S
 ```
 
 The claim is the whole of the coordination: every batch asks whether it was the last, and one
 atomic `UPDATE` answers yes exactly once. See [Background processing](#background-processing)
 for why that replaced a chord, and what the chord did instead.
+
+### Adding a link
+
+A pasted link takes one extra hop before it is an upload. The route checks the notebook
+(`404` before anything is queued), claims the fetch under the usual idempotency key, publishes
+`fetch_url_task` and answers `202` with its id. Pasting the same link again while that fetch is
+running returns the same id rather than a second task. On the worker the task fetches the
+link, attaches the bytes exactly as an upload would, and queues the ingestion chain.
+
+What can go wrong with a link — unreachable, no transcript, a page that needs JavaScript, a
+sheet that is not public, a duplicate of something already attached — is found by the task, so
+it is reported on the task's row (`status = FAILURE`, `error` = the reason), which is what the
+sources panel shows.
+
+The fetch is the *first* of two tasks, so the progress bar has to hand over: when the fetch
+succeeds, `GET /chat/chats/{id}/indexing` carries `next_task_id` (the ingestion it queued) and
+the panel keeps polling that one, so there is a single bar from the paste to the last chunk
+instead of "done" with nothing indexed yet.
 
 ### Asking a question
 
@@ -397,9 +453,32 @@ turning a name from `.env` into a configured instance — the LLM ones under
 
 | Subsystem | Tier | Backends | Interface |
 | --- | --- | --- | --- |
-| `providers/chatting` | application | `anthropic`, `openai`, `google`, `cohere`, `nvidia`, `ollama` | `generate_text(prompt, chat_history, max_tokens, temperature)` |
-| `providers/embedding` | application | `openai`, `google`, `cohere`, `nvidia`, `ollama` | `embed(texts, input_type)` |
-| `repositories` | data | `mongo` (+ Qdrant), `postgres` (+ pgvector) | eleven repository ABCs |
+| `providers/chatting` | application | `anthropic`, `openai`, `google`, `cohere`, `nvidia`, `openrouter`, `ollama` | `generate_text(prompt, chat_history, max_tokens, temperature, json_schema)` |
+| `providers/embedding` | application | `openai`, `google`, `cohere`, `nvidia`, `openrouter`, `ollama` | `embed(texts, input_type)` |
+| `repositories` | data | `mongo` (+ Qdrant), `postgres` (+ pgvector) | twelve repository ABCs |
+
+### Structured output
+
+Every Studio set, summary, mind map and page repair is the same problem: make a model return
+a shape. Each shape is a Pydantic model; `generate_structured` sends that model's JSON Schema
+to providers that can constrain decoding to it, and still puts the schema in the prompt and
+validates the result, so a backend that ignores the constraint behaves as it always did.
+
+| Backend | How the schema is enforced |
+| --- | --- |
+| Ollama | `format=<schema>` — every token is constrained, for any model |
+| Google | `response_json_schema` with a JSON MIME type |
+| OpenAI, NVIDIA NIM, OpenRouter | `response_format: json_schema`; an endpoint that answers 400 is retried once without it, remembered per model |
+| Anthropic, Cohere | not passed (prompt, validate, repair) |
+
+Two limits matter in practice. The hosted endpoint may accept `response_format` and ignore it
+for a given model — measured: `llama-3.2-11b-vision` on NVIDIA returned free-form output with
+and without it, `nemotron-3-super` obeyed — so a model that cannot follow a schema is a
+configuration problem the fallback only softens. And a list gets a `maxItems` in the schema
+sent (`max_items`), not in the validating model, so a decoder cannot ramble past "at most 3"
+while a backend that cannot constrain still returns something the caller can truncate.
+Studio batches also carry a token cap and a per-attempt timeout, so one runaway attempt costs
+seconds rather than a whole run.
 
 **One neutral message format.** Callers build `{"role", "content"}` dicts using `ChatRole`
 and each provider translates on the way out — Anthropic and Google lift the system turn into
@@ -541,8 +620,9 @@ drifted.
 place. What that cannot do is reconcile a table that exists with the *wrong shape* — it skips
 the whole table, columns and all — which is what `0002` exists for, after every read of a
 user's sessions failed with `UndefinedColumnError`. Anything column-level needs its own
-migration. Seven so far: initial schema, sessions reconcile, asset content hash, chunk lookup
-index, notebook highlight colour, task executions, unique asset content.
+migration. Twelve so far: initial schema, sessions reconcile, asset content hash, chunk lookup
+index, notebook highlight colour, task executions, unique asset content, chunk summaries,
+Studio artifacts, ingest batches, personal user information, asset source URL.
 
 `0007` finally enforces one copy of a document per notebook — the index the dedupe lookup has
 claimed to use since `0003`, deferred three times because the databases held duplicates and
@@ -568,6 +648,9 @@ erDiagram
     ASSETS ||--o{ CHUNKS : "split into"
     PROJECTS ||--o{ TASK_EXECUTIONS : "work on"
     CHUNKS ||--|| VEC_PROJECT : embedded
+    CHATS ||--o{ ARTIFACTS : "studio sets"
+    ASSETS ||--o{ INGEST_BATCHES : "parsed in"
+    USERS ||--o{ PERSONAL_USER_INFORMATION : remembers
 
     USERS {
         objectid id PK
@@ -613,6 +696,7 @@ erDiagram
         string asset_type
         bytea file_bytes "no disk"
         string content_hash "sha256, unique per project"
+        string source_url "set when added by link"
     }
     CHUNKS {
         objectid id PK
@@ -620,7 +704,8 @@ erDiagram
         string asset_id FK
         int chunk_order "with asset_id, the stable point key"
         text chunk_content
-        jsonb chunk_metadata "page, source"
+        jsonb chunk_metadata "page, source; row + sheet for a spreadsheet row"
+        text chunk_summary "one line, for Studio"
     }
     TASK_EXECUTIONS {
         objectid id PK
@@ -632,6 +717,26 @@ erDiagram
         jsonb args
         string args_hash "idempotency"
         jsonb result "trimmed"
+    }
+    ARTIFACTS {
+        objectid id PK
+        string artifact_id UK
+        string chat_id FK
+        string kind "mindmap | flashcards | quiz"
+        string status
+        string error "the reason, when it failed"
+    }
+    INGEST_BATCHES {
+        objectid id PK
+        string asset_id FK
+        int batch_index
+        string status "parsed | corrected"
+    }
+    PERSONAL_USER_INFORMATION {
+        objectid id PK
+        string user_id FK
+        string key
+        text description "what /memory stored"
     }
     VEC_PROJECT {
         uuid id PK "uuid5 of asset_id:chunk_order"
@@ -688,9 +793,14 @@ Full interactive reference at `/docs`. The shape of it:
 | `POST` | `/chat/chats/{chat_id}/message` | ask a question — streams SSE |
 | `GET` | `/chat/chats/{chat_id}/messages` | transcript |
 | `POST/GET/PATCH/DELETE` | `/chat/chats/{chat_id}/assets…` | a notebook's documents, content, rename, delete |
+| `POST` | `/chat/chats/{chat_id}/sources/url` | add a link (PDF, article, YouTube, public Google Sheet) — `202` with the fetch task's id |
 | `GET` | `/chat/chats/{chat_id}/assets/{asset_id}/chunks/{n}/locate` | where a citation sits on the page |
-| `GET` | `/chat/chats/{chat_id}/indexing` | ingest progress, mid-upload |
-| `GET` | `/chat/models` | the catalogue the picker is built from |
+| `GET` | `/chat/chats/{chat_id}/indexing` | ingest progress, mid-upload; `next_task_id` when a task hands on to another |
+| `GET` | `/chat/models` · `/chat/models/quick` | the catalogue the picker is built from (full probe · configured hosted models, no network calls) |
+| `POST/GET` | `/chat/chats/{chat_id}/studio/{kind}` | generate a mind map, flashcards or quiz (`202`, or `200` with the id of the run already going) · read the latest set |
+| `GET` | `/chat/chats/{chat_id}/memory?q=` | stored facts closest to *q*, for the composer's memory preview |
+| `POST` | `/chat/chats/{chat_id}/documents` | attach a file to the notebook and queue its ingestion (`202`) |
+| `GET` | `/chat/chats/{chat_id}/assets/{asset_id}/content` | the stored file, for the viewer |
 | `PATCH` | `/chat/chats/{chat_id}/models` | point a notebook at different models |
 | `PATCH` | `/chat/chats/{chat_id}/settings` | temperature, output length, chunking, colour |
 
@@ -711,7 +821,8 @@ rebuild re-embeds them rather than asking for the documents again.
 
 Ingestion runs in Celery rather than inside the FastAPI request. Attaching a document stores
 the file and returns `202 Accepted` immediately with an `asset_id` and a `task_id`; chunking
-and embedding then happen on the workers.
+and embedding then happen on the workers. A pasted link is one task earlier: `fetch_url_task`
+fetches it, then attaches it the same way (see [Adding a link](#adding-a-link)).
 
 **Ingesting a PDF is four stages joined by queues.** `process_data_task` plans the page
 batches and publishes one `parse_batch_task` each; every parse stores its pages and queues a
@@ -801,6 +912,17 @@ long as its workers are down, and a tight cutoff would report a deploy as data l
 Broker and result-backend connection failures are the `CeleryError` branch of the exception
 hierarchy and return `503`. A task's own failure stays in its row and its result, with the
 exception type alongside the message.
+
+### Tests
+
+About 1,500 tests, none of which need a network, a model or a running database — the
+persistence layer has in-memory fakes under `tests/support/`, and
+`tests/architecture/test_layering.py` fails the build if a tier imports one it should not.
+
+```bash
+python -m pytest -q                     # from the repository root (pytest.ini sets the paths)
+node --test tests/frontend/*.test.mjs   # the UI's pure modules: progress, markdown, citation labels
+```
 
 ### Code quality
 
@@ -952,7 +1074,7 @@ src/
 ├── presentation/              # tier 1 — HTTP and the browser-facing UI
 │   ├── dependencies.py          # request -> services; the only reader of app.db / app.providers
 │   ├── routes/                 # HTTP only — base, data, process, nlp, ui
-│   │   ├── chat/                 # users · sessions · chats · messages · assets · models
+│   │   ├── chat/                 # users · sessions · chats · messages · assets · models · studio · memory
 │   │   └── schemas/              # request models
 │   ├── web/                    # templates/ and static/ sent to the browser
 │   └── middleware/              # request logging
@@ -969,13 +1091,13 @@ src/
 │   └── arabic_extraction/         # the OCR pipeline
 ├── data/                       # tier 3 — persistence
 │   ├── models/                    # pydantic schemas + the thin XModel(db) adapters
-│   └── repositories/               # mongo/ and postgres/ behind 11 repository ABCs, + alembic/
+│   └── repositories/               # mongo/ and postgres/ behind 12 repository ABCs, + alembic/
 └── shared/                     # cross-cutting, used by all three tiers — not itself a tier
     ├── enums/                    # every .env choice, plus provider lookup tables
     ├── utils/                    # Settings, logging, metrics, model id vocabulary
     └── exceptions.py             # the domain exception hierarchy
 Docker/                        # compose, nginx, prometheus, grafana dashboards
-test/                          # unit + route tests, fakes for every backend
+tests/                         # behavior-focused tests and shared support fakes
 ```
 
 `application/prompts/` and `application/ocr_prompts/` answer different questions and stay two

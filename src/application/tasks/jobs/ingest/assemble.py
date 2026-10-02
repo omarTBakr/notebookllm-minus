@@ -66,17 +66,19 @@ def _documents(asset_name: str, pages: list[dict]) -> tuple[list[Document], dict
         if "corrected_text" in page:
             scales[index] = page["scale"]
 
-        documents.append(
-            Document(
-                page_content=page.get("corrected_text", page["text"]),
-                metadata={
-                    "source": asset_name,
-                    "page": index,
-                    "page_label": page["page_label"],
-                    "total_pages": total,
-                },
-            )
-        )
+        metadata = {
+            "source": asset_name,
+            "page": index,
+            "page_label": page["page_label"],
+            "total_pages": total,
+        }
+
+        # A spreadsheet row: its sheet and row replace the page in a citation, and
+        # the identity is what a continuation chunk repeats (see split_file).
+        if page.get("table"):
+            metadata.update(page["table"], table=True)
+
+        documents.append(Document(page_content=page.get("corrected_text", page["text"]), metadata=metadata))
 
     return documents, layout, scales, timelines
 

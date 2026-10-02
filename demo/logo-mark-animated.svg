@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <style>
+  .ind{fill:#3b5bdb} .ind-s{stroke:#3b5bdb} .lt{fill:#8da2f4} .lt-s{stroke:#8da2f4} .yel{fill:#ffd43b} .ystrip{opacity:.7} .b1{stop-color:#b9c6fa} .b2{stop-color:#5b78e8} .txt{fill:#1c1e26}
+  @media (prefers-color-scheme: dark){ .ystrip{opacity:.95} .ind{fill:#7089f5} .ind-s{stroke:#7089f5} .lt{fill:#9db0f7} .lt-s{stroke:#9db0f7} .txt{fill:#eceef6} .b1{stop-color:#a9b8f7} .b2{stop-color:#7089f5} }
+
+  .a{transform-box:fill-box;transform-origin:center}
+  .draw{stroke-dasharray:1;animation:draw var(--d,.6s) cubic-bezier(.3,.7,.2,1) var(--t,0s) backwards}
+  .pop{animation:pop .45s cubic-bezier(.3,1.5,.5,1) var(--t,0s) backwards}
+  .fade{animation:fade .5s ease-out var(--t,0s) backwards}
+  .slide-l{animation:slide-l .6s cubic-bezier(.3,.7,.2,1) var(--t,0s) backwards}
+  .slide-r{animation:slide-r .6s cubic-bezier(.3,.7,.2,1) var(--t,0s) backwards}
+  .eyes-open{animation:open .35s cubic-bezier(.3,1.4,.5,1) 1.15s backwards}
+  .blink{animation:blink 5.5s ease-in-out 4.6s infinite}
+  .glance{animation:glance 5.5s ease-in-out 4.6s infinite}
+  .flow{stroke:#ffd43b;fill:none;stroke-linecap:round;stroke-dasharray:.07 1.4;animation:flow 3s linear var(--t,0s) infinite;opacity:0}
+  .flow.leafy{stroke-width:3.4}
+  @keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+  @keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+  @keyframes fade{from{opacity:0}}
+  @keyframes slide-l{from{opacity:0;transform:translateX(-26px)}}
+  @keyframes slide-r{from{opacity:0;transform:translateX(26px)}}
+  @keyframes open{from{transform:scaleY(.06)}to{transform:scaleY(1)}}
+  @keyframes blink{0%,90%,100%{transform:scaleY(1)}94%{transform:scaleY(.08)}}
+  @keyframes glance{0%,38%,100%{transform:translateX(0)}46%,70%{transform:translateX(-2.6px)}}
+  @keyframes flow{0%{stroke-dashoffset:.07;opacity:1}45%{stroke-dashoffset:-1;opacity:1}46%,100%{stroke-dashoffset:-1;opacity:0}}
+  @media (prefers-reduced-motion: reduce){ *{animation:none!important} .flow{display:none} }
+</style>
+  <defs><linearGradient id="gb" x1="0" x2="1"><stop offset="0" class="b1"/><stop offset="1" class="b2"/></linearGradient></defs>
+  <g class="slide-l" style="--t:.5s"><rect x="40" y="176" width="64" height="18" rx="9" fill="url(#gb)" opacity=".85"/></g>
+  <g class="slide-r" style="--t:.5s"><rect x="136" y="46" width="64" height="18" rx="9" class="yel ystrip"/></g>
+  <g class="ind-s" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"><path class="draw" pathLength="1" style="--d:.8s" d="M80 30 H30 V210 H80"/><path class="draw" pathLength="1" style="--d:.8s" d="M160 30 H210 V210 H160"/></g>
+  <g class="ind-s" stroke-width="7" stroke-linecap="round" fill="none">
+  <path class="draw" pathLength="1" style="--t:1.55s;--d:.5s" d="M92 132 C118 132 114 90 136 90"/>
+  <path class="draw" pathLength="1" style="--t:1.67s;--d:.5s" d="M92 132 C118 132 114 132 136 132"/>
+  <path class="draw" pathLength="1" style="--t:1.79s;--d:.5s" d="M92 132 C118 132 114 174 136 174"/>
+  </g>
+  <g class="lt-s" stroke-width="5" stroke-linecap="round" fill="none">
+  <path class="draw" pathLength="1" style="--t:2.15s;--d:.4s" d="M136 90 C156 90 168 79 186 79"/>
+  <path class="draw" pathLength="1" style="--t:2.21s;--d:.4s" d="M136 90 C156 90 168 101 186 101"/>
+  <path class="draw" pathLength="1" style="--t:2.27s;--d:.4s" d="M136 132 C156 132 168 121 186 121"/>
+  <path class="draw" pathLength="1" style="--t:2.33s;--d:.4s" d="M136 132 C156 132 168 143 186 143"/>
+  <path class="draw" pathLength="1" style="--t:2.39s;--d:.4s" d="M136 174 C156 174 168 163 186 163"/>
+  <path class="draw" pathLength="1" style="--t:2.45s;--d:.4s" d="M136 174 C156 174 168 185 186 185"/>
+  </g>
+  <circle class="a pop lt" style="--t:2.45s" cx="186" cy="79" r="6"/>
+  <circle class="a pop lt" style="--t:2.51s" cx="186" cy="101" r="6"/>
+  <circle class="a pop lt" style="--t:2.57s" cx="186" cy="121" r="6"/>
+  <circle class="a pop lt" style="--t:2.63s" cx="186" cy="143" r="6"/>
+  <circle class="a pop lt" style="--t:2.69s" cx="186" cy="163" r="6"/>
+  <circle class="a pop lt" style="--t:2.75s" cx="186" cy="185" r="6"/>
+  <circle class="a pop ind" style="--t:1.95s" cx="136" cy="90" r="11"/>
+  <circle class="a pop ind" style="--t:2.07s" cx="136" cy="132" r="11"/>
+  <circle class="a pop ind" style="--t:2.19s" cx="136" cy="174" r="11"/>
+  <g>
+  <path class="flow" pathLength="1" style="--t:3.20s" stroke-width="4.5" d="M92 132 C118 132 114 90 136 90"/>
+  <path class="flow" pathLength="1" style="--t:3.55s" stroke-width="4.5" d="M92 132 C118 132 114 132 136 132"/>
+  <path class="flow" pathLength="1" style="--t:3.90s" stroke-width="4.5" d="M92 132 C118 132 114 174 136 174"/>
+  <path class="flow leafy" pathLength="1" style="--t:3.75s" d="M136 90 C156 90 168 79 186 79"/>
+  <path class="flow leafy" pathLength="1" style="--t:3.85s" d="M136 90 C156 90 168 101 186 101"/>
+  <path class="flow leafy" pathLength="1" style="--t:4.10s" d="M136 132 C156 132 168 121 186 121"/>
+  <path class="flow leafy" pathLength="1" style="--t:4.20s" d="M136 132 C156 132 168 143 186 143"/>
+  <path class="flow leafy" pathLength="1" style="--t:4.45s" d="M136 174 C156 174 168 163 186 163"/>
+  <path class="flow leafy" pathLength="1" style="--t:4.55s" d="M136 174 C156 174 168 185 186 185"/>
+  </g>
+  <circle class="a pop ind" style="--t:.9s" cx="72" cy="132" r="24"/>
+  <g class="a eyes-open"><g class="a blink">
+  <circle cx="63" cy="129" r="8.5" fill="#fff"/>
+  <circle cx="81" cy="129" r="8.5" fill="#fff"/>
+  <g class="glance">
+  <circle cx="66" cy="129" r="4.6" fill="#1f2a6b"/>
+  <circle cx="67.6" cy="127" r="1.6" fill="#fff"/>
+  <circle cx="84" cy="129" r="4.6" fill="#1f2a6b"/>
+  <circle cx="85.6" cy="127" r="1.6" fill="#fff"/>
+  </g></g></g>
+</svg>

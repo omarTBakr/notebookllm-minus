@@ -22,6 +22,7 @@ error attached, then it fails loudly. Silently returning half a deck would be
 worse than returning none.
 """
 
+import asyncio
 import json
 import re
 from typing import get_args, get_origin
@@ -231,6 +232,28 @@ def extract_json(text: str) -> str:
     return stripped
 
 
+def schema_spec(schema: type[BaseModel], max_items: int | None = None) -> dict:
+    """The JSON Schema to hand a provider that can constrain its answer to one.
+
+    The same model the prompt and the validator use, minus the worked `example`
+    (that is for the prompt, not the decoder). With *max_items*, the schema's
+    one list gets a `maxItems`: a decoder constrained to the schema cannot ramble
+    past the end of it, which is what a prompt that says "at most 3" never
+    achieved -- llama-3.2-11b answered a three-question batch with 67. Applied to
+    the schema sent, not to the model that validates, so a provider that cannot
+    constrain still produces an answer the caller can truncate rather than reject.
+    """
+    spec = schema.model_json_schema()
+    spec.pop("example", None)
+
+    shape = _list_field(schema)
+
+    if max_items is not None and shape is not None:
+        spec["properties"][shape[0]]["maxItems"] = max_items
+
+    return spec
+
+
 def schema_instruction(schema: type[BaseModel]) -> str:
     """The JSON Schema of *schema*, as an instruction to append to a prompt.
 
@@ -414,6 +437,8 @@ async def generate_structured(
     retries: int = 2,
     max_tokens: int | None = None,
     salvage: bool = False,
+    max_items: int | None = None,
+    attempt_timeout: float | None = None,
 ) -> BaseModel:
     """Ask *client* for *prompt* and return it parsed as *schema*.
 
@@ -427,6 +452,18 @@ async def generate_structured(
     raised carrying the last raw response, because "validation failed" without
     the text that failed is unactionable in a log.
 
+    A provider that can constrain its answer to a JSON Schema (`ENFORCES_SCHEMA`)
+    is handed one -- see `schema_spec`, and `max_items` for capping the list --
+    so the answer cannot leave the shape in the first place. The prompt still
+    carries the schema and the repair loop still runs: a model behind a hosted
+    endpoint may ignore the constraint (llama-3.2-11b on NVIDIA does), and then
+    this behaves as it always did.
+
+    `attempt_timeout` bounds each call. A model in a repetition run writes until
+    it is out of tokens, which on a slow endpoint is minutes per attempt; a
+    timed-out attempt counts as a failed one and is retried or salvaged like any
+    other.
+
     With `salvage`, a set of independent items does not have to fail whole:
     when every attempt has failed, the valid items are taken from the best
     attempt (`salvage_items`) instead. Off by default, because for a page of
@@ -437,8 +474,30 @@ async def generate_structured(
     raw = ""
     best: tuple[BaseModel, int] | None = None
 
+    # Only passed to a client that says it can use it: a stand-in, or a provider
+    # that has not been taught, keeps the call it always had.
+    extra = {"json_schema": schema_spec(schema, max_items)} if getattr(client, "ENFORCES_SCHEMA", False) else {}
+
     for attempt in range(retries + 1):
-        raw = await client.generate_text(prompt=instructed, max_tokens=max_tokens, temperature=0)
+        call = client.generate_text(prompt=instructed, max_tokens=max_tokens, temperature=0, **extra)
+
+        try:
+            raw = await (asyncio.wait_for(call, attempt_timeout) if attempt_timeout else call)
+        except (asyncio.TimeoutError, TimeoutError):
+            raw = ""
+            last_error = TimeoutError(f"no answer within {attempt_timeout:g}s")
+            logger.warning(
+                "Structured output for %s timed out after %gs (attempt %d of %d)",
+                schema.__name__,
+                attempt_timeout,
+                attempt + 1,
+                retries + 1,
+            )
+
+            if attempt == retries:
+                break
+
+            continue
 
         try:
             return schema.model_validate_json(extract_json(raw))

@@ -7,6 +7,7 @@ class CeleryTaskFunction(StrEnum):
     """Function names used in task and queue identifiers."""
 
     PROCESS = "process_data_task"
+    FETCH_URL = "fetch_url_task"
     # The three stages PROCESS fans out into for a PDF. PROCESS itself stops
     # doing the extraction and becomes a planner: it reads the page count and
     # publishes one PARSE per page batch. Each PARSE stores its pages and

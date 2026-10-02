@@ -1,4 +1,6 @@
+import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from data.models import (
@@ -14,10 +16,30 @@ from data.models import (
 )
 from shared.constants import DEFAULT_CHAT_TITLE
 from shared.enums import AssetType
-from shared.exceptions import AssetNotFoundError
+from shared.exceptions import (
+    CELERY_BROKER_EXCEPTIONS,
+    AssetNotFoundError,
+    CeleryBrokerError,
+)
 
-from ..core import BaseService
+from ..core import BaseService, IdempotencyService
 from ..ingest import AssetIngestService, QueuedIngestion
+
+
+@dataclass(frozen=True)
+class FetchQueue:
+    """How to start the task that fetches a link, handed in by the caller.
+
+    The task lives in `application.tasks`, which imports the services, so a
+    service importing it back would be a cycle; the same reason `StudioService`
+    is given its launcher instead of importing the task.
+    """
+
+    task_name: str
+    #: (chat_id, url, task_id) -> publishes the task under that id
+    enqueue: Callable[[str, str, str], object]
+    #: marks the id as queued for the status endpoint
+    on_queued: Callable[[str], None]
 
 
 class SourceService(BaseService):
@@ -28,16 +50,53 @@ class SourceService(BaseService):
     `nlp_for_chat` is only needed by `delete`, to name the vector collection.
     """
 
-    def __init__(self, db, nlp_for_chat: Callable | None = None):
+    def __init__(self, db, nlp_for_chat: Callable | None = None, fetch_queue: FetchQueue | None = None):
         super().__init__()
         self.db = db
         self.nlp_for_chat = nlp_for_chat
+        self.fetch_queue = fetch_queue
         self.chats = ChatModel(db)
         self.assets = AssetModel(db)
         self.chunks = ChunkModel(db)
 
     async def get_chat(self, chat_id: str) -> Chat:
         return await self.chats.get_chat(chat_id)
+
+    async def queue_link(self, chat_id: str, url: str) -> str:
+        """Queue the fetch of a link, and return the id of the task that will do it.
+
+        The notebook is looked up first, so an unknown one is a 404 before
+        anything is claimed or queued. Pasting the same link again while its
+        fetch is still running returns that run's id rather than a second one.
+        What a link turns out to be -- unreachable, no transcript, a duplicate of
+        something already attached -- is found by the task, and reported on its
+        row.
+
+        Needs `fetch_queue`.
+        """
+        queue = self.fetch_queue
+
+        await self.chats.get_chat(chat_id)
+
+        args = {"project_id": chat_id, "url": url}
+        idempotency = IdempotencyService(self.db)
+
+        running = await idempotency.claim(queue.task_name, args)
+
+        if running is not None:
+            return running.task_id
+
+        task_id = str(uuid.uuid4())
+
+        try:
+            queue.enqueue(chat_id, url, task_id)
+        except CELERY_BROKER_EXCEPTIONS as exc:
+            raise CeleryBrokerError(f"Could not queue the fetch of {url!r}") from exc
+
+        queue.on_queued(task_id)
+        await idempotency.record(task_id=task_id, task_name=queue.task_name, project_id=chat_id, args=args)
+
+        return task_id
 
     async def list_sources(self, chat_id: str) -> tuple[Chat, list[Asset]]:
         chat = await self.chats.get_chat(chat_id)

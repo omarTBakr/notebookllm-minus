@@ -28,6 +28,13 @@ class LLMChattingInterface(ABC):
     named after the subclass's own module.
     """
 
+    # Whether this provider can be handed a JSON Schema and constrain its answer
+    # to it (see `generate_text(json_schema=...)`). False means the schema is not
+    # passed at all and the caller falls back to asking for it in the prompt and
+    # repairing what comes back. A provider that can sets this True and accepts
+    # `json_schema` in `_generate_text`.
+    ENFORCES_SCHEMA = False
+
     def __init__(
         self,
         model_id: str,
@@ -55,8 +62,13 @@ class LLMChattingInterface(ABC):
         chat_history: list[dict] | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        json_schema: dict | None = None,
     ) -> str:
         """Answer *prompt*, optionally continuing *chat_history*.
+
+        *json_schema* asks the vendor to constrain the answer to that JSON
+        Schema. It is honoured only by providers with ``ENFORCES_SCHEMA`` and is
+        silently dropped for the rest, so a caller can always pass it.
 
         Returns the assistant's text. Raises ``LLMProviderError`` if the vendor
         call fails or comes back without usable text — never returns ``None``
@@ -95,7 +107,12 @@ class LLMChattingInterface(ABC):
         # every summary comes through here, not the stream, so without them the
         # generation-latency panel only ever showed the chat answers.
         try:
-            text = await self._generate_text(messages, resolved_max_tokens, resolved_temperature)
+            if json_schema is not None and self.ENFORCES_SCHEMA:
+                text = await self._generate_text(
+                    messages, resolved_max_tokens, resolved_temperature, json_schema=json_schema
+                )
+            else:
+                text = await self._generate_text(messages, resolved_max_tokens, resolved_temperature)
         except Exception:
             GENERATION_REQUESTS.labels(provider, self.model_id, "error").inc()
             raise

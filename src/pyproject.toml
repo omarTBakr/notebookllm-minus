@@ -5,6 +5,9 @@ description = "Upload documents, ask questions, get answers grounded in them —
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    # --- spreadsheets ---
+    # Read by application/services/ingest/tabular.py (CSV needs only the stdlib).
+    "openpyxl>=3.1",
     # --- OCR ---
     # Arabic PDFs in this corpus carry text layers that cannot be searched:
     # the word-box path splits inside words and the raw path fuses them. OCR of
@@ -116,6 +119,7 @@ extend-exclude = '''
 target-version = "py312"
 line-length = 88
 extend-exclude = [
+    "*.ipynb",   # Colab notebooks run top to bottom in a cell, not as modules
     ".git",
     ".mypy_cache",
     ".pytest_cache",

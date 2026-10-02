@@ -16,7 +16,12 @@ class GoogleChatProvider(LLMChattingInterface):
 
         self.client = genai.Client(api_key=api_key)
 
-    async def _generate_text(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+    # Gemini's `response_json_schema` constrains the answer to a JSON Schema.
+    ENFORCES_SCHEMA = True
+
+    async def _generate_text(
+        self, messages: list[dict], max_tokens: int, temperature: float, json_schema: dict | None = None
+    ) -> str:
 
         # Like Anthropic, Gemini takes the system prompt separately — here on
         # the config object rather than as a top-level kwarg.
@@ -34,6 +39,7 @@ class GoogleChatProvider(LLMChattingInterface):
             system_instruction=system,
             max_output_tokens=max_tokens,
             temperature=temperature,
+            **({"response_mime_type": "application/json", "response_json_schema": json_schema} if json_schema else {}),
         )
 
         try:

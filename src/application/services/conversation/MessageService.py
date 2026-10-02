@@ -55,6 +55,7 @@ class MessageService(BaseService):
             for message in stored
             for cite in message.citations
             if cite.get("page_number") is None
+            and cite.get("row") is None
             and cite.get("asset_id") is not None
             and cite.get("chunk_order") is not None
         ]
@@ -69,7 +70,7 @@ class MessageService(BaseService):
                     "source": source_names.get(cite.get("asset_id")) or cite.get("source"),
                 }
 
-                if fresh.get("page_number") is None:
+                if fresh.get("page_number") is None and fresh.get("row") is None:
                     located = pages.get((cite.get("asset_id"), cite.get("chunk_order")))
                     if located:
                         fresh.update(located)

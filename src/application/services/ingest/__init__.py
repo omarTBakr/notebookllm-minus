@@ -17,7 +17,6 @@ to how text is split is usually a change to how it is located again.
 
 from .AssetIngestService import AssetIngestService, QueuedIngestion
 from .DataService import DataService
-from .FileService import FileService
 from .PdfLayoutService import (
     extract_page_range,
     highlight_metadata,
@@ -39,6 +38,7 @@ from .TextProcessingService import (
 from .UrlSourceService import (
     FetchedSource,
     UrlSourceService,
+    google_sheet_reference,
     transcript_page,
     youtube_video_id,
 )
@@ -50,7 +50,6 @@ __all__ = [
     "DataService",
     "FetchedSource",
     "extract_page_range",
-    "FileService",
     "ProcessService",
     "TextCorrectionService",
     "TextProcessingService",
@@ -63,5 +62,6 @@ __all__ = [
     "strip_nulls",
     "transcript_page",
     "UrlSourceService",
+    "google_sheet_reference",
     "youtube_video_id",
 ]
