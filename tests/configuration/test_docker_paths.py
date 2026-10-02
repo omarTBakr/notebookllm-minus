@@ -54,9 +54,7 @@ def test_every_bind_mount_source_exists(source):
 
 @pytest.mark.parametrize("source", _mount_sources())
 def test_every_mount_lives_under_services(source):
-    assert source.startswith("./services/"), (
-        f"{source}: a service's config belongs under Docker/services/<name>/"
-    )
+    assert source.startswith("./services/"), f"{source}: a service's config belongs under Docker/services/<name>/"
 
 
 @pytest.mark.parametrize("path", _dockerfiles())
@@ -71,13 +69,14 @@ def test_every_env_file_has_a_template(path):
     ships env.example/. A new env_file with no template there is a file a public
     checkout can neither find nor create."""
     name = Path(path).name
-    assert (DOCKER_DIR / "env.example" / name).is_file(), (
-        f"{path} is listed under env_file: but Docker/env.example/{name} does not exist"
-    )
+    assert (
+        DOCKER_DIR / "env.example" / name
+    ).is_file(), f"{path} is listed under env_file: but Docker/env.example/{name} does not exist"
 
 
 def test_services_example_mirrors_services():
     """Same set of files, so the public copy cannot silently miss a config."""
+
     def files(root: Path) -> set[Path]:
         return {p.relative_to(root) for p in root.rglob("*") if p.is_file()}
 
@@ -111,8 +110,16 @@ def test_no_compose_command_needs_env_file_flags():
 
 def test_the_compose_dotenv_holds_no_secrets():
     """Docker/.env is read by compose automatically and is safe to publish;
-    credentials belong in env/, which the public repository never receives."""
-    assert _env_keys(DOCKER_DIR / ".env") <= {"NGINX_PORT"}
+    credentials belong in env/, which the public repository never receives.
+
+    The file itself is untracked (a live .env never is), so a fresh checkout --
+    CI included -- has none, and then there is nothing in it to leak."""
+    dotenv = DOCKER_DIR / ".env"
+
+    if not dotenv.exists():
+        pytest.skip("no Docker/.env in this checkout")
+
+    assert _env_keys(dotenv) <= {"NGINX_PORT"}
 
 
 def test_postgres_credentials_use_the_images_own_names():
