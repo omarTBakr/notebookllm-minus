@@ -18,6 +18,9 @@ class DataService(BaseService):
         self.db = db
 
     def _validate_file_extension(self, file_type: str) -> bool:
+        # An image is only worth accepting when something can search it.
+        if file_type.startswith("image/") and not self.settings.MULTIMODAL_ENABLED:
+            return False
         return file_type in self.settings.ALLOWED_TYPES
 
     def _validate_file_size(self, file: Upload) -> bool:

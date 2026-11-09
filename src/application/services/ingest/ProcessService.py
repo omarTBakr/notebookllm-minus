@@ -397,6 +397,48 @@ class ProcessService(BaseService):
 
         return replacements
 
+    def ocr_image_bytes(self, data: bytes) -> str:
+        """Text tesseract can read off an uploaded picture, or "".
+
+        The picture is wrapped in a one-page PDF so it goes through the same
+        OCR page reader, at the same settings, as a scanned document page.
+        Output that does not read as text (a photograph, a chart with a few
+        stray labels) is dropped: the picture is still searchable as an
+        image, and garbage text would only pollute the text index.
+        """
+        import tempfile
+
+        import pymupdf  # ty: ignore[unresolved-import]
+
+        from application.arabic_extraction.base import Page as OcrPage
+        from application.arabic_extraction.registry import build
+
+        extractors = build(["tesseract-best"], **{"tesseract-best": {"lang": "ara+eng"}})
+        if not extractors:
+            return ""
+
+        try:
+            with pymupdf.open(stream=data) as image_doc:
+                pdf_bytes = image_doc.convert_to_pdf()
+        except Exception as exc:  # noqa: BLE001 - an unreadable picture just has no text
+            self.logger.warning("Could not prepare an uploaded image for OCR: %s", exc)
+            return ""
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp.flush()
+            extractor = extractors[0]
+            extractor.warm_up()
+            page = OcrPage(path=Path(tmp.name), number=0)
+            try:
+                result = extractor.run(page)
+            finally:
+                page.close()
+
+        if not result.ok or not self._reads_as_text(result.text):
+            return ""
+        return result.text
+
     @staticmethod
     def _word_ratio(text: str) -> tuple[int, float]:
         """Real words in *text*, and their share of the tokens that have letters.

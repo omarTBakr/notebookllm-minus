@@ -83,6 +83,48 @@ def _documents(asset_name: str, pages: list[dict]) -> tuple[list[Document], dict
     return documents, layout, scales, timelines
 
 
+def image_chunk_metadata(asset_name: str, pages: list[dict]) -> list[tuple[str, dict]]:
+    """``(caption, metadata)`` for every image region, in page order.
+
+    The metadata is shaped like a text chunk's (source, page, page_label and a
+    highlight in the same coordinate space), plus ``kind: "image"``. That is
+    what lets citations, the locate endpoint and the PDF viewer's highlight
+    box handle an image hit with no special case: it outlines the figure on
+    its page. The pixels are not stored; they are cut back out of the asset
+    when needed (ImageRegionService.render_region).
+    """
+    total = len(pages)
+    out: list[tuple[str, dict]] = []
+
+    for page in pages:
+        for number, region in enumerate(page.get("images") or []):
+            label = page.get("page_label") or str(page["page_index"] + 1)
+            caption = (region.get("caption") or "").strip() or f"[image, page {label}]"
+            metadata = {
+                "source": asset_name,
+                "page": page["page_index"],
+                "page_label": label,
+                "total_pages": total,
+                "kind": "image",
+                "image_index": number,
+                "bbox": region["bbox"],
+                "highlight": {
+                    "v": 1,
+                    "w": page.get("width") or 0.0,
+                    "h": page.get("height") or 0.0,
+                    "o": "tl",
+                    "r": [region["bbox"]],
+                },
+            }
+            if region.get("xref"):
+                metadata["xref"] = region["xref"]
+            if region.get("whole_page"):
+                metadata["whole_page"] = True
+            out.append((caption, metadata))
+
+    return out
+
+
 async def assemble_chunks(asset_id: str, db, recorder=None) -> dict:
     """Chunk and store one asset's collected batches, against an open *db*.
 
@@ -155,6 +197,20 @@ async def assemble_chunks(asset_id: str, db, recorder=None) -> dict:
         for order, doc in enumerate(chunked)
     ]
 
+    # Image regions follow the text, numbered on from it, so a chunk_order
+    # still names exactly one chunk of the asset.
+    images = image_chunk_metadata(asset_name, pages)
+    chunks += [
+        DataChunk(
+            project_id=object_id,
+            asset_id=asset_id,
+            chunk_order=len(chunked) + offset,
+            chunk_content=caption,
+            chunk_metadata=metadata,
+        )
+        for offset, (caption, metadata) in enumerate(images)
+    ]
+
     await stage(TaskStage.STORING.value, run.total_batches, run.total_batches)
 
     inserted = await ChunkModel(db).create_chunks(chunks)
@@ -182,6 +238,7 @@ async def assemble_chunks(asset_id: str, db, recorder=None) -> dict:
         "pages": len(pages),
         "pages_corrected": corrected,
         "chunks_created": len(chunked),
+        "images": len(images),
         "chunks_saved": len(inserted),
         "index_task_id": run.index_task_id,
         "build_task_id": run.build_task_id,
@@ -208,6 +265,14 @@ async def _run_assemble(asset_id: str) -> dict:
         return result
 
 
+def _build_then_images(result: dict, build_task, images_task):
+    """The index build, followed by the picture index when there are pictures."""
+    build = build_task.si(result["project_id"]).set(task_id=result["build_task_id"] or None)
+    if result.get("images") and SETTINGS.MULTIMODAL_ENABLED:
+        build.link(images_task.si(result["project_id"], result["asset_id"]))
+    return build
+
+
 @celery_app.task(
     bind=True,
     name=f"{SETTINGS.CELERY_PROJECT_NAME}.{CeleryTaskFunction.ASSEMBLE.value}",
@@ -218,7 +283,11 @@ def assemble_chunks_task(self, asset_id: str) -> dict:
     result = run_job(lambda: _run_assemble(asset_id), what=f"Assembling {asset_id!r}")
 
     if result.get("chunks_saved"):
-        from ..index import build_vector_index_task, index_project_task
+        from ..index import (
+            build_vector_index_task,
+            index_images_task,
+            index_project_task,
+        )
 
         # Published with the ids generated when the upload was accepted, so the
         # task_executions rows the browser has been polling since then are the
@@ -227,7 +296,7 @@ def assemble_chunks_task(self, asset_id: str) -> dict:
         index_project_task.apply_async(
             args=[result["project_id"], result["asset_id"], False, None],
             task_id=result["index_task_id"] or None,
-            link=build_vector_index_task.si(result["project_id"]).set(task_id=result["build_task_id"] or None),
+            link=_build_then_images(result, build_vector_index_task, index_images_task),
         )
 
         # After indexing is queued, never in front of it: summaries are for

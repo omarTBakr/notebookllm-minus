@@ -29,6 +29,12 @@ from application.services.ingest import (
     page_to_dict,
     transcript_page,
 )
+from application.services.ingest.ImageRegionService import (
+    FigureRules,
+    find_figures,
+    page_has_marks,
+    whole_page_region,
+)
 from celery_app import SETTINGS, celery_app
 from data.models import AssetModel, IngestBatch, IngestBatchModel
 from data.models.ingest import IngestBatchStatus
@@ -151,6 +157,74 @@ def _fill_unreadable_pages(path: Path, start: int, end: int, pages: list[dict]) 
             page["boxes"] = []
 
 
+def _attach_figures(path: Path, start: int, end: int, pages: list[dict]) -> None:
+    """Record where the figures on this batch's pages are, in place.
+
+    Each page dict gains ``images: [{bbox, xref}]`` for the pictures worth
+    searching. A page that is still empty after OCR but carries something
+    visible (a scan OCR gave up on, a full-page diagram) becomes one region
+    covering the page: before images were indexed those pages contributed
+    nothing at all.
+
+    Never fails the batch. A figure that cannot be located costs one image;
+    a parse that fails costs the whole document.
+    """
+    if not SETTINGS.MULTIMODAL_ENABLED:
+        return
+
+    try:
+        figures = find_figures(path, start, end, FigureRules.from_settings(SETTINGS))
+    except Exception:  # noqa: BLE001 - see docstring
+        logger.warning("Could not locate figures on pages %d-%d", start, end - 1, exc_info=True)
+        return
+
+    for page in pages:
+        index = page["page_index"]
+        regions = figures.get(index, [])
+
+        if not regions and not page["text"].strip():
+            try:
+                if page_has_marks(path, index):
+                    regions = [whole_page_region(page["width"], page["height"])]
+            except Exception:  # noqa: BLE001
+                logger.debug("Could not inspect page %d for marks", index, exc_info=True)
+
+        if regions:
+            page["images"] = regions
+
+    found = sum(len(page.get("images", [])) for page in pages)
+    if found:
+        logger.info("Found %d figure(s) on pages %d-%d", found, start, end - 1)
+
+
+def _image_upload_pages(file_bytes: bytes) -> list[dict]:
+    """An uploaded picture as one page holding one image region.
+
+    The page has the picture's pixel size as its width and height, so the
+    region (and the citation highlight drawn from it) covers all of it. Any
+    text OCR can read off it (a photographed handout, a screenshot) becomes
+    the page text and is chunked and searched like a document's.
+    """
+    from shared.utils.images import dimensions
+
+    width, height = dimensions(file_bytes)
+    text = ProcessService().ocr_image_bytes(file_bytes)
+
+    return [
+        {
+            "page_index": 0,
+            "page_label": "1",
+            "width": float(width),
+            "height": float(height),
+            "text": text,
+            "starts": [],
+            "words": [],
+            "boxes": [],
+            "images": [whole_page_region(width, height)],
+        }
+    ]
+
+
 async def parse_batch(project_id: str, asset_id: str, start, end, batch_index: int, db) -> int:
     """Extract pages ``[start, end)`` and store them. Returns the page count.
 
@@ -173,6 +247,8 @@ async def parse_batch(project_id: str, asset_id: str, start, end, batch_index: i
     if start is None:
         if asset.asset_type == AssetType.YOUTUBE:
             pages = [transcript_page(asset.file_bytes)]
+        elif asset.asset_type == AssetType.IMAGE:
+            pages = _image_upload_pages(asset.file_bytes)
         else:
             pages = _whole_file(asset.file_bytes, asset.name)
 
@@ -193,6 +269,7 @@ async def parse_batch(project_id: str, asset_id: str, start, end, batch_index: i
         logger.info("Parsed pages %d-%d of %r (%d page(s))", start, end - 1, asset.name, len(pages))
 
         _fill_unreadable_pages(path, start, end, pages)
+        _attach_figures(path, start, end, pages)
 
     await IngestBatchModel(db).save_batch(
         IngestBatch(

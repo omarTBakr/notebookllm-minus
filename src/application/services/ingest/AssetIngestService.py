@@ -29,11 +29,12 @@ from data.models import (
     ProjectModel,
     TaskModel,
 )
-from shared.enums import AssetType, TaskExecutionStatus
+from shared.enums import AssetType, FileStatus, TaskExecutionStatus
 from shared.exceptions import (
     CELERY_BROKER_EXCEPTIONS,
     CeleryBrokerError,
     DuplicateAssetError,
+    InvalidFileError,
 )
 
 from ..core.BaseService import BaseService
@@ -70,6 +71,26 @@ class AssetIngestService(BaseService):
         self.projects = ProjectModel(db)
         self.tasks = TaskModel(db)
 
+    @staticmethod
+    def _checked_image_type(content_type: str | None, file_bytes: bytes) -> str | None:
+        """For a claimed image, the type the bytes really are.
+
+        The Content-Type of an upload is whatever the browser (or a script)
+        said. For text formats a wrong claim fails harmlessly in the loader;
+        an image goes to Pillow, a vision model and back out to browsers as
+        ``image/*``, so the bytes decide, and a file that is not really a
+        PNG, JPEG or WebP is refused before anything is stored.
+        """
+        if not (content_type or "").startswith("image/"):
+            return content_type
+
+        from shared.utils.images import sniff_mime
+
+        actual = sniff_mime(file_bytes)
+        if actual is None:
+            raise InvalidFileError(f"{FileStatus.INVALID_TYPE.value}: the file is not a PNG, JPEG or WebP image")
+        return actual
+
     async def store(
         self,
         project_id: str,
@@ -96,6 +117,8 @@ class AssetIngestService(BaseService):
         text and a video's transcript can change between two fetches of the
         same link, and adding the same link twice is still a duplicate.
         """
+        content_type = self._checked_image_type(content_type, file_bytes)
+
         content_hash = content_hash or hashlib.sha256(file_bytes).hexdigest()
 
         # Identity is the bytes, not the name: asset_id is a fresh uuid every

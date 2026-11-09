@@ -15,7 +15,7 @@ here that could drift from it.
 from application.services import NLPService
 from application.tasks.jobs.ingest.assemble import assemble_chunks
 from application.tasks.jobs.ingest.parse import parse_batch
-from application.tasks.jobs.ingest.postprocess import _correct
+from application.tasks.jobs.ingest.postprocess import _caption, _correct
 from application.tasks.jobs.ingest.process import plan_ingestion
 from data.models import ChatModel, ChunkModel, ProjectModel
 from shared.enums import IN_FLIGHT, TaskExecutionStatus
@@ -139,6 +139,9 @@ async def _drain_ingest_fanout(db, project_id, args):
         # conftest's env), so this returns the pages untouched -- but it is
         # called anyway, so the stage cannot break unnoticed.
         await _correct(pages, settings)
+        # Likewise captions: with no caption model the nearest text is used,
+        # which is the path a test can run without a model.
+        await _caption(pages, batch["asset_id"], db, settings)
 
         stored.payload["pages"] = pages
         stored.status = IngestBatchStatus.CORRECTED
