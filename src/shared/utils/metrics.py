@@ -157,6 +157,33 @@ RETRIEVAL_HITS = Histogram(
     registry=REGISTRY,
 )
 
+# --- guardrails ---------------------------------------------------------------
+
+GUARDRAIL_VERDICTS = Counter(
+    "guardrail_verdicts_total",
+    "Guardrail decisions, by stage and category.",
+    # category: safe | harmful | prompt_injection | jailbreak | pii |
+    # system_prompt_leak | undecided ... ; source: model | fail_mode
+    ["stage", "category", "source"],
+    registry=REGISTRY,
+)
+
+GUARDRAIL_SECONDS = Histogram(
+    "guardrail_wait_seconds",
+    "Time the API waited for one guardrail verdict (queue + batch wait + model).",
+    ["stage"],
+    buckets=(0.1, 0.25, 0.5, 1, 2, 4, 8, 16, 32),
+    registry=REGISTRY,
+)
+
+GUARDRAIL_BATCH_SIZE = Histogram(
+    "guardrail_batch_size",
+    "Requests judged together in one guard-model call.",
+    ["stage"],
+    buckets=(1, 2, 3, 4, 6, 8, 12, 16, 32),
+    registry=REGISTRY,
+)
+
 RERANK_SECONDS = Histogram(
     "rerank_duration_seconds",
     "Cross-encoder rerank time for one query's candidate pool.",

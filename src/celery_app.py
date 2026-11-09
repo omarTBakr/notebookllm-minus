@@ -48,6 +48,7 @@ celery_app = Celery(
         "application.tasks.jobs.studio",
         "application.tasks.jobs.maintenance",
         "application.tasks.jobs.memory",
+        "application.tasks.jobs.guardrails",
     ],
 )
 

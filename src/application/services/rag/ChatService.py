@@ -8,6 +8,10 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from time import perf_counter
 
+from langchain_core.messages import HumanMessage
+
+from application.guardrails.base import InputGuardrail, OutputGuardrail
+from application.guardrails.stream import guard_stream
 from application.prompts import TemplateParser
 from application.providers.chatting import LLMChattingInterface
 from application.providers.reranking import NoopReranker, RerankerInterface
@@ -41,6 +45,8 @@ class ChatService(BaseService):
         memory_controller: MemoryService | None = None,
         planner_client: LLMChattingInterface | None = None,
         reranker: RerankerInterface | None = None,
+        input_guardrail: InputGuardrail | None = None,
+        output_guardrail: OutputGuardrail | None = None,
     ) -> None:
 
         super().__init__()
@@ -63,6 +69,9 @@ class ChatService(BaseService):
         self.planner_client = planner_client or generation_client
         # The pass-through when none is given, so retrieval has one code path.
         self.reranker = reranker or NoopReranker()
+        # None switches a stage off (GUARDRAILS_ENABLED=false, or a test).
+        self.input_guardrail = input_guardrail
+        self.output_guardrail = output_guardrail
 
     # --- groundedness ---------------------------------------------------------
 
@@ -362,7 +371,24 @@ class ChatService(BaseService):
         so a chat with no documents still gets personalised. Surfaced in the
         ``meta`` event as ``memories``, the same way document hits are
         surfaced as ``citations`` — see MemoryService.to_citations.
+
+        With guardrails on, the question is checked before anything else runs
+        (a flagged one gets a ``guardrail`` event and no answer), and the
+        streamed answer is checked passage by passage (see guard_stream).
         """
+        if self.input_guardrail is not None and question:
+            update = await self.input_guardrail.abefore_model({"messages": [HumanMessage(content=question)]})
+            if update is not None:
+                verdict = update.get("guardrail_verdict") or {}
+                yield {
+                    "type": "guardrail",
+                    "stage": "input",
+                    "category": verdict.get("category", "undecided"),
+                    "message": update["messages"][-1].content,
+                }
+                yield {"type": "done"}
+                return
+
         memory_hits: list[dict] = []
 
         if self.memory is not None and user_id and question:
@@ -426,7 +452,7 @@ class ChatService(BaseService):
 
         yield meta
 
-        async for event in self._stream(system_prompt, user_prompt, history, max_tokens, temperature):
+        async for event in self._stream(question, system_prompt, user_prompt, history, max_tokens, temperature):
             yield event
 
     async def _meta(
@@ -459,6 +485,28 @@ class ChatService(BaseService):
         }
 
     async def _stream(
+        self,
+        question: str,
+        system_prompt: str,
+        user_prompt: str,
+        history: list[dict] | None,
+        max_tokens: int | None,
+        temperature: float | None,
+    ) -> AsyncIterator[dict]:
+        """The final answer as events, through the output guardrail when on."""
+        events = self._generate(system_prompt, user_prompt, history, max_tokens, temperature)
+
+        if self.output_guardrail is None:
+            async for event in events:
+                yield event
+            return
+
+        async for event in guard_stream(
+            events, self.output_guardrail, question, self.settings.GUARDRAIL_OUTPUT_CHUNK_CHARS
+        ):
+            yield event
+
+    async def _generate(
         self,
         system_prompt: str,
         user_prompt: str,
@@ -578,7 +626,7 @@ class ChatService(BaseService):
             # Nothing found for any part: there is nothing to combine, so answer
             # as the ungrounded path would rather than synthesise from blanks.
             system_prompt, user_prompt = self.build_prompt(question, [], memory_hits, lang)
-            async for event in self._stream(system_prompt, user_prompt, history, max_tokens, temperature):
+            async for event in self._stream(question, system_prompt, user_prompt, history, max_tokens, temperature):
                 yield event
             return
 
@@ -641,7 +689,7 @@ class ChatService(BaseService):
         with tracing.observation("synthesis", as_type="chain", input={"question": question, "parts": total}):
             with tracing.linked_prompt(prompt_ref):
                 async for event in self._stream(
-                    parser.get("rag", "system_prompt"), synthesis, history, max_tokens, temperature
+                    question, parser.get("rag", "system_prompt"), synthesis, history, max_tokens, temperature
                 ):
                     yield event
 

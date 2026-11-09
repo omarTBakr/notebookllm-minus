@@ -81,6 +81,7 @@ const STRINGS = {
     researching: "Researching",
     researchedParts: "Researched {n} parts",
     writingAnswer: "Writing the answer…",
+    guardrailNote: "Stopped by the safety check.",
     chars: "characters",
     citations: "Sources",
     // Abbreviated because it sits inline in a citation, after the filename.
@@ -278,6 +279,7 @@ const STRINGS = {
     researching: "جارٍ البحث",
     researchedParts: "بُحث في {n} أجزاء",
     writingAnswer: "جارٍ كتابة الإجابة…",
+    guardrailNote: "أوقفه فحص الأمان.",
     chars: "حرفًا",
     citations: "المصادر",
     page: "ص.",

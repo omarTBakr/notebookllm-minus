@@ -257,6 +257,18 @@ exporter's `stat_bgwriter` collector finds nothing — enabling it changes nothi
 it is not enabled. *Lock tables* is empty for a related reason. `--collector.postmaster` **is**
 enabled, because the *Start Time* panel needs it and it does work.
 
+### Guardrails
+
+With `GUARDRAILS_ENABLED=true` in `.env.app`, a guard model checks every question before the
+answer model sees it, and checks the answer passage by passage as it streams. Each stage has
+its own queue and worker, `celery-guardrail-input` and `celery-guardrail-output`. Checks are
+micro-batched: a batch is judged as soon as `GUARDRAIL_BATCH_SIZE` checks are waiting **or**
+`GUARDRAIL_BATCH_MAX_WAIT_S` has passed, so a lone request never waits for the batch to fill.
+
+Watch `guardrail_batch_size`, `guardrail_wait_seconds` and `guardrail_verdicts_total` in
+Prometheus. A `source="fail_mode"` verdict means a check could not complete (worker down,
+timeout, guard output unparseable) and `GUARDRAIL_FAIL_MODE` decided instead.
+
 ### LLM tracing and prompt versions: Langfuse
 
 Prometheus answers "how slow, how often". Langfuse answers "what did the model actually see and

@@ -37,6 +37,11 @@ class CeleryTaskFunction(StrEnum):
     # Extraction for a `/memory` chat message: pull durable facts out of the
     # text, upsert them, and (re-)embed each one.
     MEMORY = "extract_memory_task"
+    # Micro-batched guardrail checks (celery-batches): one model call judges
+    # every request that arrived within GUARDRAIL_BATCH_MAX_WAIT_S, up to
+    # GUARDRAIL_BATCH_SIZE. One queue and one worker per stage.
+    GUARDRAIL_INPUT = "guardrail_input_task"
+    GUARDRAIL_OUTPUT = "guardrail_output_task"
 
 
 class TaskExecutionStatus(StrEnum):

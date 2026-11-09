@@ -101,6 +101,19 @@ AGENTIC_RAG_ENABLED=true
 AGENTIC_MAX_SUB_QUERIES=3
 AGENTIC_SUBANSWER_MAX_TOKENS=800
 
+# --- Guardrails (input + output checks, workers celery-guardrail-input/-output)
+GUARDRAILS_ENABLED=false
+# Provider-qualified model ids; empty uses GENERATION_MODEL_ID.
+GUARDRAIL_INPUT_MODEL=
+GUARDRAIL_OUTPUT_MODEL=
+# A batch is judged when this many checks are waiting, or after this long.
+GUARDRAIL_BATCH_SIZE=8
+GUARDRAIL_BATCH_MAX_WAIT_S=0.25
+GUARDRAIL_TIMEOUT_S=20
+# open: an undecidable check lets the text through; closed: it refuses.
+GUARDRAIL_FAIL_MODE="open"
+GUARDRAIL_OUTPUT_CHUNK_CHARS=400
+
 # --- Reranking (the `reranker` service: TEI + BAAI/bge-reranker-v2-m3) --------
 RERANKER_ENABLED=true
 RERANKER_PROVIDER="tei"

@@ -487,6 +487,20 @@ export async function ask(chatId, text, { onDone, isCommand = false } = {}) {
         // Re-render the whole answer rather than appending: a bold run or a
         // list only becomes recognisable once its closing syntax arrives.
         answerRender.update(markdown);
+      } else if (event.type === "guardrail") {
+        // A refused question (no answer at all) or a withheld passage (the
+        // rest of the answer). Shown as its own block, and counted as text
+        // received so Stop/Copy treat it like an answer; the server stores the
+        // same refusal in the transcript.
+        if (research && research.details.open) research.fold();
+        markdown += (markdown ? "\n\n" : "") + event.message;
+        answerRender.update(markdown);
+        const note = document.createElement("p");
+        note.className = "msg__guardrail";
+        note.textContent = t("guardrailNote");
+        answer.wrap.append(note);
+        received += 1;
+        grounded = true; // suppress the "answered from general knowledge" note
       } else if (event.type === "error") {
         answer.body.classList.add("msg__error");
         const note = document.createElement("p");

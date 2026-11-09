@@ -54,6 +54,8 @@
 @keyframes blink { to { visibility: hidden; } }
 
 .msg__error { color: var(--warn); }
+.msg__guardrail { color: var(--warn); font-size: 0.8rem; margin: 4px 0 0; }
+.msg__guardrail::before { content: "🛡️ "; }
 
 /* --- the model's scratchpad --- */
 

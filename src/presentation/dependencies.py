@@ -97,7 +97,38 @@ def chat_service(request: Request, chat=None) -> ChatService:
         memory_controller=memory_controller,
         planner_client=request.app.providers.chatting(getattr(chat, "generation_model", None), thinking=False),
         reranker=request.app.providers.reranker(),
+        **guardrails(request, chat),
     )
+
+
+def guardrails(request: Request, chat=None) -> dict:
+    """The input and output guardrails for one answer, or nothing when off.
+
+    Built per request because each carries the chat's language for its refusal
+    text. The dispatcher is the app's own when it has one (tests set an
+    in-process stand-in on app.guardrail_dispatcher), otherwise the batched
+    Celery queues.
+    """
+    from shared.utils import get_settings
+
+    settings = get_settings()
+    if not settings.GUARDRAILS_ENABLED:
+        return {}
+
+    from application.guardrails import (
+        CeleryGuardrailDispatcher,
+        InputGuardrail,
+        OutputGuardrail,
+    )
+
+    dispatcher = getattr(request.app, "guardrail_dispatcher", None) or CeleryGuardrailDispatcher(
+        timeout=settings.GUARDRAIL_TIMEOUT_S
+    )
+    lang = getattr(chat, "lang", None)
+    return {
+        "input_guardrail": InputGuardrail(dispatcher, lang=lang),
+        "output_guardrail": OutputGuardrail(dispatcher, lang=lang),
+    }
 
 
 async def nlp_service_for_project(request: Request, project_id: str | None = None) -> NLPService:

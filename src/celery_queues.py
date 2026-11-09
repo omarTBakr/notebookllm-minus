@@ -15,6 +15,8 @@ def celery_queue_config(settings) -> dict:
         settings.CELERY_QUEUE_STUDIO,
         settings.CELERY_QUEUE_MAINTENANCE,
         settings.CELERY_QUEUE_MEMORY,
+        settings.CELERY_QUEUE_GUARDRAIL_INPUT,
+        settings.CELERY_QUEUE_GUARDRAIL_OUTPUT,
     )
     # x-queue-type is what Celery's detect_quorum_queues() looks for, and
     # finding it is what makes the worker turn global QoS off — the deprecated
@@ -116,6 +118,15 @@ def celery_queue_config(settings) -> dict:
             # silently forever.
             f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MEMORY.value}": {
                 "queue": settings.CELERY_QUEUE_MEMORY
+            },
+            # One queue per guardrail stage, each with its own worker in
+            # compose (celery-guardrail-input / -output), shipped together for
+            # the same reason as every queue above.
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.GUARDRAIL_INPUT.value}": {
+                "queue": settings.CELERY_QUEUE_GUARDRAIL_INPUT
+            },
+            f"{settings.CELERY_PROJECT_NAME}.{CeleryTaskFunction.GUARDRAIL_OUTPUT.value}": {
+                "queue": settings.CELERY_QUEUE_GUARDRAIL_OUTPUT
             },
         },
     }

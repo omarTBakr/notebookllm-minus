@@ -39,6 +39,8 @@ scrape_configs:
           - "celery-studio:9808"
           - "celery-memory:9808"
           - "celery-maintenance:9808"
+          - "celery-guardrail-input:9808"
+          - "celery-guardrail-output:9808"
 
   - job_name: postgres
     # 9187 is postgres_exporter's own default. The previous compose published

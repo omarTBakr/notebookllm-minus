@@ -1,6 +1,7 @@
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote_plus
 
 from pydantic import field_validator, model_validator
@@ -430,6 +431,30 @@ class Settings(BaseSettings):
     # A sub-answer is a few cited sentences; this caps a model that rambles.
     AGENTIC_SUBANSWER_MAX_TOKENS: int = 800
 
+    # --- guardrails ----------------------------------------------------------
+    # Model-based checks before the answer model sees a question (input) and
+    # on the answer as it streams (output). Each stage has its own model and
+    # its own Celery queue and worker, and requests are judged in micro-batches:
+    # a batch goes as soon as GUARDRAIL_BATCH_SIZE requests are waiting OR
+    # GUARDRAIL_BATCH_MAX_WAIT_S has passed, whichever is first, so a lone
+    # request never waits for the batch to fill.
+    GUARDRAILS_ENABLED: bool = False
+    # Any provider-qualified id ProviderCache understands ("local/qwen3:4b",
+    # "nvidia/meta/llama-3.1-8b-instruct"). None uses GENERATION_MODEL_ID.
+    # Thinking is always off for these: they answer in JSON.
+    GUARDRAIL_INPUT_MODEL: str | None = None
+    GUARDRAIL_OUTPUT_MODEL: str | None = None
+    GUARDRAIL_BATCH_SIZE: int = 8
+    GUARDRAIL_BATCH_MAX_WAIT_S: float = 0.25
+    # How long the API waits for a verdict before applying GUARDRAIL_FAIL_MODE.
+    GUARDRAIL_TIMEOUT_S: float = 20.0
+    # open: a check that cannot complete (worker down, timeout, unparseable
+    # verdict) lets the text through, logged and counted. closed: it refuses.
+    GUARDRAIL_FAIL_MODE: Literal["open", "closed"] = "open"
+    # The answer is judged in chunks of at least this many characters, cut at
+    # a sentence end. Smaller is safer and costs more checks.
+    GUARDRAIL_OUTPUT_CHUNK_CHARS: int = 400
+
     # --- reranking -----------------------------------------------------------
     # A cross-encoder re-scores the vector hits before the best top_k reach the
     # prompt. Served by the `reranker` container (Hugging Face TEI running
@@ -721,6 +746,11 @@ class Settings(BaseSettings):
     # seconds on a model API, and a queue with no `-Q` consumer of its own
     # accepts messages nothing will ever process.
     CELERY_QUEUE_MEMORY: str | None = None
+    # One queue per guardrail stage, each with its own worker in compose: the
+    # input check sits in front of every answer and must not wait behind
+    # output checks, which arrive several per answer.
+    CELERY_QUEUE_GUARDRAIL_INPUT: str | None = None
+    CELERY_QUEUE_GUARDRAIL_OUTPUT: str | None = None
 
     # --- normalizers ---------------------------------------------------------
     @model_validator(mode="after")
@@ -734,6 +764,8 @@ class Settings(BaseSettings):
             "CELERY_QUEUE_STUDIO": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.GENERATE_ARTIFACT.value}",
             "CELERY_QUEUE_MAINTENANCE": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MAINTENANCE.value}",
             "CELERY_QUEUE_MEMORY": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.MEMORY.value}",
+            "CELERY_QUEUE_GUARDRAIL_INPUT": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.GUARDRAIL_INPUT.value}",
+            "CELERY_QUEUE_GUARDRAIL_OUTPUT": f"{self.CELERY_PROJECT_NAME}.{CeleryTaskFunction.GUARDRAIL_OUTPUT.value}",
         }
         for field, value in defaults.items():
             if getattr(self, field) is None:

@@ -30,7 +30,9 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
     Frames: one ``meta`` (grounded flag + citations), then ``delta`` per piece
     of text, then ``done``. A complex question also sends ``step`` frames
     (the plan, each part as it is answered, then the start of the combined
-    answer); see ChatService.answer_stream.
+    answer); see ChatService.answer_stream. With guardrails on, a refused
+    question or a withheld passage sends a ``guardrail`` frame with the
+    refusal text in place of the answer.
     """
     from shared.utils import get_settings
 
@@ -104,6 +106,11 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
                     citations = event["citations"]
                 elif event["type"] == "delta":
                     answer.append(event["text"])
+                elif event["type"] == "guardrail":
+                    # The refusal is what the reader saw, so it is what is
+                    # stored: on its own for a refused question, after the
+                    # passages already shown for a withheld answer.
+                    answer.append(("\n\n" if answer else "") + event["message"])
 
                 yield _sse(event)
 
