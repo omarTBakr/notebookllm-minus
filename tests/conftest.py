@@ -203,7 +203,39 @@ async def client(app):
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=RAISE_APP_EXCEPTIONS)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        # Signed in as the seed user, "u1": every route under /chat, /data,
+        # /process and /nlp needs a session now. Tests about signing in itself
+        # use `anon_client`.
+        sign_in(app.db, c, "u1")
         yield c
+
+
+@pytest.fixture
+async def anon_client(app):
+    """The same app, with no session cookie."""
+    import httpx
+
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=RAISE_APP_EXCEPTIONS)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+def sign_in(db, http_client, user_id: str) -> str:
+    """Give *http_client* a live session cookie for *user_id*, straight in the fake store."""
+    import secrets
+    from datetime import datetime, timedelta, timezone
+
+    from application.services.account.AuthService import hash_token
+    from data.models import AuthSession
+
+    token = secrets.token_urlsafe(32)
+    db.auth_sessions().items[hash_token(token)] = AuthSession(
+        token_hash=hash_token(token),
+        user_id=user_id,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    http_client.cookies.set(get_settings().AUTH_COOKIE_NAME, token)
+    return token
 
 
 # --- seed helpers -------------------------------------------------------------

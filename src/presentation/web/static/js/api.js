@@ -15,10 +15,20 @@ async function detailOf(response) {
   return `${response.status} ${response.statusText}`;
 }
 
+/** The session is gone (signed out elsewhere, expired, account deleted):
+ * nothing on this page can work, so go and sign in again, then come back. */
+function signedOut(response) {
+  if (response.status !== 401) return false;
+  const here = window.location.pathname + window.location.search;
+  window.location.replace(`/login?next=${encodeURIComponent(here)}`);
+  return true;
+}
+
 async function request(path, options = {}) {
   const response = await fetch(path, options);
 
   if (!response.ok) {
+    signedOut(response);
     const error = new Error(await detailOf(response));
     error.status = response.status;
     throw error;
@@ -42,14 +52,16 @@ const patch = (body) => ({
 export const api = {
   health: () => request("/nlp/health"),
 
-  // --- profiles ---
-  createUser: (label = "") => request("/chat/users", post({ label })),
-  listUsers: () => request("/chat/users"),
-  getUser: (userId) => request(`/chat/users/${userId}`),
+  // --- the signed-in account ---
+  me: () => request("/auth/me"),
+  logout: () => request("/auth/logout", post({})),
+  logoutAll: () => request("/auth/logout-all", post({})),
+  changePassword: (current, next) =>
+    request("/auth/password", post({ current_password: current, new_password: next })),
   renameUser: (userId, label) => request(`/chat/users/${userId}`, patch({ label })),
 
   // Cascades server-side: sessions, notebooks, documents, chunks and vectors
-  // all go with the profile.
+  // all go with the account, and every signed-in browser is signed out.
   deleteUser: (userId) => request(`/chat/users/${userId}`, { method: "DELETE" }),
 
   // --- notebooks (a notebook is a chat; sessions never surface) ---
@@ -156,7 +168,12 @@ export const api = {
       signal,
     });
 
-    if (!response.ok) throw new Error(await detailOf(response));
+    if (!response.ok) {
+      signedOut(response);
+      const error = new Error(await detailOf(response));
+      error.status = response.status;
+      throw error;
+    }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from application.tasks.jobs.ingest.process import get_process_task
@@ -9,11 +9,18 @@ from application.tasks.workflows import (
     ingestion_signature,
 )
 from presentation import dependencies as deps
+from presentation.auth import enforce_ownership, require_user
 from shared.exceptions import CELERY_BROKER_EXCEPTIONS, CeleryBrokerError
 
 from .schemas import ProcessRequest
 
-process_router = APIRouter(prefix="/process", tags=["process"])
+# Signed-in users only, and only their own projects (a project id is a chat
+# id): see presentation/auth.py.
+process_router = APIRouter(
+    prefix="/process",
+    tags=["process"],
+    dependencies=[Depends(require_user), Depends(enforce_ownership)],
+)
 
 
 @process_router.post("/{project_id}", status_code=202)

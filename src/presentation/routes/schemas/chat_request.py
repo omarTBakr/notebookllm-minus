@@ -4,12 +4,6 @@ from application.prompts.locales import SUPPORTED_LANGS
 from shared.constants import DEFAULT_CHAT_TITLE
 
 
-class CreateUserRequest(BaseModel):
-    """Optional body for POST /chat/users. A blank label is auto-generated."""
-
-    label: str = Field("", max_length=200)
-
-
 class RenameUserRequest(BaseModel):
     """Body for PATCH /chat/users/{user_id}."""
 

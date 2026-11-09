@@ -79,11 +79,12 @@ export async function create() {
  * you had open last; then the newest.
  */
 export function initialNotebookId() {
-  // Not checked against the list: a link should open the notebook it names
-  // even when it belongs to another profile, and app.js adopts that profile.
+  // A ?notebook= link opens that notebook only if it is one of yours: the
+  // server would answer 404 for anyone else's, so fall through to the usual
+  // choice rather than open an error.
   const requested = new URLSearchParams(location.search).get("notebook");
 
-  if (requested) return requested;
+  if (requested && state.notebooks.some((b) => b.chat_id === requested)) return requested;
 
   const stored = storedNotebookId();
 

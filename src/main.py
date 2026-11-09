@@ -6,10 +6,11 @@ from fastapi.responses import JSONResponse
 
 from application.providers import ProviderCache
 from data.repositories import DbFactory
-from presentation.middleware import RequestLoggingMiddleware
+from presentation.middleware import OriginCheckMiddleware, RequestLoggingMiddleware
 from presentation.routes import (
     STATIC_DIR,
     RevalidatingStaticFiles,
+    auth_router,
     base_router,
     chat_router,
     data_router,
@@ -120,7 +121,18 @@ async def lifespan(app: FastAPI):
             logger.warning("Could not close the %s cleanly: %s", name, exc)
 
 
-app = FastAPI(title="NotebookLLM-minus", lifespan=lifespan)
+def _docs_kwargs() -> dict:
+    """/docs, /redoc and /openapi.json list every route; off unless DOCS_ENABLED."""
+    if SETTINGS.DOCS_ENABLED:
+        return {}
+    return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
+app = FastAPI(title="NotebookLLM-minus", lifespan=lifespan, **_docs_kwargs())
+
+# Added before RequestLoggingMiddleware so it runs inside it: a refused
+# cross-site request is still logged with its request id.
+app.add_middleware(OriginCheckMiddleware)
 
 # /static is excluded by prefix: a page load fetches many assets and each one
 # would otherwise get its own INFO line, burying the requests that matter.
@@ -200,6 +212,7 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 # add the nested routers
 app.include_router(base_router)
+app.include_router(auth_router)
 app.include_router(data_router)
 app.include_router(process_router)
 app.include_router(nlp_router)
@@ -221,7 +234,9 @@ def create_app(*, lifespan_enabled: bool = True) -> FastAPI:
     application = FastAPI(
         title="NotebookLLM-minus",
         lifespan=lifespan if lifespan_enabled else None,
+        **_docs_kwargs(),
     )
+    application.add_middleware(OriginCheckMiddleware)
     application.add_middleware(
         RequestLoggingMiddleware,
         exclude_paths=("/static", SETTINGS.METRICS_PATH),
@@ -230,6 +245,7 @@ def create_app(*, lifespan_enabled: bool = True) -> FastAPI:
     application.add_exception_handler(Exception, unhandled_error_handler)
 
     application.include_router(base_router)
+    application.include_router(auth_router)
     application.include_router(data_router)
     application.include_router(process_router)
     application.include_router(nlp_router)

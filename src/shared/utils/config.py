@@ -527,6 +527,23 @@ class Settings(BaseSettings):
     # histograms they record never reach Prometheus. See celery_app.py.
     WORKER_METRICS_PORT: int = 9808
 
+    # --- accounts -------------------------------------------------------------
+    # Email + password signup/login in front of the whole app. A signed-in
+    # browser holds a random token in an HttpOnly cookie; only its sha256 is
+    # stored. See application/services/account/AuthService.py.
+    AUTH_COOKIE_NAME: str = "nlm_session"
+    # True once the app is served over HTTPS: the browser then never sends the
+    # cookie over plain HTTP. Off by default because nginx here listens on 80.
+    AUTH_COOKIE_SECURE: bool = False
+    # A session lasts this long since the last request (sliding expiry).
+    AUTH_SESSION_DAYS: int = 14
+    AUTH_PASSWORD_MIN_LENGTH: int = 8
+    # This many failed logins for one email locks it for the lockout window.
+    AUTH_LOGIN_MAX_FAILURES: int = 5
+    AUTH_LOGIN_LOCKOUT_MINUTES: int = 15
+    # /docs, /redoc and /openapi.json. Off in production: they list every route.
+    DOCS_ENABLED: bool = False
+
     # --- tracing + prompt versioning (Langfuse) ------------------------------
     # Self-hosted Langfuse from Docker/docker-compose.yml. Off by default, and
     # also off whenever either key is missing, so tests and a bare dev box

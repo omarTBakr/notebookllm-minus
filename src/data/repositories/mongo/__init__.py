@@ -1,5 +1,6 @@
 from .artifact_repository import MongoArtifactRepository
 from .asset_repository import MongoAssetRepository
+from .auth_session_repository import MongoAuthSessionRepository
 from .chat_repository import MongoChatRepository
 from .chunk_repository import MongoChunkRepository
 from .ingest_batch_repository import MongoIngestBatchRepository
@@ -12,6 +13,7 @@ from .user_repository import MongoUserRepository
 from .vector_repository import QdrantVectorRepository
 
 __all__ = [
+    "MongoAuthSessionRepository",
     "MongoIngestBatchRepository",
     "MongoArtifactRepository",
     "MongoAssetRepository",

@@ -1,14 +1,21 @@
-from fastapi import APIRouter, Request, UploadFile
+from fastapi import APIRouter, Depends, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from presentation import dependencies as deps
+from presentation.auth import enforce_ownership, require_user
 from shared.enums import FileStatus
 from shared.utils import get_logger, get_settings
 
 SETTINGS = get_settings()
 logger = get_logger(__name__)
 
-data_router = APIRouter(prefix="/data", tags=["data"])
+# Signed-in users only, and only their own projects (a project id is a chat
+# id): see presentation/auth.py.
+data_router = APIRouter(
+    prefix="/data",
+    tags=["data"],
+    dependencies=[Depends(require_user), Depends(enforce_ownership)],
+)
 
 
 @data_router.post("/upload/{project_id}")

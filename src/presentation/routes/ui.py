@@ -1,4 +1,4 @@
-"""Serves the web UI: one Jinja page, assembled from partials.
+"""Serves the web UI: the login page, and the app page assembled from partials.
 
 The templates live in ``web/templates`` — HTML, rendered per request — as
 opposed to ``application/prompts/``, the model-facing prompt locales. Two
@@ -10,9 +10,11 @@ import hashlib
 from pathlib import Path
 
 from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates  # ty: ignore[unresolved-import]
 
+from presentation import dependencies as deps
 from shared.utils import get_logger, get_settings
 
 logger = get_logger(__name__)
@@ -67,28 +69,50 @@ class RevalidatingStaticFiles(StaticFiles):
 ui_router = APIRouter(tags=["ui"])
 
 
-@ui_router.get("/")
-async def index(request: Request):
-    """The chat page.
-
-    ``lang`` may be pinned with ``?lang=ar`` so the very first paint is already
-    right-to-left; without it the server's DEFAULT_LANG is used and the client
-    then applies whatever the visitor last chose.
-    """
-    settings = get_settings()
-
-    requested = (request.query_params.get("lang") or "").strip().lower()
-
+def _lang(request: Request) -> str:
+    """``?lang=ar`` pins the first paint to right-to-left; otherwise DEFAULT_LANG,
+    and the client then applies whatever the visitor last chose."""
     from application.prompts.locales import SUPPORTED_LANGS
 
-    lang = requested if requested in SUPPORTED_LANGS else settings.DEFAULT_LANG
+    requested = (request.query_params.get("lang") or "").strip().lower()
+    return requested if requested in SUPPORTED_LANGS else get_settings().DEFAULT_LANG
 
+
+async def _signed_in(request: Request) -> bool:
+    token = request.cookies.get(get_settings().AUTH_COOKIE_NAME)
+    return await deps.auth(request).resolve(token) is not None
+
+
+def _page(request: Request, name: str):
     return templates.TemplateResponse(
         request=request,
-        name="index.html",
+        name=name,
         context={
-            "app_name": settings.APPLICATION_NAME,
-            "lang": lang,
+            "app_name": get_settings().APPLICATION_NAME,
+            "lang": _lang(request),
             "static_v": STATIC_VERSION,
         },
     )
+
+
+def _with_query(path: str, request: Request) -> str:
+    query = request.url.query
+    return f"{path}?{query}" if query else path
+
+
+@ui_router.get("/")
+async def index(request: Request):
+    """The app, for a signed-in browser; everyone else is sent to /login."""
+    if not await _signed_in(request):
+        return RedirectResponse(_with_query("/login", request), status_code=303)
+
+    return _page(request, "index.html")
+
+
+@ui_router.get("/login")
+async def login_page(request: Request):
+    """Sign in / sign up. A browser that is already signed in goes to the app."""
+    if await _signed_in(request):
+        return RedirectResponse(_with_query("/", request), status_code=303)
+
+    return _page(request, "login.html")

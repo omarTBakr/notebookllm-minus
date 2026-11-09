@@ -30,7 +30,7 @@ import {
   renderList,
 } from "./notebooks.js";
 import { api } from "./api.js";
-import { adoptProfile, bindProfile, bindProfileSwitch, initProfile } from "./profile.js";
+import { bindProfile, initProfile } from "./profile.js";
 import {
   bindLangChange,
   bindSettings,
@@ -54,7 +54,7 @@ import { bindQuiz, repaintQuiz } from "./quiz.js";
 import { bindTheme } from "./theme.js";
 import { bindAutoCopy, copyText } from "./clipboard.js";
 import { bindComingSoon, toast } from "./soon.js";
-import { rememberNotebook, rememberUser, state, storedLang } from "./state.js";
+import { rememberNotebook, state, storedLang } from "./state.js";
 import { $ } from "./dom.js";
 
 // --- opening a notebook -------------------------------------------------------
@@ -74,17 +74,8 @@ async function openNotebook(chatId) {
   state.notebook = await api.getNotebook(chatId);
   rememberNotebook(chatId);
 
-  // Following a link to someone else's notebook switches to that profile —
-  // there is no auth, and showing a notebook while claiming to be a profile
-  // that does not own it would be a lie about whose list you are looking at.
-  if (state.notebook.user_id && state.notebook.user_id !== state.userId) {
-    const user = await api.getUser(state.notebook.user_id);
-    state.userId = user.user_id;
-    state.userLabel = user.label;
-    rememberUser(user.user_id);
-    adoptProfile();
-    await loadList();
-  }
+  // Someone else's notebook never gets this far: the server answers 404 for
+  // it, exactly as for one that does not exist.
 
   paintTitle();
   renderList();
@@ -258,7 +249,6 @@ async function main() {
   bindTranscript();
 
   bindNotebookOpen((chatId) => openNotebook(chatId).catch((e) => toast(e.message)));
-  bindProfileSwitch(() => enterProfile().catch((e) => toast(e.message)));
   bindSourcesChanged(() => paintMeta());
   // Clicking a citation opens that document at the cited page. Wired here so
   // chat.js and sources.js never import each other.

@@ -1,5 +1,6 @@
 from .artifact_repository import PostgresArtifactRepository
 from .asset_repository import PostgresAssetRepository
+from .auth_session_repository import PostgresAuthSessionRepository
 from .chat_repository import PostgresChatRepository
 from .chunk_repository import PostgresChunkRepository
 from .ingest_batch_repository import PostgresIngestBatchRepository
@@ -12,6 +13,7 @@ from .user_repository import PostgresUserRepository
 from .vector_repository import PostgresVectorRepository
 
 __all__ = [
+    "PostgresAuthSessionRepository",
     "PostgresIngestBatchRepository",
     "PostgresArtifactRepository",
     "PostgresProvider",

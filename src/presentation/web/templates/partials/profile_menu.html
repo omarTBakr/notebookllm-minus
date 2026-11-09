@@ -1,10 +1,15 @@
-{# No login — a profile picker, anchored under the avatar. #}
+{# The signed-in account, anchored under the avatar. #}
 <div class="dropdown" id="profile-menu" hidden>
-  <p class="dropdown__title" data-i18n="profiles"></p>
-  <div class="dropdown__list" id="profile-list"></div>
+  <p class="dropdown__title" data-i18n="account"></p>
+  <div class="dropdown__list account">
+    <strong id="account-name"></strong>
+    <span class="muted" id="account-email" dir="ltr"></span>
+  </div>
   <div class="dropdown__actions">
-    <button class="btn btn--ghost" id="btn-new-profile" data-i18n="newProfile"></button>
     <button class="btn btn--ghost" id="btn-rename-profile" data-i18n="rename"></button>
+    <button class="btn btn--ghost" id="btn-change-password" data-i18n="changePassword"></button>
+    <button class="btn btn--ghost" id="btn-sign-out" data-i18n="signOut"></button>
+    <button class="btn btn--ghost" id="btn-sign-out-all" data-i18n="signOutEverywhere"></button>
     <button class="btn btn--ghost btn--warn" id="btn-delete-profile" data-i18n="deleteProfile"></button>
   </div>
 </div>

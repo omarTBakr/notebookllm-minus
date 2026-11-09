@@ -53,16 +53,23 @@ async def _run_sweep() -> dict:
         marked = await tasks.mark_abandoned(started_before, queued_before, TaskExecutionStatus.DEAD.value)
         deleted = await tasks.delete_finished_before(delete_before)
 
-        if marked or deleted:
+        # Expired sign-ins are already refused when presented; this only keeps
+        # the table from growing with every browser that never came back.
+        expired_sessions = await job.db.auth_sessions().delete_expired(now)
+
+        if marked or deleted or expired_sessions:
             logger.info(
-                "Task sweep: %d abandoned run(s) marked DEAD, %d finished row(s) removed",
+                "Task sweep: %d abandoned run(s) marked DEAD, %d finished row(s) removed, "
+                "%d expired sign-in(s) removed",
                 marked,
                 deleted,
+                expired_sessions,
             )
 
         return {
             "marked_dead": marked,
             "deleted": deleted,
+            "expired_sessions": expired_sessions,
             "retention_days": SETTINGS.CELERY_TASK_RETENTION_DAYS,
         }
 

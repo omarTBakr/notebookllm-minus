@@ -3,15 +3,18 @@
 Grouped in one package because they are one feature and always change together
 — a field added to Chat is usually a field the Message writer cares about too.
 
-Identity here is deliberately thin: a User is an opaque uuid with no password,
-no email and no verification. "New user" mints one, "current user" is whatever
-id the browser kept. It exists to scope conversations, not to prove anything.
+A User is an account: an email and an argon2 password hash, plus the opaque
+uuid every other record hangs off. Profiles made before accounts existed have
+no credentials until someone claims them at signup. AuthSession is one
+signed-in browser (a hashed cookie token), unrelated to Session, which groups
+notebooks.
 """
 
+from .auth_session import AuthSession
 from .chat import Chat
 from .message import Message
 from .personal_user_info import PersonalUserInfo
 from .session import Session
 from .user import User
 
-__all__ = ["Chat", "Message", "PersonalUserInfo", "Session", "User"]
+__all__ = ["AuthSession", "Chat", "Message", "PersonalUserInfo", "Session", "User"]

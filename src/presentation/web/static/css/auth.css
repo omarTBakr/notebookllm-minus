@@ -1,0 +1,45 @@
+/* The login page: one centred card, using the app's own tokens and controls. */
+
+.auth {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--surface-2);
+}
+
+.auth__card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px 20px;
+  display: grid;
+  gap: 18px;
+}
+
+.auth__head { text-align: center; display: grid; gap: 6px; justify-items: center; }
+.auth__head h1 { margin: 0; font-size: 1.25rem; }
+.auth__head p { margin: 0; }
+.auth__logo { display: block; }
+
+.auth__tabs { width: 100%; }
+.auth__tabs .btn--seg { flex: 1; }
+
+.auth__form { display: grid; gap: 14px; }
+.auth__form .field { display: grid; gap: 6px; }
+.auth__form .dialog__input { width: 100%; box-sizing: border-box; }
+
+.auth__error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn, #c92a2a) 12%, transparent);
+  color: var(--warn, #c92a2a);
+  font-size: 0.85rem;
+}
+
+.auth__claim { margin: 0; }
+
+.auth__lang { justify-content: center; }

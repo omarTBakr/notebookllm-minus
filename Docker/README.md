@@ -36,7 +36,6 @@ Then:
 | | |
 | --- | --- |
 | the app | http://localhost:8081 — through nginx (`NGINX_PORT` in `.env`) |
-| the app, direct | http://localhost:8000 — bypasses nginx |
 | Grafana | http://localhost:3000 — `admin` / `admin` on first boot |
 | Prometheus | http://localhost:9090 — check `/targets` first |
 | Langfuse | http://localhost:3001 — profile `langfuse`, see [Observability](#observability) |
@@ -103,7 +102,7 @@ output reports a context in the hundreds of MB rather than single digits, this i
 | service | image | host port | notes |
 | --- | --- | --- | --- |
 | `nginx` | `nginx:1.27-alpine` | 8081 (`NGINX_PORT`) | reverse proxy; denies `/metrics` |
-| `fastapi` | built here | 8000 | the application |
+| `fastapi` | built here | — (8000 inside the network) | the application; reached only through nginx |
 | `pgvector` | `pgvector/pgvector:0.8.6-pg18-trixie` | 5400 | documents *and* vectors |
 | `mongo` | `mongo:8.2` | 27017 | profile `mongo` only |
 | `qdrant` | `qdrant/qdrant:v1.12.4` | 6333 | profile `mongo` only |
@@ -318,11 +317,14 @@ embedding model in VRAM and evicting the chat model. It stays an on-demand tool.
 
 ## Things that will catch you out
 
-**`/metrics` is reachable directly on port 8000.** nginx denies it on port 80, but `fastapi`
-also publishes 8000 to the host, which bypasses that. It is unauthenticated and describes your
-route inventory, model ids and traffic shape. To close it, delete the `ports:` block from the
-`fastapi` service — Prometheus still reaches it internally at `fastapi:8000`, and the app is
-served through nginx on `:80`.
+**The app has no host port of its own.** Everything goes through nginx on `NGINX_PORT` (8081),
+which denies `/metrics` and forwards the client's address and scheme. Prometheus still reaches
+the app internally at `fastapi:8000`. For a quick look from the host without nginx, use
+`docker compose exec fastapi python -c "..."` or temporarily add a `ports:` block back.
+
+**Everyone signs in.** The app is behind email + password accounts (`/login`). Each account
+sees only its own notebooks. Set `AUTH_COOKIE_SECURE=true` in `env/.env.app` once the site is
+served over HTTPS, and keep `DOCS_ENABLED=false` in production: `/docs` lists every route.
 
 **One uvicorn worker, on purpose.** The lifespan builds a single provider cache and runs
 Alembic under an advisory lock, and the Prometheus counters are per-process. With `--workers N`

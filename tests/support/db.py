@@ -16,6 +16,7 @@ from shared.enums import IN_FLIGHT, TaskExecutionStatus
 from shared.exceptions import (
     AssetNotFoundError,
     ChatNotFoundError,
+    DuplicateEmailError,
     NotFoundError,
     ProjectNotFoundError,
     SessionNotFoundError,
@@ -56,6 +57,18 @@ class FakeUserRepository(_Store):
     async def get_user(self, user_id):
         return self._get(user_id)
 
+    async def get_user_by_email(self, email):
+        return next((u for u in self.items.values() if u.email == email), None)
+
+    async def set_credentials(self, user_id, email, password_hash):
+        taken = await self.get_user_by_email(email)
+        if taken is not None and taken.user_id != user_id:
+            raise DuplicateEmailError("An account with this email already exists")
+        self._patch(user_id, email=email, password_hash=password_hash)
+
+    async def set_password_hash(self, user_id, password_hash):
+        self._patch(user_id, password_hash=password_hash)
+
     async def rename(self, user_id, label):
         self._patch(user_id, label=label)
 
@@ -68,6 +81,37 @@ class FakeUserRepository(_Store):
     async def iter_users(self):
         for user in list(self.items.values()):
             yield user
+
+
+class FakeAuthSessionRepository(_Store):
+    """Signed-in browsers, keyed by token hash."""
+
+    async def create(self, session):
+        self.items[session.token_hash] = session
+
+    async def get_by_token_hash(self, token_hash):
+        return self.items.get(token_hash)
+
+    async def touch(self, token_hash, last_seen_at, expires_at):
+        session = self.items.get(token_hash)
+        if session is not None:
+            session.last_seen_at = last_seen_at
+            session.expires_at = expires_at
+
+    async def delete(self, token_hash):
+        return self.items.pop(token_hash, None) is not None
+
+    async def delete_for_user(self, user_id, keep_token_hash=None):
+        gone = [k for k, s in self.items.items() if s.user_id == user_id and k != keep_token_hash]
+        for k in gone:
+            del self.items[k]
+        return len(gone)
+
+    async def delete_expired(self, now):
+        gone = [k for k, s in self.items.items() if s.expires_at <= now]
+        for k in gone:
+            del self.items[k]
+        return len(gone)
 
 
 class FakeSessionRepository(_Store):
@@ -617,6 +661,7 @@ class FakeDb:
         self._projects = FakeProjectRepository()
         self._assets = FakeAssetRepository()
         self._artifacts = FakeArtifactRepository()
+        self._auth_sessions = FakeAuthSessionRepository()
         self._chunks = FakeChunkRepository()
         self._vectors = FakeVectorRepository(hits=hits)
         self._tasks = FakeTaskRepository()
@@ -634,6 +679,9 @@ class FakeDb:
 
     def users(self):
         return self._users
+
+    def auth_sessions(self):
+        return self._auth_sessions
 
     def sessions(self):
         return self._sessions

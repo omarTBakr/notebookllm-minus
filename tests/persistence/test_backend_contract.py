@@ -68,6 +68,7 @@ def own_methods(cls):
 PAIRS = [
     ("artifact", "MongoArtifactRepository", "PostgresArtifactRepository"),
     ("asset", "MongoAssetRepository", "PostgresAssetRepository"),
+    ("auth_session", "MongoAuthSessionRepository", "PostgresAuthSessionRepository"),
     ("chunk", "MongoChunkRepository", "PostgresChunkRepository"),
     ("ingest_batch", "MongoIngestBatchRepository", "PostgresIngestBatchRepository"),
     ("chat", "MongoChatRepository", "PostgresChatRepository"),

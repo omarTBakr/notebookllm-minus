@@ -7,6 +7,27 @@ from redis.exceptions import RedisError
 from shared.exceptions import ProjectNotFoundError
 
 
+@pytest.fixture(autouse=True)
+def _seeded(seed):
+    """Every route here needs a signed-in owner: the seed user u1 owns c1,
+    and a project id is a chat id."""
+    return seed
+
+
+@pytest.fixture
+def owned_tasks(fake_db):
+    """Task rows for the ids the status tests poll, filed under u1's c1.
+
+    A task id resolves to its owner through task_executions.project_id, so an
+    id with no row is a 404 (see test_a_task_id_with_no_row_is_not_found)."""
+    from data.models import TaskExecution
+
+    for task_id in ("task-123", "never-queued", "really-queued", "task-fail"):
+        fake_db.tasks().items[task_id] = TaskExecution(
+            task_id=task_id, task_name="notebookllm.process_data_task", project_id="c1"
+        )
+
+
 def _fake_chain(calls):
     """Stand in for ingestion_signature, recording how it was called.
 
@@ -34,7 +55,7 @@ async def test_process_queues_the_whole_chain(client, monkeypatch):
     monkeypatch.setattr(process_route, "ingestion_signature", _fake_chain(calls))
 
     response = await client.post(
-        "/process/project-1",
+        "/process/c1",
         json={"asset_id": "asset-1", "chunk_size": 800, "overlap_size": 100},
     )
 
@@ -47,7 +68,7 @@ async def test_process_queues_the_whole_chain(client, monkeypatch):
     assert len(ids) == 3
 
     project_id, request_data, queued = calls[0]
-    assert project_id == "project-1"
+    assert project_id == "c1"
     assert request_data["asset_id"] == "asset-1"
     assert request_data["chunk_size"] == 800
     assert request_data["overlap_size"] == 100
@@ -69,7 +90,7 @@ async def test_every_stage_gets_a_row(client, monkeypatch):
     calls = []
     monkeypatch.setattr(process_route, "ingestion_signature", _fake_chain(calls))
 
-    await client.post("/process/project-1", json={"asset_id": "asset-1"})
+    await client.post("/process/c1", json={"asset_id": "asset-1"})
 
     rows = client._transport.app.db.tasks().items
     _, _, queued = calls[0]
@@ -96,8 +117,8 @@ async def test_an_identical_submission_joins_the_running_one(client, monkeypatch
 
     body = {"asset_id": "asset-1", "chunk_size": 800, "overlap_size": 100}
 
-    first = await client.post("/process/project-1", json=body)
-    second = await client.post("/process/project-1", json=body)
+    first = await client.post("/process/c1", json=body)
+    second = await client.post("/process/c1", json=body)
 
     assert first.status_code == 202 and first.json()["queued"] is True
     # 200, not 202: nothing new was queued, and it is not an error either.
@@ -115,8 +136,8 @@ async def test_different_arguments_are_not_deduplicated(client, monkeypatch):
     calls = []
     monkeypatch.setattr(process_route, "ingestion_signature", _fake_chain(calls))
 
-    await client.post("/process/project-1", json={"asset_id": "asset-1"})
-    second = await client.post("/process/project-1", json={"asset_id": "asset-1", "reset": True})
+    await client.post("/process/c1", json={"asset_id": "asset-1"})
+    second = await client.post("/process/c1", json={"asset_id": "asset-1", "reset": True})
 
     assert second.status_code == 202
     assert len(calls) == 2
@@ -137,13 +158,13 @@ async def test_process_returns_503_when_broker_rejects_task(client, monkeypatch)
         lambda *a, **k: SimpleNamespace(apply_async=enqueue),
     )
 
-    response = await client.post("/process/project-1", json={})
+    response = await client.post("/process/c1", json={})
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Could not queue document processing"}
 
 
-async def test_process_status_returns_result(client, monkeypatch):
+async def test_process_status_returns_result(client, monkeypatch, owned_tasks):
     import application.tasks.tracking.status as status_module
 
     class CompletedResult:
@@ -169,7 +190,7 @@ async def test_process_status_returns_result(client, monkeypatch):
     }
 
 
-async def test_process_status_returns_503_when_result_backend_fails(client, monkeypatch):
+async def test_process_status_returns_503_when_result_backend_fails(client, monkeypatch, owned_tasks):
     import application.tasks.tracking.status as status_module
 
     class BrokenResult:
@@ -291,7 +312,7 @@ async def test_a_bug_in_enqueueing_is_not_reported_as_a_broker_outage(client, mo
         lambda *a, **k: SimpleNamespace(apply_async=enqueue),
     )
 
-    response = await client.post("/process/project-1", json={})
+    response = await client.post("/process/c1", json={})
 
     assert response.status_code == 500
     assert response.json() != {"detail": "Could not queue document processing"}
@@ -300,7 +321,7 @@ async def test_a_bug_in_enqueueing_is_not_reported_as_a_broker_outage(client, mo
 # --- telling apart the four things that all used to say PENDING ---------------
 
 
-async def test_an_id_that_was_never_queued_is_unknown_not_pending(client, monkeypatch):
+async def test_an_id_that_was_never_queued_is_unknown_not_pending(client, monkeypatch, owned_tasks):
     """Celery synthesises PENDING for any id it has no record of, so a typo and
     a task waiting for a worker were indistinguishable — and the ambiguity ran
     the wrong way: the client was told to keep polling something that would
@@ -325,7 +346,7 @@ async def test_an_id_that_was_never_queued_is_unknown_not_pending(client, monkey
     assert "was ever queued" in body["error"]
 
 
-async def test_a_queued_id_still_reports_pending(client, monkeypatch):
+async def test_a_queued_id_still_reports_pending(client, monkeypatch, owned_tasks):
     """The other half of the same distinction: a real task that no worker has
     picked up yet must stay PENDING, or the client stops polling too early."""
     import application.tasks.tracking.status as status_module
@@ -348,7 +369,7 @@ async def test_a_queued_id_still_reports_pending(client, monkeypatch):
     assert "error" not in body
 
 
-async def test_a_failure_reports_its_exception_type(client, monkeypatch):
+async def test_a_failure_reports_its_exception_type(client, monkeypatch, owned_tasks):
     """`str(exc)` alone threw away half the diagnosis: a missing project and a
     broker timeout both arrived as an untyped string."""
     import application.tasks.tracking.status as status_module
@@ -589,3 +610,20 @@ async def test_the_sweep_never_deletes_unfinished_work(fake_db):
 
     assert deleted == 2
     assert sorted(tasks.items) == ["queued"]
+
+
+async def test_a_task_id_with_no_row_is_not_found(client):
+    """With accounts, a task id is only readable by the owner of its project,
+    and an id with no task_executions row has no owner. It answers 404 rather
+    than UNKNOWN, the same as another user's task id."""
+    response = await client.get("/process/tasks/no-such-task")
+
+    assert response.status_code == 404
+
+
+async def test_another_users_project_cannot_be_processed(client, make_seed):
+    make_seed(user_id="u2", session_id="s2", chat_id="c2", asset_id="a2")
+
+    response = await client.post("/process/c2", json={})
+
+    assert response.status_code == 404

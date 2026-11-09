@@ -37,31 +37,19 @@ async def test_search_uses_the_chats_embedding_model(
     )
 
 
-async def test_search_falls_back_to_the_default_for_a_non_chat_project(
-    client, fake_db, fake_providers, seed
-):
-    """/process and /data create projects that never had a chat.
-
-    Those must keep working on the .env default rather than 404-ing because no
-    chat row exists for the id.
-    """
+async def test_a_project_with_no_notebook_is_unreachable(client, fake_db, seed):
+    """/process and /data used to create projects that never had a chat, and
+    search fell back to the .env default for them. With accounts, a project's
+    owner is the owner of the chat with the same id, so a project with no
+    chat has no owner and nobody may search it."""
     from data.models import Project
 
     fake_db.projects().items["p-no-chat"] = Project(
         project_id="p-no-chat", name="not a notebook"
     )
-    fake_providers.asked_for.clear()
 
     response = await client.post(
         "/nlp/index/search/p-no-chat", json={"text": "hello", "limit": 3}
     )
 
-    # It gets far enough to look for a vector index, which is the point: the
-    # missing chat must not be what stops it.
-    assert "no vector index" in response.json()["detail"]
-
-    # The fallback reuses the client the lifespan already built rather than
-    # asking the cache again, so the assertion is that nothing asked for a
-    # *named* model — there is no chat to name one.
-    named = [r for r in fake_providers.asked_for if r[0] == "embedding" and r[1]]
-    assert not named
+    assert response.status_code == 404

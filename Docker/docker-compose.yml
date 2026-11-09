@@ -87,8 +87,11 @@ services:
     image: notebookllm-minus
     container_name: fastapi-app
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    # No host port: nginx (8081) is the only way in, so its /metrics deny and
+    # forwarded headers always apply. Other containers still reach
+    # fastapi:8000 on the backend network (nginx, Prometheus).
+    expose:
+      - "8000"
     env_file:
       # Singular. `env_files:` is not a compose key and was silently ignored.
       - ./env/.env.app

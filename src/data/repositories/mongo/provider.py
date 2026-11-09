@@ -13,6 +13,7 @@ from shared.utils.config import Settings
 
 from ..interfaces.artifact_repository import ArtifactRepository
 from ..interfaces.asset_repository import AssetRepository
+from ..interfaces.auth_session_repository import AuthSessionRepository
 from ..interfaces.chat_repository import ChatRepository
 from ..interfaces.chunk_repository import ChunkRepository
 from ..interfaces.ingest_batch_repository import IngestBatchRepository
@@ -25,6 +26,7 @@ from ..interfaces.user_repository import UserRepository
 from ..interfaces.vector_repository import VectorRepository
 from .artifact_repository import MongoArtifactRepository
 from .asset_repository import MongoAssetRepository
+from .auth_session_repository import MongoAuthSessionRepository
 from .chat_repository import MongoChatRepository
 from .chunk_repository import MongoChunkRepository
 from .ingest_batch_repository import MongoIngestBatchRepository
@@ -102,7 +104,16 @@ class MongoProvider(DbProvider):
             unique=True,
             partialFilterExpression={"content_hash": {"$gt": ""}},
         )
-        await MongoUserRepository(self.db).create_index([("user_id", 1)], unique=True)
+        user_repo = MongoUserRepository(self.db)
+        await user_repo.create_index([("user_id", 1)], unique=True)
+        # Sparse: profiles from before accounts have no email, and a plain
+        # unique index would make every one of them collide on null.
+        await user_repo.create_index([("email", 1)], unique=True, sparse=True)
+
+        auth_repo = MongoAuthSessionRepository(self.db)
+        await auth_repo.create_index([("token_hash", 1)], unique=True)
+        await auth_repo.create_index([("user_id", 1)])
+        await auth_repo.create_index([("expires_at", 1)])
 
         session_repo = MongoSessionRepository(self.db)
         await session_repo.create_index([("session_id", 1)], unique=True)
@@ -111,6 +122,8 @@ class MongoProvider(DbProvider):
         chat_repo = MongoChatRepository(self.db)
         await chat_repo.create_index([("chat_id", 1)], unique=True)
         await chat_repo.create_index([("session_id", 1), ("created_at", -1)])
+        # Listing a user's notebooks and checking who owns one.
+        await chat_repo.create_index([("user_id", 1), ("created_at", -1)])
 
         await MongoMessageRepository(self.db).create_index([("chat_id", 1), ("created_at", 1)])
 
@@ -142,6 +155,9 @@ class MongoProvider(DbProvider):
 
     def users(self) -> UserRepository:
         return MongoUserRepository(self.db)
+
+    def auth_sessions(self) -> AuthSessionRepository:
+        return MongoAuthSessionRepository(self.db)
 
     def sessions(self) -> SessionRepository:
         return MongoSessionRepository(self.db)

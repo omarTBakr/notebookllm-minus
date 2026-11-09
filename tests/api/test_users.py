@@ -11,21 +11,14 @@ def seeded(fake_db):
     return fake_db
 
 
-async def test_create_user_returns_an_id(client):
+async def test_users_cannot_be_minted_here_any_more(client):
+    """Accounts are created at /auth/signup; POST /chat/users is gone."""
     response = await client.post("/chat/users", json={"label": "Omar"})
 
-    assert response.status_code in (200, 201)
-    assert response.json()["user_id"]
+    assert response.status_code == 405
 
 
-async def test_create_user_persists_the_label(client, fake_db):
-    await client.post("/chat/users", json={"label": "Omar"})
-
-    stored = list(fake_db.users().items.values())
-    assert [u.label for u in stored] == ["Omar"]
-
-
-async def test_list_users_returns_every_profile(client, seeded):
+async def test_list_users_returns_only_the_signed_in_user(client, seeded):
     response = await client.get("/chat/users")
 
     assert response.status_code == 200
@@ -155,7 +148,12 @@ async def test_deleting_a_user_leaves_another_users_data_alone(ingest, client, s
         chat_id="c2", session_id="s2", user_id="u2", title="Their notebook"
     )
     fake_db.projects().items["c2"] = Project(project_id="c2", name="Their notebook")
+    # Uploading into c2 has to be done as its owner now.
+    from tests.conftest import sign_in
+
+    sign_in(fake_db, client, "u2")
     await ingest("c2", a_text_file("theirs.txt"))
+    sign_in(fake_db, client, "u1")
 
     await client.delete("/chat/users/u1")
 

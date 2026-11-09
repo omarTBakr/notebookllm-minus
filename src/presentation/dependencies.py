@@ -12,6 +12,8 @@ builders take a chat as well, and the routes call them after loading it.
 from fastapi import Request
 
 from application.services import (
+    AccessService,
+    AuthService,
     ChatService,
     ConversationService,
     DataService,
@@ -171,6 +173,16 @@ def default_generation_model_id(request: Request) -> str:
 
 
 # --- the services that only need the database ---------------------------------
+
+
+def auth(request: Request) -> AuthService:
+    """Signup, login, and resolving the session cookie to a user."""
+    return AuthService(request.app.db)
+
+
+def access(request: Request) -> AccessService:
+    """Who owns a user, session, chat, project or task id."""
+    return AccessService(request.app.db)
 
 
 def conversations(request: Request) -> ConversationService:

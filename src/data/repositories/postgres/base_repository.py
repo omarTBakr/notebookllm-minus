@@ -71,9 +71,25 @@ class UserRow(Base):
     # pydantic validation on every read. Same reasoning for every NOT NULL
     # DEFAULT below: the column has to be at least as strict as the model.
     label: Mapped[str] = mapped_column(String(200), nullable=False, server_default="")
+    # NULL for a profile created before accounts existed (migration 0013).
+    email: Mapped[str | None] = mapped_column(String(320))
+    password_hash: Mapped[str | None] = mapped_column(String(512))
 
     created_at: Mapped[datetime] = _utcnow_column()
     updated_at: Mapped[datetime] = _utcnow_column()
+
+
+class AuthSessionRow(Base):
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[str] = mapped_column(_OID, primary_key=True)
+    # sha256 hex of the cookie token; the token itself is never stored.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(_BIZ_ID, nullable=False)
+
+    created_at: Mapped[datetime] = _utcnow_column()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = _utcnow_column()
 
 
 class PersonalUserInfoRow(Base):
@@ -336,6 +352,12 @@ Index(
     PersonalUserInfoRow.key,
     unique=True,
 )
+# Unique where set: profiles from before accounts all have NULL, and NULLs
+# never collide in a unique index anyway, but the partial form says so. Also
+# what get_user_by_email rides on. Declared in migration 0013 as well.
+Index("uq_users_email", UserRow.email, unique=True, postgresql_where=UserRow.email.isnot(None))
+Index("idx_auth_sessions_user_id", AuthSessionRow.user_id)
+Index("idx_auth_sessions_expires_at", AuthSessionRow.expires_at)
 Index("idx_sessions_user_id", SessionRow.user_id, SessionRow.created_at)
 Index("idx_chats_session_id", ChatRow.session_id, ChatRow.created_at)
 Index("idx_chats_user_id", ChatRow.user_id, ChatRow.created_at)

@@ -17,3 +17,5 @@ class DatabaseCollection(str, Enum):
     SESSIONS = "sessions"
     CHATS = "chats"
     MESSAGES = "messages"
+    # Signed-in browsers: hashed cookie tokens, one per login.
+    AUTH_SESSIONS = "auth_sessions"

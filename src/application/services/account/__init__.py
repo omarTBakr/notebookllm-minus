@@ -1,5 +1,7 @@
-"""Who is using the install: profiles, and removing one with everything under it."""
+"""Accounts: signup/login (AuthService), and a user's profile and its removal (UserService)."""
 
+from .AccessService import AccessService
+from .AuthService import AuthService
 from .UserService import UserService
 
-__all__ = ["UserService"]
+__all__ = ["AccessService", "AuthService", "UserService"]

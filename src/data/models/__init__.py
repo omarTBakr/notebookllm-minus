@@ -12,7 +12,7 @@ from .artifact import (
     SummarySet,
 )
 from .asset import Asset
-from .conversation import Chat, Message, PersonalUserInfo, Session, User
+from .conversation import AuthSession, Chat, Message, PersonalUserInfo, Session, User
 from .data_chunk import DataChunk
 from .ingest import IngestBatch, IngestRun
 from .project import Project
@@ -67,6 +67,7 @@ def TaskModel(db):
 
 
 __all__ = [
+    "AuthSession",
     "ArtifactModel",
     "AssetModel",
     "ChunkModel",

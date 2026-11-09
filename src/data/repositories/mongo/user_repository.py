@@ -3,18 +3,21 @@ from typing import AsyncIterator
 from bson.objectid import ObjectId  # ty: ignore[unresolved-import]
 from motor.motor_asyncio import AsyncIOMotorClient  # ty: ignore[unresolved-import]
 from pymongo import ASCENDING  # ty: ignore[unresolved-import]
-from pymongo.errors import PyMongoError  # ty: ignore[unresolved-import]
+from pymongo.errors import (  # ty: ignore[unresolved-import]
+    DuplicateKeyError,
+    PyMongoError,
+)
 
 from data.models import User
 from shared.enums import DatabaseCollection
-from shared.exceptions import DbError, UserNotFoundError
+from shared.exceptions import DbError, DuplicateEmailError, UserNotFoundError
 
 from ..interfaces.user_repository import UserRepository
 from .base_model import BaseModel
 
 
 class MongoUserRepository(UserRepository, BaseModel):
-    """The users collection. Identity is an opaque id — nothing to verify."""
+    """The users collection: accounts, keyed by an opaque user_id."""
 
     def __init__(self, db: AsyncIOMotorClient):
         super().__init__(db, DatabaseCollection.USERS)
@@ -32,12 +35,7 @@ class MongoUserRepository(UserRepository, BaseModel):
         return result.inserted_id
 
     async def iter_users(self) -> AsyncIterator[User]:
-        """Every user, oldest first.
-
-        There is no auth, so "who am I" is a picker rather than a login. The
-        list is the whole users collection, which on a local install is the
-        handful of profiles someone made for themselves.
-        """
+        """Every user, oldest first. For maintenance; no route lists users."""
         cursor = self.collection.find().sort("created_at", ASCENDING)
 
         try:
@@ -54,6 +52,35 @@ class MongoUserRepository(UserRepository, BaseModel):
             return await self.collection.count_documents({})
         except PyMongoError as exc:
             raise DbError("Could not count users") from exc
+
+    async def get_user_by_email(self, email: str) -> User | None:
+        try:
+            document = await self.collection.find_one({"email": email})
+        except PyMongoError as exc:
+            raise DbError("Could not look up a user by email") from exc
+
+        return User(**document) if document is not None else None
+
+    async def set_credentials(self, user_id: str, email: str, password_hash: str) -> None:
+        try:
+            await self.patch_one(
+                {"user_id": user_id},
+                {"email": email, "password_hash": password_hash},
+                missing=UserNotFoundError,
+                what=f"user {user_id!r}",
+            )
+        except DbError as exc:
+            if isinstance(exc.__cause__, DuplicateKeyError):
+                raise DuplicateEmailError("An account with this email already exists") from exc
+            raise
+
+    async def set_password_hash(self, user_id: str, password_hash: str) -> None:
+        await self.patch_one(
+            {"user_id": user_id},
+            {"password_hash": password_hash},
+            missing=UserNotFoundError,
+            what=f"user {user_id!r}",
+        )
 
     async def rename(self, user_id: str, label: str) -> None:
         await self.patch_one(

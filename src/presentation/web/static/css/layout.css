@@ -86,6 +86,7 @@
 }
 
 .dropdown__list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+.dropdown__list.account { padding: 4px 8px 8px; gap: 2px; overflow-wrap: anywhere; }
 
 .dropdown__item {
   display: flex;

@@ -18,7 +18,7 @@ from ..rag import NLPService
 
 
 class UserService(BaseService):
-    """Profiles, and the cascade that removes one.
+    """A user's profile, and the cascade that removes an account.
 
     `nlp_for_chat` builds the retrieval stack for a chat, because the name of a
     chat's vector collection depends on the embedding model that chat uses.
@@ -124,6 +124,9 @@ class UserService(BaseService):
                 removed["chats"] += 1
 
         removed["sessions"] = await SessionModel(db).delete_sessions_for_user(user_id)
+        # Signed-in browsers last but one: until here a failed delete can be
+        # retried by the same user, still signed in.
+        await db.auth_sessions().delete_for_user(user_id)
         await self.users.delete_user(user_id)
 
         self.logger.info(

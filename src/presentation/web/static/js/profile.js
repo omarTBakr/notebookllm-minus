@@ -1,29 +1,21 @@
-// The avatar menu: which profile you are, and every profile on this install.
-// No authentication — a picker, not a login.
+// The avatar menu: the signed-in account, and what you can do with it.
+// Who you are comes from the session cookie (GET /auth/me), never from
+// anything the browser stores.
 
 import { confirmDialog, promptDialog } from "./dialog.js";
 import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { toast } from "./soon.js";
-import { forgetUser, rememberUser, state, storedUserId } from "./state.js";
+import { state } from "./state.js";
 import { $ } from "./dom.js";
-
-let onSwitch = () => {};
-
-export function bindProfileSwitch(handler) {
-  onSwitch = handler;
-}
 
 const initial = (label) => (label ?? "").trim().charAt(0).toUpperCase() || "?";
 
-/** Repaint the avatar after the profile changed from outside this module. */
-export function adoptProfile() {
-  paintAvatar();
-}
-
 function paintAvatar() {
   $("avatar-initial").textContent = initial(state.userLabel);
-  $("btn-profile").title = state.userLabel ?? "";
+  $("btn-profile").title = state.userEmail ? `${state.userLabel} · ${state.userEmail}` : state.userLabel ?? "";
+  $("account-name").textContent = state.userLabel ?? "";
+  $("account-email").textContent = state.userEmail ?? "";
 }
 
 function closeMenu() {
@@ -31,91 +23,16 @@ function closeMenu() {
   $("btn-profile").setAttribute("aria-expanded", "false");
 }
 
-async function renderList() {
-  const host = $("profile-list");
-  host.replaceChildren();
-
-  try {
-    const { users } = await api.listUsers();
-
-    for (const user of users) {
-      const item = document.createElement("button");
-      item.className = "dropdown__item";
-      if (user.user_id === state.userId) item.classList.add("is-active");
-      item.title = user.label;
-
-      const dot = document.createElement("span");
-      dot.className = "dot";
-      dot.textContent = initial(user.label);
-
-      const name = document.createElement("span");
-      name.textContent = user.label;
-
-      item.append(dot, name);
-      item.addEventListener("click", () => {
-        if (user.user_id === state.userId) return;
-        select(user);
-      });
-
-      host.append(item);
-    }
-  } catch (error) {
-    const failed = document.createElement("p");
-    failed.className = "field__hint";
-    failed.textContent = error.message;
-    host.append(failed);
-  }
-}
-
-function select(user) {
-  state.userId = user.user_id;
-  state.userLabel = user.label;
-  rememberUser(user.user_id);
-  paintAvatar();
-  closeMenu();
-  onSwitch();
-}
-
-/** Resolve identity on load: reuse the stored profile, or make the first one. */
+/** Load the signed-in user. A 401 is handled by api.js (back to /login). */
 export async function initProfile() {
-  const stored = storedUserId();
-
-  if (stored) {
-    try {
-      const user = await api.getUser(stored);
-      state.userId = user.user_id;
-      state.userLabel = user.label;
-      paintAvatar();
-      return;
-    } catch (error) {
-      // A 404 is routine — the id outlived the database, which is exactly
-      // what a fresh install looks like. Make a new profile instead.
-      if (error.status !== 404) throw error;
-      forgetUser();
-    }
-  }
-
-  await createProfile();
-}
-
-export async function createProfile() {
-  const user = await api.createUser();
-
+  const { user } = await api.me();
   state.userId = user.user_id;
   state.userLabel = user.label;
-  rememberUser(user.user_id);
+  state.userEmail = user.email;
   paintAvatar();
-
-  state.notebooks = [];
-  state.notebook = null;
-  state.sources = [];
-
-  return user;
 }
 
 async function renameCurrent() {
-  if (!state.userId) return;
-
   const label = await promptDialog({
     title: t("rename"),
     message: t("renamePrompt"),
@@ -127,17 +44,45 @@ async function renameCurrent() {
     const result = await api.renameUser(state.userId, label);
     state.userLabel = result.label;
     paintAvatar();
-    await renderList();
   } catch (error) {
     toast(error.message);
   }
 }
 
-/** Delete this profile and everything under it, then land somewhere valid. */
-async function deleteCurrent() {
-  if (!state.userId) return;
+async function changePassword() {
+  closeMenu();
+  const current = await promptDialog({ title: t("changePassword"), message: t("currentPasswordPrompt"), secret: true });
+  if (!current) return;
+  const next = await promptDialog({ title: t("changePassword"), message: t("newPasswordPrompt"), secret: true });
+  if (!next) return;
 
-  const name = state.userLabel || state.userId.slice(0, 8);
+  try {
+    await api.changePassword(current, next);
+    toast(t("passwordChanged"));
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function signOut() {
+  try {
+    await api.logout();
+  } finally {
+    window.location.replace("/login");
+  }
+}
+
+async function signOutEverywhere() {
+  try {
+    await api.logoutAll();
+  } finally {
+    window.location.replace("/login");
+  }
+}
+
+/** Delete the account and everything under it, then back to the login page. */
+async function deleteCurrent() {
+  const name = state.userEmail || state.userLabel || "";
   const ok = await confirmDialog({
     title: t("deleteProfile"),
     message: t("confirmDeleteProfile").replace("{name}", name),
@@ -153,18 +98,7 @@ async function deleteCurrent() {
     return;
   }
 
-  // The stored id now points at nothing. Forget it and mint the next
-  // profile *here*, before onSwitch runs — onSwitch is bound to
-  // enterProfile (app.js), which loads notebooks for whatever state.userId
-  // currently is; leaving it null between forgetUser() and onSwitch() sent
-  // a literal "GET /chat/users/null/chats" (state.userId stringified into
-  // the URL), 404ing every time a profile was deleted.
-  forgetUser();
-  await createProfile();
-
-  closeMenu();
-  toast(t("profileDeleted").replace("{name}", name));
-  onSwitch();
+  window.location.replace("/login");
 }
 
 export function bindProfile() {
@@ -173,21 +107,13 @@ export function bindProfile() {
     const menu = $("profile-menu");
     menu.hidden = !menu.hidden;
     $("btn-profile").setAttribute("aria-expanded", String(!menu.hidden));
-    if (!menu.hidden) renderList();
   });
 
   $("btn-rename-profile").addEventListener("click", renameCurrent);
+  $("btn-change-password").addEventListener("click", changePassword);
+  $("btn-sign-out").addEventListener("click", signOut);
+  $("btn-sign-out-all").addEventListener("click", signOutEverywhere);
   $("btn-delete-profile").addEventListener("click", deleteCurrent);
-
-  $("btn-new-profile").addEventListener("click", async () => {
-    try {
-      await createProfile();
-      closeMenu();
-      onSwitch();
-    } catch (error) {
-      toast(error.message);
-    }
-  });
 
   document.addEventListener("click", (event) => {
     if (!$("profile-menu").hidden && !event.target.closest("#profile-menu")) closeMenu();

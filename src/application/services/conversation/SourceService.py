@@ -111,8 +111,11 @@ class SourceService(BaseService):
         """Only the asset document changes. The name is copied into chunk
         metadata and vector payloads at index time, but nothing reads those
         copies for display — citations resolve the name through ``asset_id`` —
-        so there is nothing to cascade."""
-        await self.chats.get_chat(chat_id)
+        so there is nothing to cascade.
+
+        Through `owned`: checking only that the chat existed let any notebook
+        rename any asset by id."""
+        await self.owned(chat_id, asset_id)
         await self.assets.rename(asset_id, name)
 
     async def owned(self, chat_id: str, asset_id: str) -> tuple[Chat, Asset]:
@@ -271,7 +274,12 @@ class SourceService(BaseService):
         """The run to report on: the one named, else the newest unfinished one
         for the chat (what a page that reloaded mid-upload needs). None if none."""
         tasks = TaskModel(self.db)
-        return await tasks.find_task(task_id) if task_id else await tasks.find_active_for_project(chat_id)
+        if not task_id:
+            return await tasks.find_active_for_project(chat_id)
+        # A task id from another notebook reads as no task at all: otherwise
+        # any notebook could poll any task's progress and error text.
+        task = await tasks.find_task(task_id)
+        return task if task is not None and task.project_id == chat_id else None
 
     async def list_for_user(self, user_id: str) -> tuple[dict[str, Chat], list[Asset]]:
         """Every document a user has uploaded, across all their chats.

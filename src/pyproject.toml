@@ -36,6 +36,10 @@ dependencies = [
     # compose. shared/utils/tracing.py wraps it so that with LANGFUSE_ENABLED
     # off (tests, a bare dev box) every call is a no-op.
     "langfuse>=3.0.0",
+    # --- accounts ---
+    # Password hashing for signup/login (application/services/account/
+    # AuthService.py). argon2id, the current OWASP recommendation.
+    "argon2-cffi>=23.1",
     # --- config and validation ---
     "pydantic>=2.7",            # imported directly by every model and schema
     "pydantic-settings>=2.14.2",

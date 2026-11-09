@@ -149,4 +149,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 # No --reload, no --workers: the lifespan builds one provider cache and runs
 # Alembic under an advisory lock, and the metrics counters are per-process, so
 # scaling is a matter of more containers, not more workers inside one.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: behind nginx, take the client's scheme and address from
+# X-Forwarded-Proto / -For, so a TLS deploy sees https. Only nginx can reach
+# this port (compose publishes none), so trusting any forwarder is safe here.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

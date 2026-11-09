@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}{{ app_name }} — Sign in{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="/static/css/auth.css?v={{ static_v }}">
+{% endblock %}
+
+{% block content %}
+<main class="auth">
+  <section class="auth__card" aria-labelledby="auth-heading">
+    <header class="auth__head">
+      <img src="/static/img/logo.svg?v={{ static_v }}" alt="" class="auth__logo" width="40" height="40">
+      <h1 id="auth-heading">{{ app_name }}</h1>
+      <p class="muted" data-i18n="authTagline"></p>
+    </header>
+
+    <div class="segmented auth__tabs" role="tablist">
+      <button type="button" class="btn btn--seg" role="tab" data-auth-mode="signin" data-i18n="signIn"></button>
+      <button type="button" class="btn btn--seg" role="tab" data-auth-mode="signup" data-i18n="signUp"></button>
+    </div>
+
+    <form id="auth-form" class="auth__form" novalidate>
+      <label class="field" data-signup-only hidden>
+        <span class="field__label" data-i18n="displayName"></span>
+        <input id="auth-name" class="dialog__input" type="text" autocomplete="nickname" maxlength="200">
+      </label>
+
+      <label class="field">
+        <span class="field__label" data-i18n="email"></span>
+        <input id="auth-email" class="dialog__input" type="email" autocomplete="email" required maxlength="320" dir="ltr">
+      </label>
+
+      <label class="field">
+        <span class="field__label" data-i18n="password"></span>
+        <input id="auth-password" class="dialog__input" type="password" autocomplete="current-password" required maxlength="1024" dir="ltr">
+      </label>
+
+      <label class="field" data-signup-only hidden>
+        <span class="field__label" data-i18n="confirmPassword"></span>
+        <input id="auth-confirm" class="dialog__input" type="password" autocomplete="new-password" maxlength="1024" dir="ltr">
+        <span class="field__hint" data-i18n="passwordHint"></span>
+      </label>
+
+      <p class="field__hint auth__claim" id="auth-claim-note" data-i18n="claimNote" hidden></p>
+      <p class="auth__error" id="auth-error" role="alert" hidden></p>
+
+      <button type="submit" class="btn btn--dark btn--block" id="auth-submit"></button>
+    </form>
+
+    <div class="langswitch auth__lang">
+      <button type="button" class="btn btn--lang" data-lang="en">English</button>
+      <button type="button" class="btn btn--lang" data-lang="ar">العربية</button>
+    </div>
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+  <script type="module" src="/static/js/auth.js?v={{ static_v }}"></script>
+{% endblock %}

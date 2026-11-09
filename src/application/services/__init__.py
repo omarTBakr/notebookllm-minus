@@ -17,7 +17,7 @@ one flat directory.
     studio  generating study material — flashcards, quizzes
 """
 
-from .account import UserService
+from .account import AccessService, AuthService, UserService
 from .conversation import ConversationService, FetchQueue, MessageService, SourceService
 from .core import BaseService, IdempotencyService
 from .ingest import (
@@ -74,6 +74,8 @@ __all__ = [
     "SourceService",
     "StudioService",
     "TextProcessingService",
+    "AccessService",
+    "AuthService",
     "UserService",
     "UrlSourceService",
     "for_source",

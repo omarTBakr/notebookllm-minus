@@ -16,7 +16,7 @@ import { t } from "./i18n.js";
 // backdrops and leave whichever closed last holding the page's focus.
 let current = null;
 
-function ask({ title, message, value, confirm, danger = false, input = false }) {
+function ask({ title, message, value, confirm, danger = false, input = false, secret = false }) {
   return new Promise((resolve) => {
     current?.dismiss();
 
@@ -54,7 +54,9 @@ function ask({ title, message, value, confirm, danger = false, input = false }) 
     let field = null;
     if (input) {
       field = document.createElement("input");
-      field.type = "text";
+      // secret: a password, masked, and never trimmed (spaces are allowed).
+      field.type = secret ? "password" : "text";
+      if (secret) field.autocomplete = "current-password";
       field.className = "dialog__input";
       field.value = value ?? "";
       body.append(field);
@@ -91,7 +93,7 @@ function ask({ title, message, value, confirm, danger = false, input = false }) 
 
     const accept = () => {
       if (!input) return settle(true);
-      const text = field.value.trim();
+      const text = secret ? field.value : field.value.trim();
       // An empty name is a dismissal, not a rename to nothing.
       settle(text || null);
     };
@@ -133,5 +135,5 @@ export const confirmDialog = ({ title, message, confirm, danger = false }) =>
   ask({ title, message, confirm: confirm ?? t("confirm"), danger });
 
 /** Ask for a line of text. Resolves the trimmed value, or null if dismissed. */
-export const promptDialog = ({ title, message, value, confirm }) =>
-  ask({ title, message, value, confirm: confirm ?? t("save"), input: true });
+export const promptDialog = ({ title, message, value, confirm, secret = false }) =>
+  ask({ title, message, value, confirm: confirm ?? t("save"), input: true, secret });

@@ -1,12 +1,11 @@
 """Conversations: users, sessions, chats, documents, and the answer stream.
 
-Identity is deliberately thin — a user is an opaque uuid the browser keeps.
-There is no sign-in, no password and no cookie; this exists to scope
-conversations, not to prove who anyone is.
+Every route here needs a signed-in user (session cookie) and only reaches
+that user's own data: see presentation/auth.py, applied to the whole router.
 
 Sub-modules
 -----------
-users    — profile CRUD
+users    — the signed-in user's profile (self only)
 sessions — session CRUD
 chats    — notebook CRUD
 assets   — document upload, source selection, asset preview
@@ -16,7 +15,9 @@ memory   — `/memory` command handling, and the memory-search endpoint
 studio   — generated study material: flashcard decks and quizzes
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from presentation.auth import enforce_ownership, require_user
 
 from .assets import assets_router
 from .chats import chats_router
@@ -27,7 +28,13 @@ from .sessions import sessions_router
 from .studio import studio_router
 from .users import users_router
 
-chat_router = APIRouter(prefix="/chat", tags=["chat"])
+# Order matters: require_user sets request.state.user, which
+# enforce_ownership reads.
+chat_router = APIRouter(
+    prefix="/chat",
+    tags=["chat"],
+    dependencies=[Depends(require_user), Depends(enforce_ownership)],
+)
 
 chat_router.include_router(users_router)
 chat_router.include_router(sessions_router)

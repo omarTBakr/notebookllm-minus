@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from application.tasks.jobs.index import get_index_task
@@ -9,6 +9,7 @@ from application.tasks.workflows import (
     index_chain_task_names,
 )
 from presentation import dependencies as deps
+from presentation.auth import enforce_ownership, require_user
 from shared.exceptions import (
     CELERY_BROKER_EXCEPTIONS,
     CeleryBrokerError,
@@ -19,7 +20,13 @@ from .schemas import PushRequest, SearchRequest
 
 logger = get_logger(__name__)
 
-nlp_router = APIRouter(prefix="/nlp", tags=["nlp"])
+# Signed-in users only, and only their own projects (a project id is a chat
+# id): see presentation/auth.py.
+nlp_router = APIRouter(
+    prefix="/nlp",
+    tags=["nlp"],
+    dependencies=[Depends(require_user), Depends(enforce_ownership)],
+)
 
 
 @nlp_router.post("/index/push/{project_id}", status_code=202)

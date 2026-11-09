@@ -21,6 +21,7 @@ import pytest
 
 from data.models import (
     Asset,
+    AuthSession,
     Chat,
     DataChunk,
     Message,
@@ -31,6 +32,7 @@ from data.models import (
 )
 from data.repositories.postgres.base_repository import (
     AssetRow,
+    AuthSessionRow,
     ChatRow,
     ChunkRow,
     MessageRow,
@@ -54,6 +56,7 @@ REPOSITORIES = [
 # The pydantic model and the ORM class that stores it.
 TABLES = [
     (User, UserRow),
+    (AuthSession, AuthSessionRow),
     (Session, SessionRow),
     (Chat, ChatRow),
     (Message, MessageRow),
@@ -78,9 +81,7 @@ def attributes_read_off_the_model(stem: str) -> set[str]:
 @pytest.mark.parametrize("stem, model", REPOSITORIES)
 def test_every_referenced_field_exists_on_the_model(stem, model, request):
     if stem in KNOWN_BROKEN:
-        request.node.add_marker(
-            pytest.mark.xfail(strict=True, reason=f"KNOWN BUG: {KNOWN_BROKEN[stem]}")
-        )
+        request.node.add_marker(pytest.mark.xfail(strict=True, reason=f"KNOWN BUG: {KNOWN_BROKEN[stem]}"))
 
     path = SRC / f"{stem}_repository.py"
     if not path.exists():
@@ -90,8 +91,7 @@ def test_every_referenced_field_exists_on_the_model(stem, model, request):
     unknown = {u for u in unknown if not u.startswith("_")}
 
     assert not unknown, (
-        f"{path.name} reads {sorted(unknown)} off a {model.__name__}, which has "
-        f"{sorted(model.model_fields)}"
+        f"{path.name} reads {sorted(unknown)} off a {model.__name__}, which has " f"{sorted(model.model_fields)}"
     )
 
 
@@ -121,8 +121,7 @@ def test_every_model_field_has_a_column(model, row):
     missing = set(model.model_fields) - columns
 
     assert not missing, (
-        f"{model.__name__} has {sorted(missing)} with no column on "
-        f"{row.__tablename__}, which has {sorted(columns)}"
+        f"{model.__name__} has {sorted(missing)} with no column on " f"{row.__tablename__}, which has {sorted(columns)}"
     )
 
 
@@ -144,6 +143,5 @@ def test_a_required_field_is_not_backed_by_a_nullable_column(model, row):
     )
 
     assert not offenders, (
-        f"{row.__tablename__} makes {offenders} nullable, but {model.__name__} "
-        f"does not accept None for them"
+        f"{row.__tablename__} makes {offenders} nullable, but {model.__name__} " f"does not accept None for them"
     )

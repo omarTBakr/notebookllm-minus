@@ -126,12 +126,34 @@ class DuplicateAssetError(NotebookLLMError):
 
 
 class UserNotFoundError(NotFoundError):
-    """No user matches the given user_id.
+    """No user matches the given user_id, or it is not the caller's.
 
-    Expected rather than exceptional: the browser keeps a user_id in
-    localStorage, and a wiped database leaves it pointing at nothing. The UI
-    treats this as "start as a new user", not as an error to show.
+    Also what another user's id looks like from the outside: ownership
+    failures answer 404, never 403, so a response cannot confirm that someone
+    else's account, notebook or source exists.
     """
+
+
+class AuthenticationError(NotebookLLMError):
+    """Not signed in, or the credentials were wrong.
+
+    401. The message never says which of email or password was wrong, so a
+    failed login cannot be used to find out which emails have accounts.
+    """
+
+    status_code = 401
+
+
+class LoginThrottledError(NotebookLLMError):
+    """Too many failed logins for this email; try again later."""
+
+    status_code = 429
+
+
+class DuplicateEmailError(NotebookLLMError):
+    """An account with this email already exists."""
+
+    status_code = 409
 
 
 class SessionNotFoundError(NotFoundError):

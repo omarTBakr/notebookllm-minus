@@ -17,5 +17,17 @@ class User(BaseModel):
     # tellable apart. Never used for lookup.
     label: str = Field("", max_length=200)
 
+    # Login credentials. Both None on a profile created before accounts
+    # existed: such a profile cannot be signed into until someone claims it
+    # at signup (AuthService.signup). email is stored lowercased and is unique
+    # wherever it is set. password_hash is an argon2 hash and never leaves the
+    # application tier: no route serialises a User whole.
+    email: Optional[str] = Field(None, max_length=320)
+    password_hash: Optional[str] = Field(None, max_length=512)
+
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+    @property
+    def has_credentials(self) -> bool:
+        return bool(self.email and self.password_hash)

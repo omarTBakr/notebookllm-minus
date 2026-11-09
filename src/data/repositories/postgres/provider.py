@@ -24,6 +24,7 @@ from shared.utils.config import Settings
 
 from ..interfaces.artifact_repository import ArtifactRepository
 from ..interfaces.asset_repository import AssetRepository
+from ..interfaces.auth_session_repository import AuthSessionRepository
 from ..interfaces.chat_repository import ChatRepository
 from ..interfaces.chunk_repository import ChunkRepository
 from ..interfaces.ingest_batch_repository import IngestBatchRepository
@@ -37,6 +38,7 @@ from ..interfaces.user_repository import UserRepository
 from ..interfaces.vector_repository import VectorRepository
 from .artifact_repository import PostgresArtifactRepository
 from .asset_repository import PostgresAssetRepository
+from .auth_session_repository import PostgresAuthSessionRepository
 from .chat_repository import PostgresChatRepository
 from .chunk_repository import PostgresChunkRepository
 from .ingest_batch_repository import PostgresIngestBatchRepository
@@ -144,6 +146,9 @@ class PostgresProvider(DbProvider):
 
     def users(self) -> UserRepository:
         return PostgresUserRepository(self._sessions())
+
+    def auth_sessions(self) -> AuthSessionRepository:
+        return PostgresAuthSessionRepository(self._sessions())
 
     def personal_user_info(self) -> PersonalUserInfoRepository:
         return PostgresPersonalUserInfoRepository(self._sessions())

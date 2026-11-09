@@ -241,6 +241,16 @@ METRICS_ENABLED=true
 METRICS_PATH="/metrics"
 WORKER_METRICS_PORT=9808
 
+# --- Accounts (email + password; HttpOnly session cookie) ---------------------
+AUTH_COOKIE_NAME="nlm_session"
+# true once nginx (or a proxy in front of it) serves HTTPS.
+AUTH_COOKIE_SECURE=false
+AUTH_SESSION_DAYS=14
+AUTH_PASSWORD_MIN_LENGTH=8
+AUTH_LOGIN_MAX_FAILURES=5
+AUTH_LOGIN_LOCKOUT_MINUTES=15
+DOCS_ENABLED=false
+
 # --- Tracing + prompt versioning (Langfuse, http://localhost:3001) ------------
 # Create a project in the Langfuse UI and paste its keys here.
 LANGFUSE_ENABLED=false

@@ -14,6 +14,20 @@ class UserRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_user_by_email(self, email: str) -> User | None:
+        """The user with this (already lowercased) email, or None."""
+        pass
+
+    @abstractmethod
+    async def set_credentials(self, user_id: str, email: str, password_hash: str) -> None:
+        """Give a user their login. Raises DuplicateEmailError if the email is taken."""
+        pass
+
+    @abstractmethod
+    async def set_password_hash(self, user_id: str, password_hash: str) -> None:
+        pass
+
+    @abstractmethod
     async def rename(self, user_id: str, label: str) -> None:
         pass
 

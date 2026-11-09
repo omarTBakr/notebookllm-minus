@@ -2,10 +2,10 @@ from typing import AsyncIterator
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from data.models import User
-from shared.exceptions import DbError, UserNotFoundError
+from shared.exceptions import DbError, DuplicateEmailError, UserNotFoundError
 
 from ..interfaces.user_repository import UserRepository
 from .base_repository import PostgresBaseRepository, UserRow
@@ -23,6 +23,8 @@ class PostgresUserRepository(PostgresBaseRepository, UserRepository):
                         id=self._generate_id(),
                         user_id=user.user_id,
                         label=user.label,
+                        email=user.email,
+                        password_hash=user.password_hash,
                         created_at=user.created_at,
                         updated_at=user.updated_at,
                     )
@@ -43,6 +45,33 @@ class PostgresUserRepository(PostgresBaseRepository, UserRepository):
             raise UserNotFoundError(f"User {user_id!r} not found")
 
         return self._record_to_model(row, User)
+
+    async def get_user_by_email(self, email: str) -> User | None:
+        try:
+            async with self.session_factory() as db:
+                row = await db.scalar(select(UserRow).where(UserRow.email == email))
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to look up a user by email: {exc}") from exc
+
+        return self._record_to_model(row, User) if row is not None else None
+
+    async def set_credentials(self, user_id: str, email: str, password_hash: str) -> None:
+        await self._update(user_id, email=email, password_hash=password_hash, updated_at=func.now())
+
+    async def set_password_hash(self, user_id: str, password_hash: str) -> None:
+        await self._update(user_id, password_hash=password_hash, updated_at=func.now())
+
+    async def _update(self, user_id: str, **values) -> None:
+        try:
+            async with self.session_factory.begin() as db:
+                result = await db.execute(update(UserRow).where(UserRow.user_id == user_id).values(**values))
+        except IntegrityError as exc:
+            raise DuplicateEmailError("An account with this email already exists") from exc
+        except SQLAlchemyError as exc:
+            raise DbError(f"Failed to update user: {exc}") from exc
+
+        if result.rowcount == 0:
+            raise UserNotFoundError(f"User {user_id!r} not found")
 
     async def rename(self, user_id: str, label: str) -> None:
         try:
