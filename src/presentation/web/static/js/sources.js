@@ -33,6 +33,7 @@ const BADGE = (source) => {
   if (source.asset_type === "youtube") return "YT";
   if (source.asset_type === "pdf") return "PDF";
   if (source.asset_type === "xlsx") return "XLSX";
+  if (source.asset_type === "image") return "IMG";
   // A public Google Sheet is fetched as CSV and stored as one; its link is what
   // says where it came from.
   if (source.asset_type === "csv" && /docs\.google\.com\/spreadsheets/.test(source.source_url ?? ""))
@@ -49,6 +50,7 @@ const BADGE_CLASS = {
   CSV: "source__icon--csv",
   XLSX: "source__icon--csv",
   SHEET: "source__icon--sheet",
+  IMG: "source__icon--img",
 };
 
 function row(source) {
@@ -365,6 +367,18 @@ async function preview(source, pageNumber, chunkOrder) {
 
   if (source.asset_type === "youtube") {
     await previewVideo(source, url, chunkOrder);
+    return;
+  }
+
+  if (source.asset_type === "image") {
+    // An uploaded picture is its own preview: the whole of it is the source,
+    // and the one image chunk it became covers all of it, so a citation has
+    // nothing narrower to point at.
+    const picture = document.createElement("img");
+    picture.className = "preview__image";
+    picture.alt = source.name;
+    picture.src = url;
+    $("preview-body").replaceChildren(picture);
     return;
   }
 

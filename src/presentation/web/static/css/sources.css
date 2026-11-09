@@ -133,6 +133,7 @@
 .source__icon--web { background: #2f6fb3; }
 .source__icon--csv { background: #16845b; }
 .source__icon--sheet { background: #218b5b; }
+.source__icon--img { background: #7a4fc4; }
 
 .source__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; cursor: text; }
 
@@ -311,6 +312,7 @@
 .preview__text.md { font-family: inherit; font-size: 0.83rem; }
 
 .preview__pdf { display: block; width: 100%; height: 100%; border: 0; }
+.preview__image { display: block; max-width: 100%; max-height: 100%; margin: 0 auto; object-fit: contain; }
 
 /* The pdf.js canvas view — only shown when a citation click named a
    passage to highlight; a plain browse keeps the native <embed> above,

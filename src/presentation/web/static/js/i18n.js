@@ -56,7 +56,7 @@ const STRINGS = {
     addSources: "Add sources",
     uploadFile: "Upload file",
     chooseFile: "Choose a file",
-    supportedFiles: "PDF, text, Markdown, CSV or Excel",
+    supportedFiles: "PDF, text, Markdown, CSV, Excel or an image",
     googleSheets: "Google Sheets",
     sheetsPlaceholder: "Paste a Google Sheets link",
     sheetsHint: "The sheet must be shared with access for this link.",
@@ -101,6 +101,12 @@ const STRINGS = {
     researchedParts: "Researched {n} parts",
     writingAnswer: "Writing the answer…",
     guardrailNote: "Stopped by the safety check.",
+    attachImage: "Attach an image",
+    removeImage: "Remove the image",
+    imageWrongType: "Only PNG, JPEG or WebP images can be attached",
+    imageTooLarge: "The image is larger than 5 MB",
+    imageCitation: "Image",
+    imageWithMemory: "A picture cannot be saved to memory; remove it first",
     chars: "characters",
     citations: "Sources",
     // Abbreviated because it sits inline in a citation, after the filename.
@@ -277,7 +283,7 @@ const STRINGS = {
     addSources: "إضافة مصادر",
     uploadFile: "رفع ملف",
     chooseFile: "اختيار ملف",
-    supportedFiles: "PDF أو نص أو Markdown أو CSV أو Excel",
+    supportedFiles: "PDF أو نص أو Markdown أو CSV أو Excel أو صورة",
     googleSheets: "جداول Google",
     sheetsPlaceholder: "ألصق رابط جدول Google",
     sheetsHint: "يجب مشاركة الجدول والسماح بالوصول عبر هذا الرابط.",
@@ -318,6 +324,12 @@ const STRINGS = {
     researchedParts: "بُحث في {n} أجزاء",
     writingAnswer: "جارٍ كتابة الإجابة…",
     guardrailNote: "أوقفه فحص الأمان.",
+    attachImage: "إرفاق صورة",
+    removeImage: "إزالة الصورة",
+    imageWrongType: "يمكن إرفاق صور PNG أو JPEG أو WebP فقط",
+    imageTooLarge: "حجم الصورة أكبر من 5 ميغابايت",
+    imageCitation: "صورة",
+    imageWithMemory: "لا يمكن حفظ صورة في الذاكرة؛ أزلها أولًا",
     chars: "حرفًا",
     citations: "المصادر",
     page: "ص.",
@@ -457,6 +469,14 @@ export function applyLang(lang) {
 
   document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
     el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+
+  // Icon-only buttons: the label a screen reader announces and the tooltip.
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.title = t(el.dataset.i18nTitle);
+  });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
+    el.setAttribute("aria-label", t(el.dataset.i18nAriaLabel));
   });
 
   document.querySelectorAll(".btn--lang").forEach((btn) => {
