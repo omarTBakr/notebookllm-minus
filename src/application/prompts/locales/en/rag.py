@@ -170,3 +170,19 @@ footer_prompt = "\n".join(
         "Response:",
     ]
 )
+
+# An image hit, in place of a passage's text. The caption is what a model
+# without vision reads; a vision model also gets the picture itself, and
+# images_attached_prompt says which document each attached picture is.
+image_content_prompt = "[Image] {caption}"
+
+# Appended when pictures are attached to the request, so the model can tell
+# them apart and cite each by its document number.
+images_attached_prompt = "The images attached to this message are, in order: {labels}."
+
+# The label for a picture the user attached to their own question.
+user_image_label = "the image the user attached to their question"
+
+# Shown in the search query and the history in place of a picture the user
+# attached: later turns and the retriever see this caption, not the pixels.
+user_image_note = "[Attached image: {caption}]"

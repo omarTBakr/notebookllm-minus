@@ -22,7 +22,8 @@ class CohereChatProvider(LLMChattingInterface):
         try:
             response = await self.client.chat(
                 model=self.model_id,
-                messages=messages,
+                # Command models take no pictures; the caption is in the text.
+                messages=self._without_images(messages),
                 max_tokens=max_tokens,
                 temperature=temperature,
             )

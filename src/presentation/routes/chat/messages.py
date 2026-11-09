@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from presentation import dependencies as deps
-from shared.exceptions import NotebookLLMError
+from shared.exceptions import InvalidInputError, NotebookLLMError
 from shared.utils import request_id_ctx, tracing
 
 from ..schemas import MessageRequest
@@ -21,6 +21,38 @@ async def list_messages(chat_id: str, http_request: Request):
     messages = await deps.messages(http_request).transcript(chat_id)
 
     return JSONResponse(status_code=200, content={"chat_id": chat_id, "messages": messages})
+
+
+def _decode_picture(data_url: str, max_bytes: int, max_side: int) -> tuple[bytes, str]:
+    """A composer data URL as checked, scaled ``(bytes, mime)``.
+
+    The declared type in the URL is ignored: the bytes are sniffed, decoded
+    and re-encoded by shared.utils.images, so nothing a client claims about
+    the picture is trusted.
+    """
+    import base64
+    import binascii
+
+    from shared.utils.images import InvalidImageError, prepare
+
+    header, _, payload = data_url.partition(",")
+    if not header.startswith("data:image/") or ";base64" not in header or not payload:
+        raise InvalidInputError("The attached image must be a base64 data URL")
+
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise InvalidInputError("The attached image is not valid base64") from exc
+
+    if len(raw) > max_bytes:
+        raise InvalidInputError(f"The attached image is larger than {max_bytes // (1024 * 1024)} MB")
+
+    try:
+        prepared = prepare(raw, max_side=max_side)
+    except InvalidImageError as exc:
+        raise InvalidInputError(f"The attached image could not be used: {exc}") from exc
+
+    return prepared.data, prepared.mime
 
 
 @messages_router.post("/chats/{chat_id}/message")
@@ -46,16 +78,48 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
     # arrives in the model's context twice — once as history, once as the prompt.
     history = await service.recent_history(chat_id, settings.CHAT_HISTORY_LIMIT)
 
-    await service.add_user_message(chat_id, request.text)
+    # A picture from the composer: checked before anything is stored, so a
+    # bad upload is a 400 and leaves no orphan question in the transcript.
+    picture: tuple[bytes, str] | None = None
+    picture_caption: str | None = None
+    if request.image:
+        if not settings.MULTIMODAL_ENABLED:
+            raise InvalidInputError("Image questions are switched off (MULTIMODAL_ENABLED)")
+        picture = _decode_picture(request.image, settings.IMAGE_QUERY_MAX_BYTES, settings.IMAGE_MAX_SIDE_PX)
 
-    memory_text = is_memory_command(request.text)
+        from application.services.ingest.ImageCaptionService import caption_picture
+
+        captioner = deps.caption_client(http_request)
+        if captioner is not None:
+            picture_caption = await caption_picture(captioner, picture[0], picture[1], chat.lang or "en")
+
+    # What is stored is text: the question, plus what the picture showed.
+    # The pixels are not kept, so a later turn knows the picture by caption.
+    stored_text = request.text
+    if picture is not None:
+        from application.prompts.template_parser import TemplateParser
+
+        note = TemplateParser(lang=chat.lang, default_lang=settings.DEFAULT_LANG).get(
+            "rag", "user_image_note", {"caption": picture_caption or "-"}
+        )
+        stored_text = f"{request.text}\n{note}".strip()
+
+    await service.add_user_message(chat_id, stored_text)
+
+    memory_text = is_memory_command(request.text) if picture is None else None
 
     if memory_text is not None:
         return await handle_memory_command(http_request, chat, service, memory_text)
 
-    await service.name_chat_from_question(chat, history, request.text)
+    await service.name_chat_from_question(chat, history, request.text or stored_text)
 
-    controller = deps.chat_service(http_request, chat)
+    vision = False
+    if settings.MULTIMODAL_ENABLED:
+        from application.services.llm.vision import has_vision
+
+        vision = await has_vision(getattr(chat, "generation_model", None))
+
+    controller = deps.chat_service(http_request, chat, vision=vision)
     top_k = request.top_k or settings.RETRIEVAL_TOP_K
 
     source_names = await service.source_names(chat_id)
@@ -101,6 +165,9 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
                 # Resolves each hit to a page so the citation can link to it.
                 page_lookup=service.page_lookup(),
                 user_id=chat.user_id,
+                image=picture,
+                image_caption=picture_caption,
+                image_lookup=service.image_lookup() if settings.MULTIMODAL_ENABLED else None,
             ):
                 if event["type"] == "meta":
                     citations = event["citations"]

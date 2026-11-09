@@ -96,6 +96,12 @@ class MessageService(BaseService):
     async def recent_history(self, chat_id: str, limit: int):
         return await self.messages.get_recent_history(chat_id, limit)
 
+    def image_lookup(self):
+        """The callable `ChatService.answer_stream` uses to fetch cited pictures."""
+        from ..rag.images import load_hit_images
+
+        return lambda hits: load_hit_images(self.db, hits)
+
     async def add_user_message(self, chat_id: str, text: str) -> None:
         await self.messages.create_message(
             Message(message_id=str(uuid.uuid4()), chat_id=chat_id, role=ChatRole.USER, content=text)

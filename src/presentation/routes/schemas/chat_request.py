@@ -81,13 +81,26 @@ class CreateChatRequest(BaseModel):
 class MessageRequest(BaseModel):
     """Body for POST /chat/chats/{chat_id}/message."""
 
-    # min_length keeps an empty question from being embedded into a
-    # meaningless vector that still returns confident-looking neighbours.
-    text: str = Field(..., min_length=1)
+    # Empty only when a picture is attached: an empty question alone would be
+    # embedded into a meaningless vector that still returns confident-looking
+    # neighbours (see the validator below).
+    text: str = Field("", max_length=20000)
 
     # None means "use RETRIEVAL_TOP_K". Bounded because every retrieved chunk
     # goes into the prompt, and the context window is finite.
     top_k: int | None = Field(None, gt=0, le=20)
+
+    # A picture attached to the question, as a data URL
+    # ("data:image/png;base64,..."). The bytes are checked and decoded by the
+    # route (shared.utils.images); this only bounds the size of the string,
+    # about IMAGE_QUERY_MAX_BYTES once base64's 4/3 overhead is counted.
+    image: str | None = Field(None, max_length=7_200_000)
+
+    @model_validator(mode="after")
+    def _question_or_picture(self):
+        if not self.text.strip() and not self.image:
+            raise ValueError("Ask a question or attach an image")
+        return self
 
 
 class SetModelsRequest(BaseModel):

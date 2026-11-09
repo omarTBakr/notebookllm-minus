@@ -1,3 +1,5 @@
+import base64
+
 from google import genai  # ty: ignore[unresolved-import]
 from google.genai import types  # ty: ignore[unresolved-import]
 
@@ -30,7 +32,13 @@ class GoogleChatProvider(LLMChattingInterface):
         contents = [
             types.Content(
                 role=CHAT_ROLE_TO_GOOGLE[message["role"]],
-                parts=[types.Part.from_text(text=message["content"])],
+                parts=[
+                    *(
+                        types.Part.from_bytes(data=base64.b64decode(picture["data"]), mime_type=picture["mime"])
+                        for picture in message.get("images") or []
+                    ),
+                    types.Part.from_text(text=message["content"]),
+                ],
             )
             for message in messages
         ]

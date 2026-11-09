@@ -75,7 +75,7 @@ class OllamaChatProvider(LLMChattingInterface):
         try:
             response = await self.client.chat(
                 model=self.model_id,
-                messages=messages,
+                messages=self._ollama_messages(messages),
                 # Generation knobs live under `options`, and the token cap is
                 # called num_predict rather than max_tokens.
                 options=self._options(max_tokens, temperature),
@@ -109,7 +109,7 @@ class OllamaChatProvider(LLMChattingInterface):
         """
         request = {
             "model": self.model_id,
-            "messages": messages,
+            "messages": self._ollama_messages(messages),
             "stream": True,
             "options": options,
         }

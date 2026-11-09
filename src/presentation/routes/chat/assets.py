@@ -188,6 +188,15 @@ async def asset_content(chat_id: str, asset_id: str, http_request: Request, down
         # ingest, so what the preview lists is what was cited.
         return Response(content=content, media_type="application/json", headers=headers)
 
+    if asset.asset_type == AssetType.IMAGE:
+        # Re-sniffed rather than trusted from the upload: the stored bytes were
+        # checked at upload (DataService._checked_image_type), and nosniff
+        # keeps a browser from guessing anything else out of them.
+        from shared.utils.images import sniff_mime
+
+        headers["X-Content-Type-Options"] = "nosniff"
+        return Response(content=content, media_type=sniff_mime(content) or "application/octet-stream", headers=headers)
+
     if asset.asset_type == AssetType.XLSX and not download:
         # A workbook is a zip archive: shown as text it is noise. The preview
         # gets its rows instead, headed by the `Sheet · row N` a citation names.
@@ -270,8 +279,30 @@ async def locate_chunk(chat_id: str, asset_id: str, chunk_order: int, http_reque
             # [start_s, end_s] of video, for a transcript's chunk; null otherwise.
             "time_range": metadata.get("time_range"),
             "text": chunk.chunk_content,
+            # "image" for a figure or an uploaded picture; its pixels are at
+            # .../chunks/{chunk_order}/image.
+            "kind": metadata.get("kind") or "text",
         },
     )
+
+
+@assets_router.get("/chats/{chat_id}/assets/{asset_id}/chunks/{chunk_order}/image")
+async def chunk_image(chat_id: str, asset_id: str, chunk_order: int, http_request: Request, size: int = 512):
+    """The picture an image chunk shows, cut out of its source.
+
+    For a citation thumbnail (``size`` caps the longest side; 64..1024).
+    Ownership is checked by `locate` exactly as for the text of a chunk,
+    and 404 covers both "not yours" and "not an image".
+    """
+    size = max(64, min(size, 1024))
+    asset, data, mime = await deps.sources(http_request).chunk_image(chat_id, asset_id, chunk_order, size)
+    etag = f'"{asset.content_hash}-{chunk_order}-{size}"' if asset.content_hash else None
+    headers = {"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"}
+    if etag:
+        headers["ETag"] = etag
+        if http_request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers=headers)
+    return Response(content=data, media_type=mime, headers=headers)
 
 
 @assets_router.post("/chats/{chat_id}/documents")

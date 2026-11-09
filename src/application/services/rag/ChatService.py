@@ -47,6 +47,8 @@ class ChatService(BaseService):
         reranker: RerankerInterface | None = None,
         input_guardrail: InputGuardrail | None = None,
         output_guardrail: OutputGuardrail | None = None,
+        image_index=None,
+        vision: bool = False,
     ) -> None:
 
         super().__init__()
@@ -72,6 +74,12 @@ class ChatService(BaseService):
         # None switches a stage off (GUARDRAILS_ENABLED=false, or a test).
         self.input_guardrail = input_guardrail
         self.output_guardrail = output_guardrail
+        # ImageIndexService, or None when MULTIMODAL_ENABLED is off: then no
+        # image collection is searched and nothing below changes.
+        self.image_index = image_index
+        # Whether the answering model can look at pictures. Without vision an
+        # image hit still reaches it, as its caption.
+        self.vision = vision
 
     # --- groundedness ---------------------------------------------------------
 
@@ -141,7 +149,7 @@ class ChatService(BaseService):
                         # 1-based so it lines up with the [1] the model is told to cite.
                         "num": number,
                         "source": (hit.get("metadata") or {}).get("source") or "unknown",
-                        "content": hit.get("text") or "",
+                        "content": self._content(parser, hit),
                     },
                 )
                 for number, hit in zip(numbers or range(1, len(hits) + 1), hits)
@@ -166,6 +174,17 @@ class ChatService(BaseService):
         system_prompt = parser.get("rag", "system_prompt") if hits else parser.get("chat", "system_prompt")
 
         return system_prompt, user_prompt
+
+    @staticmethod
+    def is_image(hit: dict) -> bool:
+        return (hit.get("metadata") or {}).get("kind") == "image"
+
+    def _content(self, parser: TemplateParser, hit: dict) -> str:
+        """A hit's text as the prompt shows it: an image hit is labelled as one."""
+        text = hit.get("text") or ""
+        if self.is_image(hit):
+            return parser.get("rag", "image_content_prompt", {"caption": text})
+        return text
 
     @staticmethod
     def to_citations(
@@ -234,6 +253,9 @@ class ChatService(BaseService):
                     # Kept beside the vector score rather than replacing it:
                     # the two disagreeing is exactly what is worth seeing.
                     "rerank_score": (round(hit["rerank_score"], 4) if hit.get("rerank_score") is not None else None),
+                    # A figure or an uploaded picture: the UI shows a thumbnail
+                    # (the chunk's image endpoint) and opens the page at it.
+                    "kind": "image" if metadata.get("kind") == "image" else "text",
                 }
             )
 
@@ -259,8 +281,16 @@ class ChatService(BaseService):
         rerank_query: str,
         top_k: int,
         asset_ids: list[str] | None,
+        image_query: bytes | None = None,
     ) -> list[dict]:
         """Search every query, merge, rerank against *rerank_query*, keep top_k.
+
+        With the image index on, each query is also searched against the
+        notebook's pictures (a typed question, embedded into the picture
+        space), and *image_query* (a picture the user attached) is searched
+        for similar pictures. Image hits carry their caption as text, so the
+        reranker scores them on the same scale as passages, and they compete
+        for the same top_k.
 
         With a reranker, each query fetches RERANK_CANDIDATES hits instead of
         top_k: the cross-encoder can only promote a passage vector search
@@ -274,9 +304,13 @@ class ChatService(BaseService):
             as_type="retriever",
             input={"queries": queries, "limit": limit},
         ) as span:
-            results = await asyncio.gather(
-                *(self.nlp.search(chat_id, query, limit=limit, asset_ids=asset_ids) for query in queries)
-            )
+            searches = [self.nlp.search(chat_id, query, limit=limit, asset_ids=asset_ids) for query in queries]
+            if self.image_index is not None:
+                searches += [self._image_search(chat_id, text=query, asset_ids=asset_ids) for query in queries]
+                if image_query is not None:
+                    searches.append(self._image_search(chat_id, image=image_query, asset_ids=asset_ids))
+
+            results = await asyncio.gather(*searches)
 
             merged: dict[str, dict] = {}
             for hits in results:
@@ -284,6 +318,10 @@ class ChatService(BaseService):
                     hit_id = hit.get("id")
                     existing = merged.get(hit_id)
                     if existing is None or (hit.get("score") or 0) > (existing.get("score") or 0):
+                        # The same figure can come back from both collections
+                        # (its caption from the text one); it stays an image.
+                        if existing is not None and self.is_image(existing) and not self.is_image(hit):
+                            hit = {**hit, "metadata": {**(hit.get("metadata") or {}), "kind": "image"}}
                         merged[hit_id] = hit
 
             ranked = sorted(
@@ -295,9 +333,22 @@ class ChatService(BaseService):
             span.update(output={"candidates": len(ranked)})
 
         if not self.reranker.ENABLED or not ranked:
-            return ranked[:top_k]
+            # Vector scores from two collections are not comparable, so with
+            # no reranker to put them on one scale the passages keep their
+            # top_k and the pictures are added after them, capped.
+            texts = [hit for hit in ranked if not self.is_image(hit)]
+            pictures = [hit for hit in ranked if self.is_image(hit)]
+            return texts[:top_k] + pictures[: self.settings.IMAGE_TOP_K]
 
         return await self._rerank(rerank_query, ranked, top_k)
+
+    async def _image_search(self, chat_id: str, **query) -> list[dict]:
+        """One image-collection search; a failure costs the pictures, not the answer."""
+        try:
+            return await self.image_index.search(chat_id, **query)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Image search failed; answering from text only: %s", exc)
+            return []
 
     async def _rerank(self, query: str, hits: list[dict], top_k: int) -> list[dict]:
         """The best *top_k* of *hits* by cross-encoder relevance.
@@ -343,8 +394,20 @@ class ChatService(BaseService):
         source_names: dict[str, str] | None = None,
         page_lookup: Callable[[list[dict]], Awaitable[dict]] | None = None,
         user_id: str | None = None,
+        image: tuple[bytes, str] | None = None,
+        image_caption: str | None = None,
+        image_lookup: Callable[[list[dict]], Awaitable[dict]] | None = None,
     ) -> AsyncIterator[dict]:
         """Yield the answer as a sequence of events.
+
+        *image* is a picture the user attached, as ``(bytes, mime)``, and
+        *image_caption* its caption. The caption joins the question for
+        planning, text search and the input guard; the picture itself is
+        searched against the notebook's pictures and, for a vision model,
+        attached to the answer. *image_lookup* takes the hits and returns
+        ``{(asset_id, chunk_order): (bytes, mime)}`` for the image hits, so
+        a vision model can see the figures it cites; like page_lookup it is
+        opaque so this class never opens a database.
 
         ``meta`` first (so the UI can show sources before any text arrives),
         then ``thinking`` and ``delta`` pieces as they come, then ``done``.
@@ -376,8 +439,17 @@ class ChatService(BaseService):
         (a flagged one gets a ``guardrail`` event and no answer), and the
         streamed answer is checked passage by passage (see guard_stream).
         """
-        if self.input_guardrail is not None and question:
-            update = await self.input_guardrail.abefore_model({"messages": [HumanMessage(content=question)]})
+        parser = TemplateParser(lang=lang, default_lang=self.settings.DEFAULT_LANG)
+
+        # What the user asked, as text: the question plus what their picture
+        # shows. Planning, text retrieval and the guard all read this.
+        searched = question
+        if image_caption:
+            note = parser.get("rag", "user_image_note", {"caption": image_caption})
+            searched = f"{question}\n{note}".strip()
+
+        if self.input_guardrail is not None and searched:
+            update = await self.input_guardrail.abefore_model({"messages": [HumanMessage(content=searched)]})
             if update is not None:
                 verdict = update.get("guardrail_verdict") or {}
                 yield {
@@ -391,8 +463,8 @@ class ChatService(BaseService):
 
         memory_hits: list[dict] = []
 
-        if self.memory is not None and user_id and question:
-            memory_hits = await self.memory.search(user_id, question)
+        if self.memory is not None and user_id and searched:
+            memory_hits = await self.memory.search(user_id, searched)
 
         hits: list[dict] = []
 
@@ -403,8 +475,9 @@ class ChatService(BaseService):
 
         plan: QueryPlan | None = None
         if grounded:
-            plan = await self._plan(question, lang, history)
-            if plan.intent == "chitchat":
+            plan = await self._plan(searched, lang, history)
+            # A picture to look up is never small talk, whatever the words were.
+            if plan.intent == "chitchat" and image is None:
                 grounded = False
 
         if grounded and plan.is_complex:
@@ -421,17 +494,34 @@ class ChatService(BaseService):
                 source_names=source_names,
                 page_lookup=page_lookup,
                 memory_hits=memory_hits,
+                image=image,
+                image_lookup=image_lookup,
             ):
                 yield event
             return
 
         if grounded:
             _search_started = perf_counter()
-            hits = await self._search_and_rerank(chat_id, plan.sub_queries, plan.standalone_query, top_k, asset_ids)
+            queries = plan.sub_queries if plan.intent != "chitchat" else [searched]
+            hits = await self._search_and_rerank(
+                chat_id,
+                queries,
+                plan.standalone_query if plan.intent != "chitchat" else searched,
+                top_k,
+                asset_ids,
+                image_query=image[0] if image else None,
+            )
             RETRIEVAL_SECONDS.observe(perf_counter() - _search_started)
             RETRIEVAL_HITS.observe(len(hits))
 
         system_prompt, user_prompt = self.build_prompt(question, hits, memory_hits, lang)
+
+        pictures, labels = await self._pictures(parser, hits, None, image, image_lookup)
+        if labels:
+            user_prompt += "\n\n" + parser.get("rag", "images_attached_prompt", {"labels": "; ".join(labels)})
+        elif image_caption:
+            # No vision: the model reads what the picture shows instead.
+            user_prompt += "\n\n" + parser.get("rag", "user_image_note", {"caption": image_caption})
 
         meta = await self._meta(hits, source_names, page_lookup, memory_hits)
 
@@ -452,8 +542,55 @@ class ChatService(BaseService):
 
         yield meta
 
-        async for event in self._stream(question, system_prompt, user_prompt, history, max_tokens, temperature):
+        async for event in self._stream(
+            searched, system_prompt, user_prompt, history, max_tokens, temperature, images=pictures
+        ):
             yield event
+
+    async def _pictures(
+        self,
+        parser: TemplateParser,
+        hits: list[dict],
+        numbers: list[int] | None,
+        image: tuple[bytes, str] | None,
+        image_lookup: Callable[[list[dict]], Awaitable[dict]] | None,
+    ) -> tuple[list[tuple[bytes, str]], list[str]]:
+        """The pictures to attach for a vision model, and a label for each.
+
+        Image hits first, in citation order, then the user's own picture,
+        capped at IMAGE_MAX_PER_ANSWER. Nothing for a model without vision:
+        the captions are already in the prompt. A picture that cannot be
+        loaded is skipped, never fatal.
+        """
+        if not self.vision:
+            return [], []
+
+        cap = self.settings.IMAGE_MAX_PER_ANSWER
+        pictures: list[tuple[bytes, str]] = []
+        labels: list[str] = []
+
+        numbered = list(zip(numbers or range(1, len(hits) + 1), hits))
+        image_hits = [(number, hit) for number, hit in numbered if self.is_image(hit)]
+        room = cap - (1 if image is not None else 0)
+
+        if image_hits and image_lookup is not None and room > 0:
+            try:
+                loaded = await image_lookup([hit for _, hit in image_hits[:room]])
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("Could not load cited pictures: %s", exc)
+                loaded = {}
+            for number, hit in image_hits[:room]:
+                metadata = hit.get("metadata") or {}
+                picture = loaded.get((metadata.get("asset_id"), metadata.get("chunk_order")))
+                if picture is not None:
+                    pictures.append(picture)
+                    labels.append(f"[{number}]")
+
+        if image is not None:
+            pictures.append(image)
+            labels.append(parser.get("rag", "user_image_label"))
+
+        return pictures, labels
 
     async def _meta(
         self,
@@ -492,9 +629,10 @@ class ChatService(BaseService):
         history: list[dict] | None,
         max_tokens: int | None,
         temperature: float | None,
+        images: list[tuple[bytes, str]] | None = None,
     ) -> AsyncIterator[dict]:
         """The final answer as events, through the output guardrail when on."""
-        events = self._generate(system_prompt, user_prompt, history, max_tokens, temperature)
+        events = self._generate(system_prompt, user_prompt, history, max_tokens, temperature, images)
 
         if self.output_guardrail is None:
             async for event in events:
@@ -513,6 +651,7 @@ class ChatService(BaseService):
         history: list[dict] | None,
         max_tokens: int | None,
         temperature: float | None,
+        images: list[tuple[bytes, str]] | None = None,
     ) -> AsyncIterator[dict]:
         """Stream the final answer as ``thinking`` / ``delta`` events, then ``done``."""
         # The system turn leads the history so the provider's _split_system can
@@ -527,6 +666,7 @@ class ChatService(BaseService):
             chat_history=messages,
             max_tokens=max_tokens,
             temperature=temperature,
+            **({"images": images} if images else {}),
         ):
             # Reasoning is surfaced under its own event type so the UI can show
             # it while waiting and keep it out of the stored answer.
@@ -579,6 +719,8 @@ class ChatService(BaseService):
         source_names: dict[str, str] | None,
         page_lookup: Callable[[list[dict]], Awaitable[dict]] | None,
         memory_hits: list[dict],
+        image: tuple[bytes, str] | None = None,
+        image_lookup: Callable[[list[dict]], Awaitable[dict]] | None = None,
     ) -> AsyncIterator[dict]:
         """Answer each part on its own, then write one answer from the parts.
 
@@ -601,7 +743,12 @@ class ChatService(BaseService):
 
         _search_started = perf_counter()
         parts = await asyncio.gather(
-            *(self._search_and_rerank(chat_id, [query], query, top_k, asset_ids) for query in queries)
+            *(
+                self._search_and_rerank(
+                    chat_id, [query], query, top_k, asset_ids, image_query=image[0] if image else None
+                )
+                for query in queries
+            )
         )
         RETRIEVAL_SECONDS.observe(perf_counter() - _search_started)
 
@@ -632,7 +779,9 @@ class ChatService(BaseService):
 
         answers: list[str | None] = [None] * total
         tasks = {
-            asyncio.create_task(self._subanswer(parser, query, hits, part_numbers, lang, temperature)): index
+            asyncio.create_task(
+                self._subanswer(parser, query, hits, part_numbers, lang, temperature, image, image_lookup)
+            ): index
             for index, (query, hits, part_numbers) in enumerate(zip(queries, parts, numbers))
         }
 
@@ -701,8 +850,14 @@ class ChatService(BaseService):
         numbers: list[int],
         lang: str,
         temperature: float | None,
+        image: tuple[bytes, str] | None = None,
+        image_lookup: Callable[[list[dict]], Awaitable[dict]] | None = None,
     ) -> str:
         """A short, cited answer to one part, from that part's passages only.
+
+        A vision model also sees this part's pictures (see _pictures); the
+        synthesis that follows only reads the sub-answers, so this is where
+        a figure is actually looked at on the complex path.
 
         Never raises: a part that cannot be answered (no passages, or the model
         call failed) says so, and the final answer reports the gap instead of
@@ -722,12 +877,16 @@ class ChatService(BaseService):
                     {
                         "num": number,
                         "source": (hit.get("metadata") or {}).get("source") or "unknown",
-                        "content": hit.get("text") or "",
+                        "content": self._content(parser, hit),
                     },
                 )
                 for number, hit in zip(numbers, hits)
             )
             prompt, prompt_ref = parser.get_with_ref("rag", "subanswer_prompt", {"question": query})
+
+            pictures, labels = await self._pictures(parser, hits, numbers, image, image_lookup)
+            if labels:
+                prompt += "\n\n" + parser.get("rag", "images_attached_prompt", {"labels": "; ".join(labels)})
 
             try:
                 with tracing.linked_prompt(prompt_ref):
@@ -736,6 +895,7 @@ class ChatService(BaseService):
                         chat_history=[self.planner_client.construct_message(ChatRole.SYSTEM, system_prompt)],
                         max_tokens=self.settings.AGENTIC_SUBANSWER_MAX_TOKENS,
                         temperature=temperature,
+                        **({"images": pictures} if pictures else {}),
                     )
             except Exception as exc:
                 self.logger.warning("Sub-answer failed for one part; reporting it as not covered: %s", exc)

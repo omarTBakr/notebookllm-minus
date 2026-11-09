@@ -137,3 +137,11 @@ footer_prompt = "\n".join(
         "الاستجابة:",
     ]
 )
+
+image_content_prompt = "[صورة] {caption}"
+
+images_attached_prompt = "الصور المرفقة بهذه الرسالة، بالترتيب: {labels}."
+
+user_image_label = "الصورة التي أرفقها المستخدم بسؤاله"
+
+user_image_note = "[صورة مرفقة: {caption}]"

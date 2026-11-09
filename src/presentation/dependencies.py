@@ -65,7 +65,28 @@ def memory_service(request: Request, chat=None) -> MemoryService:
     )
 
 
-def chat_service(request: Request, chat=None) -> ChatService:
+def image_index_service(request: Request):
+    """The notebook image index, or None when MULTIMODAL_ENABLED is off."""
+    embedder = request.app.providers.image_embedding()
+    if embedder is None:
+        return None
+
+    from application.services.rag.ImageIndexService import ImageIndexService
+
+    return ImageIndexService(embedding_client=embedder, vectordb_client=request.app.db.vectors())
+
+
+def caption_client(request: Request):
+    """The vision model that captions pictures, or None when none is configured."""
+    from shared.utils import get_settings
+
+    settings = get_settings()
+    if not settings.MULTIMODAL_ENABLED or not settings.IMAGE_CAPTION_MODEL_ID:
+        return None
+    return request.app.providers.chatting(settings.IMAGE_CAPTION_MODEL_ID, thinking=False)
+
+
+def chat_service(request: Request, chat=None, vision: bool = False) -> ChatService:
     """Answering stack, using the chat's own models when it names them.
 
     Falls back to the .env defaults per field, so a chat that only overrides
@@ -99,6 +120,8 @@ def chat_service(request: Request, chat=None) -> ChatService:
         memory_controller=memory_controller,
         planner_client=request.app.providers.chatting(getattr(chat, "generation_model", None), thinking=False),
         reranker=request.app.providers.reranker(),
+        image_index=image_index_service(request),
+        vision=vision,
         **guardrails(request, chat),
     )
 
