@@ -1,0 +1,44 @@
+@startuml
+!include ../_style.iuml
+title Epic 7 — Accounts and privacy
+
+rectangle "Accounts and privacy" {
+  card US7_1 [
+    **US-7.1  Create an account**
+    As a //new reader//, I want to sign up with my email and a password,
+    so that my notebooks are mine and nobody else's.
+    ----
+    * The email is unique, compared case-insensitively.
+    * The password has at least AUTH_PASSWORD_MIN_LENGTH characters; it is stored as an argon2id hash.
+    * Signing up signs me in.
+  ]
+  card US7_2 [
+    **US-7.2  Sign in and out**
+    As a //reader//, I want to sign in on any browser and sign out when I am done,
+    so that a shared computer does not keep my notebooks open.
+    ----
+    * A wrong password and an unknown email give the same answer.
+    * Repeated failures lock the email for AUTH_LOGIN_LOCKOUT_MINUTES.
+    * "Sign out everywhere" ends every session; changing the password ends all the others.
+  ]
+  card US7_3 [
+    **US-7.3  Nobody else sees my data**
+    As a //reader//, I want every notebook, source, answer, Studio item and task to be visible only to me,
+    so that I can upload private documents.
+    ----
+    * Every data route needs a session (401 without one).
+    * Another user's id answers 404, exactly as if it did not exist.
+    * A test walks every route to prove it, including routes added later.
+  ]
+  card US7_4 [
+    **US-7.4  Keep the notebooks I already had**
+    As a //reader from before accounts//, I want my first signup to take over my old profile,
+    so that I do not lose my notebooks.
+    ----
+    * Only a profile with no credentials can be claimed, and only once.
+  ]
+}
+US7_1 -[hidden]down- US7_2
+US7_2 -[hidden]down- US7_3
+US7_3 -[hidden]down- US7_4
+@enduml

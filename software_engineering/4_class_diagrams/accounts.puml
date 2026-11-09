@@ -1,0 +1,98 @@
+@startuml
+!include ../_style.iuml
+title Accounts — models, repositories, services and the login layer
+
+package "data.models" {
+  class User {
+    +user_id: str
+    +label: str
+    +email: str | None
+    +password_hash: str | None
+    +has_credentials: bool
+  }
+  class AuthSession {
+    +token_hash: str  ' sha256 of the cookie token
+    +user_id: str
+    +created_at: datetime
+    +expires_at: datetime
+    +last_seen_at: datetime
+  }
+}
+
+package "data.repositories" {
+  interface UserRepository {
+    +get_user(user_id)
+    +get_user_by_email(email)
+    +set_credentials(user_id, email, hash)
+    +set_password_hash(user_id, hash)
+    +rename / delete_user ...
+  }
+  interface AuthSessionRepository {
+    +create(session)
+    +get_by_token_hash(hash)
+    +touch(hash, last_seen, expires)
+    +delete(hash)
+    +delete_for_user(user_id, keep)
+    +delete_expired(now)
+  }
+  class MongoAuthSessionRepository
+  class PostgresAuthSessionRepository
+  AuthSessionRepository <|.. MongoAuthSessionRepository
+  AuthSessionRepository <|.. PostgresAuthSessionRepository
+}
+
+package "application.services.account" {
+  class AuthService {
+    +signup(email, password, display_name, claim_user_id): SignedIn
+    +login(email, password): SignedIn
+    +resolve(token): (User, AuthSession) | None
+    +logout(token)
+    +logout_everywhere(user_id, keep_token)
+    +change_password(user, current, new, keep_token)
+    +sweep_expired()
+  }
+  class SignedIn <<dataclass>> {
+    +user: User
+    +token: str
+    +expires_at: datetime
+  }
+  class "_FailedLogins" as Failed {
+    +locked(email, limit, window)
+    +record(email, window)
+    +clear(email)
+  }
+  class AccessService {
+    +check(user_id, path_params)
+    +owns_chat(user_id, chat_id): bool
+  }
+  class UserService {
+    +rename(user_id, label)
+    +delete(user_id)  ' cascades, ends sessions
+  }
+}
+
+package "presentation" {
+  class "auth.py" as AuthDeps <<module>> {
+    +require_user(request)
+    +enforce_ownership(request)
+    +set_session_cookie(response, token)
+    +clear_session_cookie(response)
+  }
+  class "routes/auth.py\n/auth/signup, /login, /logout,\n/me, /logout-all, /password" as AuthRoutes
+  class OriginCheckMiddleware
+  class "chat / data / process / nlp routers\ndependencies=[require_user, enforce_ownership]" as Routers
+}
+
+AuthService --> UserRepository
+AuthService --> AuthSessionRepository
+AuthService --> Failed
+AuthService ..> SignedIn
+AccessService ..> UserRepository
+UserService --> AuthSessionRepository
+AuthRoutes --> AuthService
+AuthDeps --> AuthService : resolve
+AuthDeps --> AccessService : check
+Routers --> AuthDeps
+AuthSessionRepository ..> AuthSession
+UserRepository ..> User
+@enduml

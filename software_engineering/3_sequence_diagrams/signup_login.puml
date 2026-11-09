@@ -1,0 +1,55 @@
+@startuml
+!include ../_style.iuml
+title Sign up, sign in, sign out
+autonumber "<b>0"
+
+actor Visitor as user
+participant "Browser\n(login.html + auth.js)" as ui
+participant "OriginCheckMiddleware" as origin
+participant "auth routes\n(/auth/*)" as route
+participant "AuthService" as auth
+database "users" as users
+database "auth_sessions" as sessions
+
+user -> ui : GET /
+ui -> route : GET / (no cookie)
+route --> ui : 303 → /login
+
+== Sign up ==
+user -> ui : email, password, display name
+ui -> ui : validate (auth_form.js);\nlegacy profile id from localStorage?
+ui -> origin : POST /auth/signup {email, password, display_name, claim_user_id?}
+origin -> origin : Origin host == Host?
+origin -> route
+route -> auth : signup(...)
+auth -> users : get_user_by_email(lowercased) → must be none
+alt claim_user_id names a profile with no credentials
+  auth -> users : set_credentials(legacy id, email, argon2(password))
+else
+  auth -> users : create_user(new uuid) + set_credentials(...)
+end
+auth -> auth : token = random 256 bit
+auth -> sessions : create(sha256(token), user_id, expires_at)
+auth --> route : SignedIn(user, token)
+route --> ui : 201 + Set-Cookie nlm_session=token\n(HttpOnly; SameSite=Lax; Max-Age)
+ui -> ui : forget legacy id; go to next (local paths only)
+
+== Sign in ==
+ui -> route : POST /auth/login {email, password}
+route -> auth : login(email, password)
+auth -> auth : email locked out? → 429
+auth -> users : get_user_by_email
+alt unknown email or wrong password
+  auth -> auth : argon2 verify (dummy hash for unknown)\nrecord failure
+  auth --> route : 401 "Incorrect email or password"
+else
+  auth -> auth : clear failures; rehash if parameters changed
+  auth -> sessions : create(sha256(new token))
+  route --> ui : 200 + Set-Cookie
+end
+
+== Sign out ==
+ui -> route : POST /auth/logout
+route -> sessions : delete(sha256(cookie))
+route --> ui : Set-Cookie nlm_session=; Max-Age=0
+@enduml

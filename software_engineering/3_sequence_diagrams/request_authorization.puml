@@ -1,0 +1,46 @@
+@startuml
+!include ../_style.iuml
+title Every data request — session, then ownership, then the route
+autonumber "<b>0"
+
+participant "Browser" as ui
+participant "nginx :8081" as nginx
+participant "OriginCheckMiddleware" as origin
+participant "require_user\n(router dependency)" as req
+participant "AuthService.resolve" as auth
+participant "enforce_ownership\n(router dependency)" as own
+participant "AccessService.check" as access
+database "auth_sessions /\nusers / sessions /\nchats / tasks" as db
+participant "route\n(e.g. GET /chat/chats/{chat_id}/messages)" as route
+
+ui -> nginx : request + cookie nlm_session
+nginx -> origin : (only entrance; port 8000 not published)
+alt unsafe method from another site
+  origin --> ui : 403
+end
+origin -> req
+req -> auth : resolve(cookie token)
+auth -> db : get_by_token_hash(sha256(token))
+alt missing, expired, or user deleted
+  req --> ui : 401 → browser goes to /login?next=…
+end
+opt last seen over an hour ago
+  auth -> db : touch: slide expires_at forward
+end
+req -> own : request.state.user
+own -> access : check(user_id, path params)
+note right of access
+  user_id    == current user
+  session_id -> session.user_id
+  chat_id    -> chat.user_id
+  project_id -> chat with that id
+  task_id    -> task.project_id -> chat
+end note
+access -> db : look up owners
+alt any id not owned (or not found)
+  own --> ui : 404 (same as "does not exist")
+else all owned
+  own -> route : run the route
+  route --> ui : 200
+end
+@enduml

@@ -1,8 +1,8 @@
 # Software engineering docs
 
 UML for NotebookLLM⁻, written in PlantUML. Every `.puml` has its rendered `.png` committed next
-to it. The diagrams describe the system as it is now, including agentic answering, reranking,
-guardrails and Langfuse. Update them in the same change as the code they describe.
+to it. The diagrams describe the system as it is now, including accounts and per-user isolation,
+agentic answering, reranking, guardrails and Langfuse. Update them in the same change as the code they describe.
 
 ## Rendering
 
@@ -20,12 +20,13 @@ different jar. `_style.iuml` holds the shared look.
 
 | Epic | Diagram |
 | --- | --- |
-| Profiles and notebooks | [01_profiles_and_notebooks](1_user_stories/01_profiles_and_notebooks.png) |
+| Account and notebooks | [01_profiles_and_notebooks](1_user_stories/01_profiles_and_notebooks.png) |
 | Sources and ingestion | [02_sources_and_ingest](1_user_stories/02_sources_and_ingest.png) |
 | Grounded chat (agentic RAG, reranking) | [03_chat_and_citations](1_user_stories/03_chat_and_citations.png) |
 | Guardrails | [04_guardrails](1_user_stories/04_guardrails.png) |
 | Memory and Studio | [05_memory_and_studio](1_user_stories/05_memory_and_studio.png) |
 | Settings, observability, prompt versions | [06_settings_and_operations](1_user_stories/06_settings_and_operations.png) |
+| Accounts and privacy | [07_accounts_and_privacy](1_user_stories/07_accounts_and_privacy.png) |
 
 ## 2. Use case diagrams — `2_use_case_diagrams/`
 
@@ -36,12 +37,15 @@ different jar. `_style.iuml` holds the shared look.
 | Chat with guardrails | [chat](2_use_case_diagrams/chat.png) |
 | Studio and memory | [studio_and_memory](2_use_case_diagrams/studio_and_memory.png) |
 | Operations and observability | [operations](2_use_case_diagrams/operations.png) |
+| Accounts and privacy | [accounts](2_use_case_diagrams/accounts.png) |
 
 ## 3. Sequence diagrams — `3_sequence_diagrams/`
 
 | Flow | Diagram |
 | --- | --- |
-| **Whole system**, upload to a guarded, cited answer | [system_overview](3_sequence_diagrams/system_overview.png) |
+| **Whole system**, sign in → upload → a guarded, cited answer | [system_overview](3_sequence_diagrams/system_overview.png) |
+| Sign up, sign in, sign out | [signup_login](3_sequence_diagrams/signup_login.png) |
+| Every data request: session, then ownership | [request_authorization](3_sequence_diagrams/request_authorization.png) |
 | Chat: guardrails → plan → rerank → parts → synthesis | [chat_agentic_rag](3_sequence_diagrams/chat_agentic_rag.png) |
 | Guardrail micro-batching (N items or T seconds) | [guardrail_microbatch](3_sequence_diagrams/guardrail_microbatch.png) |
 | Upload → ingest → index | [upload_ingest](3_sequence_diagrams/upload_ingest.png) |
@@ -59,3 +63,4 @@ different jar. `_style.iuml` holds the shared look.
 | Application services | [services](4_class_diagrams/services.png) |
 | Data tier: providers, repositories, models | [data_repositories](4_class_diagrams/data_repositories.png) |
 | Guardrails (LangChain middleware) and Celery jobs | [guardrails_and_tasks](4_class_diagrams/guardrails_and_tasks.png) |
+| Accounts: models, repositories, services, login layer | [accounts](4_class_diagrams/accounts.png) |

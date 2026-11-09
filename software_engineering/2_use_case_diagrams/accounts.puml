@@ -1,0 +1,39 @@
+@startuml
+!include ../_style.iuml
+left to right direction
+title Use cases — Accounts and privacy
+
+actor Visitor as visitor
+actor Reader as reader
+actor "Legacy profile owner" as legacy
+visitor <|-- legacy
+
+rectangle "Accounts" {
+  usecase "Sign up" as UC_signup
+  usecase "Claim a pre-account profile" as UC_claim
+  usecase "Sign in" as UC_login
+  usecase "Lock out after\nrepeated failures" as UC_lock
+  usecase "Sign out" as UC_logout
+  usecase "Sign out everywhere" as UC_logout_all
+  usecase "Change password" as UC_password
+  usecase "Rename display name" as UC_rename
+  usecase "Delete account\n(and all its data)" as UC_delete
+  usecase "Use the app\n(notebooks, sources, chat, Studio)" as UC_use
+  usecase "Check ownership of every id\n(404 for anyone else's)" as UC_own
+}
+
+visitor --> UC_signup
+visitor --> UC_login
+legacy --> UC_claim
+UC_claim .> UC_signup : <<extend>>
+UC_lock .> UC_login : <<extend>>\n[too many failures]
+
+reader --> UC_logout
+reader --> UC_logout_all
+reader --> UC_password
+reader --> UC_rename
+reader --> UC_delete
+reader --> UC_use
+UC_use ..> UC_own : <<include>>
+UC_password ..> UC_logout_all : <<include>>\n(other sessions)
+@enduml

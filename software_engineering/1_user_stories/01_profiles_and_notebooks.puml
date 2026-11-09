@@ -1,16 +1,15 @@
 @startuml
 !include ../_style.iuml
-title Epic 1 — Profiles and notebooks
+title Epic 1 — Account and notebooks
 
-rectangle "Profiles and notebooks" {
+rectangle "Account and notebooks" {
   card US1_1 [
-    **US-1.1  Pick a profile**
-    As a //reader//, I want to pick or create a profile without signing in,
-    so that my notebooks and memories are kept apart from other people's on this machine.
+    **US-1.1  My account**
+    As a //reader//, I want an account with a display name I can change or delete,
+    so that my notebooks and memories are kept apart from everyone else's.
     ----
-    * A profile has a label and can be renamed or deleted.
-    * Deleting a profile removes its sessions, notebooks and memories.
-    * There is no password: the app is a profile picker, not a login.
+    * Sign-up, sign-in and privacy are Epic 7.
+    * Deleting the account removes its sessions, notebooks, memories and sign-ins.
   ]
   card US1_2 [
     **US-1.2  Keep separate notebooks**

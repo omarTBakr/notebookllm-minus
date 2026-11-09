@@ -1,6 +1,6 @@
 @startuml
 !include ../_style.iuml
-title Whole system — from upload to a guarded, cited answer
+title Whole system — sign in, upload, and a guarded, cited answer
 autonumber "<b>0"
 
 actor Reader as user
@@ -16,10 +16,23 @@ participant "Reranker\n(TEI bge-reranker-v2-m3)" as tei
 participant "LLM providers\n(Ollama, NVIDIA, ...)" as llm
 participant "Langfuse" as lf
 
+== Sign in ==
+user -> ui : email + password
+ui -> nginx : POST /auth/login
+nginx -> api
+api -> db : verify argon2 hash; store sha256(session token)
+api --> ui : Set-Cookie nlm_session (HttpOnly)
+note over ui, api
+  From here every request carries the cookie. require_user resolves it,
+  enforce_ownership checks every id in the path belongs to this user
+  (404 otherwise). See request_authorization.
+end note
+
 == Add a source ==
 user -> ui : choose file / paste link
 ui -> nginx : POST /chat/chats/{id}/documents
 nginx -> api
+api -> db : session + ownership check
 api -> db : asset row + 3 task_executions
 api -> mq : process_data_task
 api --> ui : 202 + task id

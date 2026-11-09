@@ -12,7 +12,8 @@ actor "Web sources\n(YouTube, sites, Sheets)" as web <<system>>
 actor "Langfuse" as langfuse <<system>>
 
 rectangle "NotebookLLM⁻" {
-  usecase "Pick or manage a profile" as UC_profile
+  usecase "Sign up / sign in" as UC_auth
+  usecase "Manage my account" as UC_profile
   usecase "Create / rename a notebook" as UC_notebook
   usecase "Upload a document" as UC_upload
   usecase "Add a link source" as UC_link
@@ -28,6 +29,7 @@ rectangle "NotebookLLM⁻" {
   usecase "Configure guardrails" as UC_guardcfg
 }
 
+reader --> UC_auth
 reader --> UC_profile
 reader --> UC_notebook
 reader --> UC_upload

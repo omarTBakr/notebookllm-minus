@@ -17,11 +17,16 @@ package "presentation" {
     +nlp_service(request, chat)
   }
   class "RequestLoggingMiddleware" as MW
+  class "OriginCheckMiddleware" as OCM
+  class "auth.py\n(require_user, enforce_ownership)" as AuthDeps
+  class "routes/auth.py" as AuthRoutes
   class "web/ (Jinja + ES modules)" as Web
 }
 
 package "application" {
   package "services" {
+    class AuthService
+    class AccessService
     class ChatService
     class QueryPlanner <<module>>
     class NLPService
@@ -70,6 +75,14 @@ package "shared" {
 
 Main --> Routes
 Main --> MW
+Main --> OCM
+Main --> AuthRoutes
+Routes --> AuthDeps : router dependencies
+AuthDeps --> AuthService : resolve cookie
+AuthDeps --> AccessService : check ownership
+AuthRoutes --> AuthService
+AuthService --> DbProvider
+AccessService --> DbProvider
 Routes --> Deps
 Deps --> ChatService
 Deps --> InputGuardrail
