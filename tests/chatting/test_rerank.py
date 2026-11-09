@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from application.providers.reranking import (
+    LlamaCppRerankerProvider,
     NoopReranker,
     RerankerFactory,
     RerankerInterface,
@@ -182,10 +183,86 @@ def test_factory_builds_noop_when_disabled(settings):
     assert isinstance(RerankerFactory(settings).create(), NoopReranker)
 
 
-def test_factory_builds_tei_when_enabled(monkeypatch):
+def test_factory_builds_llamacpp_by_default_when_enabled(monkeypatch):
     from shared.utils import get_settings
 
     monkeypatch.setenv("RERANKER_ENABLED", "true")
     get_settings.cache_clear()
 
+    assert isinstance(RerankerFactory(get_settings()).create(), LlamaCppRerankerProvider)
+
+
+def test_factory_still_builds_tei_on_request(monkeypatch):
+    from shared.utils import get_settings
+
+    monkeypatch.setenv("RERANKER_ENABLED", "true")
+    monkeypatch.setenv("RERANKER_PROVIDER", "tei")
+    get_settings.cache_clear()
+
     assert isinstance(RerankerFactory(get_settings()).create(), TEIRerankerProvider)
+
+
+def test_factory_rejects_an_unknown_provider(monkeypatch):
+    from shared.exceptions import UnsupportedProviderError
+    from shared.utils import get_settings
+
+    monkeypatch.setenv("RERANKER_ENABLED", "true")
+    monkeypatch.setenv("RERANKER_PROVIDER", "nonsense")
+    get_settings.cache_clear()
+
+    with pytest.raises(UnsupportedProviderError):
+        RerankerFactory(get_settings()).create()
+
+
+# --- llama.cpp ---------------------------------------------------------------------
+
+
+def llama_provider(handler):
+    provider = LlamaCppRerankerProvider(base_url="http://reranker:8080", model_id="m")
+    provider.client = httpx.AsyncClient(base_url="http://reranker:8080", transport=httpx.MockTransport(handler))
+    return provider
+
+
+async def test_llamacpp_posts_jina_style_and_squashes_logits():
+    import json
+
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
+        # llama-server returns raw logits, sorted, under "results".
+        return httpx.Response(
+            200,
+            json={"results": [{"index": 1, "relevance_score": 4.2}, {"index": 0, "relevance_score": -3.0}]},
+        )
+
+    ranked = await llama_provider(handler).rerank("query", ["a", "b"])
+
+    assert seen["path"] == "/v1/rerank"
+    assert seen["body"]["query"] == "query"
+    assert seen["body"]["documents"] == ["a", "b"]
+    assert seen["body"]["top_n"] == 2
+    assert [i for i, _ in ranked] == [1, 0]
+    # Sigmoid: a 0..1 relevance, so RERANK_MIN_SCORE means the same on every backend.
+    assert 0.98 < ranked[0][1] < 0.99
+    assert 0.04 < ranked[1][1] < 0.05
+
+
+async def test_llamacpp_survives_extreme_logits():
+    def handler(request):
+        return httpx.Response(200, json={"results": [{"index": 0, "relevance_score": -5000.0}]})
+
+    ((index, score),) = await llama_provider(handler).rerank("q", ["a"])
+
+    assert index == 0 and score == 0.0
+
+
+async def test_llamacpp_http_failure_is_a_provider_error():
+    with pytest.raises(LLMProviderError):
+        await llama_provider(lambda r: httpx.Response(500)).rerank("q", ["a"])
+
+
+async def test_llamacpp_unexpected_body_is_a_provider_error():
+    with pytest.raises(LLMProviderError):
+        await llama_provider(lambda r: httpx.Response(200, json={"oops": True})).rerank("q", ["a"])

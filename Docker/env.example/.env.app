@@ -114,10 +114,10 @@ GUARDRAIL_TIMEOUT_S=20
 GUARDRAIL_FAIL_MODE="open"
 GUARDRAIL_OUTPUT_CHUNK_CHARS=400
 
-# --- Reranking (the `reranker` service: TEI + BAAI/bge-reranker-v2-m3) --------
+# --- Reranking (the `reranker` service: llama.cpp + bge-reranker-v2-m3 GGUF) --
 RERANKER_ENABLED=true
-RERANKER_PROVIDER="tei"
-RERANKER_URL="http://reranker:80"
+RERANKER_PROVIDER="llamacpp"
+RERANKER_URL="http://reranker:8080"
 RERANKER_MODEL_ID="BAAI/bge-reranker-v2-m3"
 RERANKER_TIMEOUT_S=10
 RERANK_CANDIDATES=20

@@ -7,7 +7,7 @@ actor Reader as reader
 actor Operator as operator
 actor "LLM / embedding\nproviders" as llm <<system>>
 actor "Guard models" as guard <<system>>
-actor "Reranker (TEI)" as tei <<system>>
+actor "Reranker (llama.cpp)" as tei <<system>>
 actor "Web sources\n(YouTube, sites, Sheets)" as web <<system>>
 actor "Langfuse" as langfuse <<system>>
 

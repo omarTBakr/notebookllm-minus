@@ -7,7 +7,7 @@ actor Reader as reader
 actor "Input guard model" as gin <<system>>
 actor "Output guard model" as gout <<system>>
 actor "Answer model" as llm <<system>>
-actor "Reranker (TEI)" as tei <<system>>
+actor "Reranker (llama.cpp)" as tei <<system>>
 
 rectangle "Chat" {
   usecase "Ask a question" as UC_ask

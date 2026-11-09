@@ -565,48 +565,56 @@ services:
   # --- reranker -----------------------------------------------------------------
   #
   # A cross-encoder that re-scores vector hits before they reach the prompt
-  # (RERANKER_* in .env.app). Hugging Face text-embeddings-inference serving
-  # BAAI/bge-reranker-v2-m3: multilingual, so Arabic passages are scored as
-  # text and not as noise. A container of its own keeps torch and ~2 GB of
-  # weights out of the app image; the app talks to it over HTTP.
+  # (RERANKER_* in .env.app): BAAI/bge-reranker-v2-m3, multilingual, so Arabic
+  # passages are scored as text and not as noise. Served by llama.cpp's
+  # llama-server from a Q8_0 GGUF build (~640 MB, downloaded once into the
+  # volume on first start): about 1 GB of RAM. Hugging Face TEI served the same
+  # model before, but its CPU backend needed 6-19 GB just to load the fp32
+  # weights and starved the host.
   #
-  # CPU image on purpose: the local GPU is already full with Ollama's models.
-  # On a box with a free NVIDIA GPU, swap the tag for
-  # ghcr.io/huggingface/text-embeddings-inference:1.8 and add a GPU
-  # reservation; nothing else changes.
+  #   --reranking --embedding --pooling rank   what llama-server needs for a
+  #                                            cross-encoder (POST /v1/rerank)
+  #   -c 8192 -np 4                            4 slots of 2048 tokens: a query
+  #                                            plus one chunk fits with room
+  #   -b/-ub 2048                              a whole pair must fit in one
+  #                                            physical batch for rank pooling
   #
   # Nothing depends on it. If it is down or slow, retrieval falls back to
   # vector order and counts rerank_failures_total, so it gets no healthcheck
-  # that could hold other services back.
-  #
-  # Memory is capped on purpose. With TEI's defaults (16384 batch tokens) the
-  # CPU backend grew to ~19 GB while loading this model and starved the host.
-  # 4096 batch tokens is enough for a RERANK_CANDIDATES=20 pool of chunks (TEI
-  # splits a larger request into several batches), and mem_limit makes any
-  # runaway an OOM-kill of this container rather than of the machine.
+  # that could hold other services back. mem_limit turns any runaway into an
+  # OOM-kill of this container rather than of the machine.
   reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    image: ghcr.io/ggml-org/llama.cpp:server-b11749
     container_name: reranker
     restart: unless-stopped
+    environment:
+      LLAMA_CACHE: /models
     command:
-      - "--model-id"
-      - "BAAI/bge-reranker-v2-m3"
+      - "-hf"
+      - "gpustack/bge-reranker-v2-m3-GGUF:Q8_0"
+      - "--reranking"
+      - "--embedding"
+      - "--pooling"
+      - "rank"
+      - "--host"
+      - "0.0.0.0"
       - "--port"
-      - "80"
-      - "--max-batch-tokens"
-      - "4096"
-      - "--max-client-batch-size"
-      - "64"
-      - "--max-concurrent-requests"
-      - "16"
-    mem_limit: 4g
+      - "8080"
+      - "-c"
+      - "8192"
+      - "-np"
+      - "4"
+      - "-b"
+      - "2048"
+      - "-ub"
+      - "2048"
+    mem_limit: 2g
     ports:
       # 8082 on the host for local runs (RERANKER_URL in src/.env); inside
-      # compose the app uses http://reranker:80.
-      - "8082:80"
+      # compose the app uses http://reranker:8080.
+      - "8082:8080"
     volumes:
-      # Weights are downloaded once on first start and reused after.
-      - reranker_models:/data
+      - reranker_models:/models
     networks:
       - backend
 

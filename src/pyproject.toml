@@ -153,3 +153,13 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
 
+
+[tool.uv]
+# The user-level ~/.config/uv/uv.toml says python-preference = "only-managed"
+# (to keep Anaconda's Python out). uv counts as "managed" only interpreters in
+# its default install dir, off this drive, so every `uv run` threw away this
+# project's .venv and rebuilt it on that copy. "managed" still prefers
+# uv-managed Pythons (never Anaconda's) but accepts the one .venv was built on:
+# a uv-managed 3.12 installed on the same drive as the project
+# (UV_PYTHON_INSTALL_DIR="<drive>/.uv-python" when creating the venv).
+python-preference = "managed"

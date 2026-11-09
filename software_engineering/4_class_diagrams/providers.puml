@@ -77,6 +77,10 @@ abstract class RerankerInterface {
   +rerank(query, texts, top_n): list[(index, score)]
   #{abstract} _rerank(query, texts)
 }
+class LlamaCppRerankerProvider {
+  -client: httpx.AsyncClient
+  #_rerank(query, texts)  ' POST /v1/rerank, sigmoid(logit)
+}
 class TEIRerankerProvider {
   -client: httpx.AsyncClient
   #_rerank(query, texts)  ' POST /rerank
@@ -87,6 +91,7 @@ class NoopReranker {
 class RerankerFactory {
   +create(): RerankerInterface
 }
+RerankerInterface <|-- LlamaCppRerankerProvider
 RerankerInterface <|-- TEIRerankerProvider
 RerankerInterface <|-- NoopReranker
 RerankerFactory ..> RerankerInterface : builds

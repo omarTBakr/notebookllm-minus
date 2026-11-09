@@ -12,7 +12,7 @@ participant "Celery workers\nprocess / postprocess / index" as ingest
 participant "Guardrail workers\ninput / output" as guard
 database "Postgres + pgvector\n(or Mongo + Qdrant)" as db
 database "Redis\n(results)" as redis
-participant "Reranker\n(TEI bge-reranker-v2-m3)" as tei
+participant "Reranker\n(llama.cpp, bge-reranker-v2-m3 GGUF)" as tei
 participant "LLM providers\n(Ollama, NVIDIA, ...)" as llm
 participant "Langfuse" as lf
 

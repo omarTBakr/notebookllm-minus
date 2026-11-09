@@ -457,12 +457,14 @@ class Settings(BaseSettings):
 
     # --- reranking -----------------------------------------------------------
     # A cross-encoder re-scores the vector hits before the best top_k reach the
-    # prompt. Served by the `reranker` container (Hugging Face TEI running
-    # BAAI/bge-reranker-v2-m3, multilingual, so Arabic passages score properly).
+    # prompt. Served by the `reranker` container: llama.cpp's llama-server with
+    # a Q8_0 GGUF of BAAI/bge-reranker-v2-m3 (multilingual, so Arabic passages
+    # score properly; ~1 GB RAM). RERANKER_PROVIDER=tei targets a Hugging Face
+    # text-embeddings-inference server instead.
     # Off builds a pass-through, and retrieval behaves exactly as before.
     RERANKER_ENABLED: bool = False
-    RERANKER_PROVIDER: str = "tei"
-    RERANKER_URL: str = "http://reranker:80"
+    RERANKER_PROVIDER: str = "llamacpp"
+    RERANKER_URL: str = "http://reranker:8080"
     RERANKER_MODEL_ID: str = "BAAI/bge-reranker-v2-m3"
     # A rerank that takes longer than this is abandoned and the hits keep
     # their vector order: a slow reranker must not stall the answer.

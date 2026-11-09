@@ -1,9 +1,9 @@
-"""bge-reranker-v2-m3 (or any cross-encoder) behind Hugging Face TEI.
+"""A cross-encoder behind Hugging Face text-embeddings-inference (TEI).
 
-text-embeddings-inference runs the model in its own container (the `reranker`
-service in Docker/docker-compose.yml) and serves ``POST /rerank``. That keeps
-torch and the model weights out of the application image: the app sends text
-over HTTP and gets scores back.
+RERANKER_PROVIDER=tei. Not what compose runs: TEI's CPU backend needed 6-19 GB
+to load bge-reranker-v2-m3, so the `reranker` service is llama.cpp instead
+(LlamaCppRerankerProvider). Kept for a GPU box with TEI already running, where
+its ``POST /rerank`` serves the same model well.
 
 bge-reranker-v2-m3 is multilingual, which matters here: most of this corpus is
 Arabic, and an English-only cross-encoder would score every Arabic passage as
