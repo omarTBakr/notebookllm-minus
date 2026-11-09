@@ -82,6 +82,12 @@ class FakeProviderCache:
         self.asked_for.append(("embedding", model_id, dimensions))
         return self._embedding
 
+    def reranker(self):
+        from application.providers.reranking import NoopReranker
+
+        self.asked_for.append(("reranker",))
+        return getattr(self, "_reranker", None) or NoopReranker()
+
     async def aclose_all(self) -> None:
         await self._chatting.aclose()
         await self._embedding.aclose()

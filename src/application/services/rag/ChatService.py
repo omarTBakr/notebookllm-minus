@@ -10,8 +10,15 @@ from time import perf_counter
 
 from application.prompts import TemplateParser
 from application.providers.chatting import LLMChattingInterface
+from application.providers.reranking import NoopReranker, RerankerInterface
 from shared.enums import ChatRole
-from shared.utils.metrics import ANSWERS, RETRIEVAL_HITS, RETRIEVAL_SECONDS
+from shared.utils import tracing
+from shared.utils.metrics import (
+    ANSWERS,
+    RERANK_FAILURES,
+    RETRIEVAL_HITS,
+    RETRIEVAL_SECONDS,
+)
 
 from ..core.BaseService import BaseService
 from ..memory.MemoryService import MemoryService
@@ -33,6 +40,7 @@ class ChatService(BaseService):
         nlp_controller: NLPService,
         memory_controller: MemoryService | None = None,
         decompose_client: LLMChattingInterface | None = None,
+        reranker: RerankerInterface | None = None,
     ) -> None:
 
         super().__init__()
@@ -57,6 +65,8 @@ class ChatService(BaseService):
         # dedicated client in production, the same way it does for
         # MemoryService's chat_client.
         self.decompose_client = decompose_client or generation_client
+        # The pass-through when none is given, so retrieval has one code path.
+        self.reranker = reranker or NoopReranker()
 
     # --- groundedness ---------------------------------------------------------
 
@@ -210,6 +220,10 @@ class ChatService(BaseService):
                     # orthogonal match — and reporting it as "no score"
                     # loses the one number that says the hit was poor.
                     "score": (round(hit["score"], 4) if hit.get("score") is not None else None),
+                    # The cross-encoder's 0..1 relevance, when a reranker ran.
+                    # Kept beside the vector score rather than replacing it:
+                    # the two disagreeing is exactly what is worth seeing.
+                    "rerank_score": (round(hit["rerank_score"], 4) if hit.get("rerank_score") is not None else None),
                 }
             )
 
@@ -251,28 +265,83 @@ class ChatService(BaseService):
         """
         sub_questions = await decompose_query(self.decompose_client, question, lang)
 
-        results = await asyncio.gather(
-            *(
-                self.nlp.search(chat_id, sub_question, limit=top_k, asset_ids=asset_ids)
-                for sub_question in sub_questions
+        return await self._search_and_rerank(chat_id, sub_questions, question, top_k, asset_ids)
+
+    async def _search_and_rerank(
+        self,
+        chat_id: str,
+        queries: list[str],
+        rerank_query: str,
+        top_k: int,
+        asset_ids: list[str] | None,
+    ) -> list[dict]:
+        """Search every query, merge, rerank against *rerank_query*, keep top_k.
+
+        With a reranker, each query fetches RERANK_CANDIDATES hits instead of
+        top_k: the cross-encoder can only promote a passage vector search
+        handed it, so the pool has to be wider than what is finally kept.
+        Without one, this is exactly the old merge-and-cut.
+        """
+        limit = max(top_k, self.settings.RERANK_CANDIDATES) if self.reranker.ENABLED else top_k
+
+        with tracing.observation(
+            "retrieve",
+            as_type="retriever",
+            input={"queries": queries, "limit": limit},
+        ) as span:
+            results = await asyncio.gather(
+                *(self.nlp.search(chat_id, query, limit=limit, asset_ids=asset_ids) for query in queries)
             )
-        )
 
-        merged: dict[str, dict] = {}
-        for hits in results:
-            for hit in hits:
-                hit_id = hit.get("id")
-                existing = merged.get(hit_id)
-                if existing is None or (hit.get("score") or 0) > (existing.get("score") or 0):
-                    merged[hit_id] = hit
+            merged: dict[str, dict] = {}
+            for hits in results:
+                for hit in hits:
+                    hit_id = hit.get("id")
+                    existing = merged.get(hit_id)
+                    if existing is None or (hit.get("score") or 0) > (existing.get("score") or 0):
+                        merged[hit_id] = hit
 
-        ranked = sorted(
-            merged.values(),
-            key=lambda hit: hit["score"] if hit.get("score") is not None else float("-inf"),
-            reverse=True,
-        )
+            ranked = sorted(
+                merged.values(),
+                key=lambda hit: hit["score"] if hit.get("score") is not None else float("-inf"),
+                reverse=True,
+            )
 
-        return ranked[:top_k]
+            span.update(output={"candidates": len(ranked)})
+
+        if not self.reranker.ENABLED or not ranked:
+            return ranked[:top_k]
+
+        return await self._rerank(rerank_query, ranked, top_k)
+
+    async def _rerank(self, query: str, hits: list[dict], top_k: int) -> list[dict]:
+        """The best *top_k* of *hits* by cross-encoder relevance.
+
+        Any failure (timeout, the container down, a bad body) keeps vector
+        order: a reranker is an improvement on retrieval, never a dependency
+        of answering.
+        """
+        provider = type(self.reranker).__name__
+
+        try:
+            ranked = await asyncio.wait_for(
+                self.reranker.rerank(query, [hit.get("text") or "" for hit in hits], top_n=top_k),
+                timeout=self.settings.RERANKER_TIMEOUT_S,
+            )
+        except Exception as exc:
+            RERANK_FAILURES.labels(provider).inc()
+            self.logger.warning("Rerank failed, keeping vector order: %s", exc)
+            tracing.event("rerank.fallback", level="WARNING", metadata={"error": str(exc)[:300]})
+            return hits[:top_k]
+
+        floor = self.settings.RERANK_MIN_SCORE
+        kept = []
+        for index, score in ranked:
+            if score < floor:
+                continue
+            kept.append({**hits[index], "rerank_score": score})
+
+        return kept
 
     # --- answering ------------------------------------------------------------
 

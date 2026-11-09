@@ -96,6 +96,15 @@ RETRIEVAL_TOP_K=5
 # Similarity floor a passage must clear (0.0 = keep all top-k).
 RETRIEVAL_MIN_SCORE=0.0
 
+# --- Reranking (the `reranker` service: TEI + BAAI/bge-reranker-v2-m3) --------
+RERANKER_ENABLED=true
+RERANKER_PROVIDER="tei"
+RERANKER_URL="http://reranker:80"
+RERANKER_MODEL_ID="BAAI/bge-reranker-v2-m3"
+RERANKER_TIMEOUT_S=10
+RERANK_CANDIDATES=20
+RERANK_MIN_SCORE=0.0
+
 # --- Ingestion (parsing and chunking) ------------------------------------------
 # pymupdf: slower (~2.3 s/page) but the only loader that yields citation highlights.
 PDF_LOADER="pymupdf"

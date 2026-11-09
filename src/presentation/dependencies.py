@@ -96,6 +96,7 @@ def chat_service(request: Request, chat=None) -> ChatService:
         nlp_controller=nlp_service(request, chat),
         memory_controller=memory_controller,
         decompose_client=request.app.providers.chatting(getattr(chat, "generation_model", None), thinking=False),
+        reranker=request.app.providers.reranker(),
     )
 
 

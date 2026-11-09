@@ -416,6 +416,26 @@ class Settings(BaseSettings):
     # you have looked at real scores for your corpus and model.
     RETRIEVAL_MIN_SCORE: float = 0.0
 
+    # --- reranking -----------------------------------------------------------
+    # A cross-encoder re-scores the vector hits before the best top_k reach the
+    # prompt. Served by the `reranker` container (Hugging Face TEI running
+    # BAAI/bge-reranker-v2-m3, multilingual, so Arabic passages score properly).
+    # Off builds a pass-through, and retrieval behaves exactly as before.
+    RERANKER_ENABLED: bool = False
+    RERANKER_PROVIDER: str = "tei"
+    RERANKER_URL: str = "http://reranker:80"
+    RERANKER_MODEL_ID: str = "BAAI/bge-reranker-v2-m3"
+    # A rerank that takes longer than this is abandoned and the hits keep
+    # their vector order: a slow reranker must not stall the answer.
+    RERANKER_TIMEOUT_S: float = 10.0
+    # How many vector hits each query fetches for the reranker to choose from.
+    # Wider recalls more and costs reranker time roughly linearly (on CPU,
+    # about 50-150 ms per passage for bge-reranker-v2-m3).
+    RERANK_CANDIDATES: int = 20
+    # Reranked passages below this relevance (0..1) are dropped. 0.0 keeps
+    # everything, for the same reason RETRIEVAL_MIN_SCORE defaults to it.
+    RERANK_MIN_SCORE: float = 0.0
+
     # Which library extracts text from PDFs. Measured on the 274-page Arabic
     # guide (25 MB), whole document, after NFKC normalisation:
     #

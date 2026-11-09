@@ -40,6 +40,7 @@ Then:
 | Grafana | http://localhost:3000 — `admin` / `admin` on first boot |
 | Prometheus | http://localhost:9090 — check `/targets` first |
 | Langfuse | http://localhost:3001 — profile `langfuse`, see [Observability](#observability) |
+| Reranker | http://localhost:8082 — TEI serving `BAAI/bge-reranker-v2-m3`; the first start downloads ~2 GB of weights |
 
 `docker compose down` stops it; `docker compose down -v` also destroys the databases.
 

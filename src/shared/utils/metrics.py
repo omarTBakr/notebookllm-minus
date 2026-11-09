@@ -157,6 +157,21 @@ RETRIEVAL_HITS = Histogram(
     registry=REGISTRY,
 )
 
+RERANK_SECONDS = Histogram(
+    "rerank_duration_seconds",
+    "Cross-encoder rerank time for one query's candidate pool.",
+    ["provider"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8, 16),
+    registry=REGISTRY,
+)
+
+RERANK_FAILURES = Counter(
+    "rerank_failures_total",
+    "Reranks that failed or timed out; retrieval fell back to vector order.",
+    ["provider"],
+    registry=REGISTRY,
+)
+
 ANSWERS = Counter(
     "answers_total",
     "Answers produced, split by whether documents backed them.",

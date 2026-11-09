@@ -29,6 +29,7 @@ from shared.utils import (
 
 from .chatting import LLMChattingFactory, LLMChattingInterface
 from .embedding import LLMEmbeddingFactory, LLMEmbeddingInterface
+from .reranking import RerankerFactory, RerankerInterface
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,7 @@ class ProviderCache:
 
         self._chatting: dict[tuple[str, int | None, bool | None], LLMChattingInterface] = {}
         self._embedding: dict[tuple[str, int], LLMEmbeddingInterface] = {}
+        self._reranker: RerankerInterface | None = None
 
     def _for_source(self, source: str, backend_field: str, **overrides) -> Settings:
         """A copy of Settings describing *source* rather than .env's default.
@@ -140,6 +142,20 @@ class ProviderCache:
 
         return client
 
+    # --- reranking ------------------------------------------------------------
+
+    def reranker(self) -> RerankerInterface:
+        """The one reranker, or a pass-through when RERANKER_ENABLED is off.
+
+        One for the whole process rather than per model: it is a single
+        service behind one URL, and every chat shares it.
+        """
+        if self._reranker is None:
+            self._reranker = RerankerFactory(self.settings).create()
+            logger.info("Opened reranker %s (%s)", type(self._reranker).__name__, self._reranker.model_id)
+
+        return self._reranker
+
     # --- shutdown -------------------------------------------------------------
 
     async def aclose_all(self) -> None:
@@ -154,5 +170,12 @@ class ProviderCache:
             except Exception as exc:
                 logger.warning("Could not close %s cleanly: %s", label, exc)
 
+        if self._reranker is not None:
+            try:
+                await self._reranker.aclose()
+            except Exception as exc:
+                logger.warning("Could not close the reranker cleanly: %s", exc)
+
         self._chatting.clear()
         self._embedding.clear()
+        self._reranker = None
