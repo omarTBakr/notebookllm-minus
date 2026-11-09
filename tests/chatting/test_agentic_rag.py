@@ -3,10 +3,13 @@
 import json
 import re
 
+import pytest
+
 from application.services.rag.ChatService import ChatService
 from application.services.rag.QueryPlanner import (
     QueryPlanSchema,
     format_history,
+    is_small_talk,
     normalise,
     plan_query,
 )
@@ -82,6 +85,37 @@ def test_normalise_drops_duplicates_and_caps():
     assert result.sub_queries == ["a", "b", "c"]
     assert result.standalone_query == "q"
     assert result.is_complex
+
+
+def test_simple_with_several_distinct_parts_is_complex():
+    """v2 asks for exactly one query when simple; two distinct ones are parts."""
+    raw = QueryPlanSchema(intent="simple", standalone_query="q", sub_queries=["tower height", "library size"])
+    assert normalise(raw, "q", 3).is_complex
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["Hi there, thanks for the help!", "thanks", "Thank you so much", "ok, got it", "Good morning",
+     "شكرًا جزيلًا!", "السلام عليكم", "تمام"],
+)
+def test_small_talk_skips_the_model(message):
+    assert is_small_talk(message)
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["Thanks! When was the lighthouse built?", "hello, what is in chapter 2", "Summarise the report",
+     "شكرًا، متى بُنيت المنارة؟", "", "thanks " * 20],
+)
+def test_real_questions_are_not_small_talk(message):
+    assert not is_small_talk(message)
+
+
+async def test_planner_answers_small_talk_without_a_model_call():
+    client = PlannerClient(plan("complex", "x", "a", "b"))
+    result = await plan_query(client, "Thank you so much!", "en")
+    assert result.intent == "chitchat"
+    assert client.prompts == []
 
 
 def test_complex_with_one_part_left_is_simple():

@@ -11,7 +11,7 @@ Edits made in the Langfuse UI are versions too. Running this again only
 promotes the file text back to the label when the two differ, so `--dry-run`
 first shows what would move.
 
-    cd src && uv run python ../scripts/langfuse_seed_prompts.py [--dry-run] [--label staging]
+    cd src && uv run python ../scripts/langfuse_seed_prompts.py [--dry-run] [--label staging] [--message "..."]
 """
 
 import argparse
@@ -34,6 +34,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--label", default=settings.LANGFUSE_PROMPT_LABEL)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--message",
+        default="Seeded from src/application/prompts/locales",
+        help="commit message stored on every new prompt version",
+    )
     args = parser.parse_args()
 
     client = tracing.get_langfuse()
@@ -69,7 +74,7 @@ def main() -> int:
                 type="text",
                 labels=[args.label],
                 tags=[lang, group],
-                commit_message="Seeded from src/application/prompts/locales",
+                commit_message=args.message,
             )
 
         if action == "create":
