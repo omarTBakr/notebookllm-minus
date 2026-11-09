@@ -88,6 +88,11 @@ class FakeProviderCache:
         self.asked_for.append(("reranker",))
         return getattr(self, "_reranker", None) or NoopReranker()
 
+    def image_embedding(self):
+        """None, like the real cache with MULTIMODAL_ENABLED off, unless a test sets one."""
+        self.asked_for.append(("image_embedding",))
+        return getattr(self, "_image_embedding", None)
+
     async def aclose_all(self) -> None:
         await self._chatting.aclose()
         await self._embedding.aclose()

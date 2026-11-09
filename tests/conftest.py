@@ -57,6 +57,10 @@ _ENV = {
     # The tests that exercise correction itself hand it a fake client and turn
     # this back on for their own settings copy.
     "POSTPROCESS_ENABLED": "false",
+    # Off by default for the same reason; the image tests switch it on for
+    # themselves. No caption model: captions fall back to nearby text.
+    "MULTIMODAL_ENABLED": "false",
+    "IMAGE_CAPTION_MODEL_ID": "",
     # Keep the logging config from installing a rotating file handler that
     # would fight caplog and write into the repo.
     "LOG_TO_FILE": "false",

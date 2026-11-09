@@ -9,7 +9,7 @@ APP_VERSION="v2"
 
 # --- Uploads -------------------------------------------------------------------
 # MIME types accepted at upload.
-ALLOWED_TYPES=["application/pdf", "text/plain", "text/markdown", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+ALLOWED_TYPES=["application/pdf", "text/plain", "text/markdown", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg", "image/webp"]
 # Largest upload, in bytes (50 MB). nginx caps at 64 MB.
 MAX_FILE_SIZE=10485760
 # Bytes per streaming read while saving an upload.
@@ -122,6 +122,15 @@ RERANKER_MODEL_ID="BAAI/bge-reranker-v2-m3"
 RERANKER_TIMEOUT_S=10
 RERANK_CANDIDATES=20
 RERANK_MIN_SCORE=0.0
+
+# --- Images (multimodal retrieval; host Ollama >= 0.40 with the model pulled) --
+MULTIMODAL_ENABLED=true
+IMAGE_EMBEDDING_BACKEND="ollama"
+IMAGE_EMBEDDING_MODEL_ID="embeddinggemma-2:440m-q8_0-text-vision"
+IMAGE_EMBEDDING_SIZE=768
+IMAGE_CAPTION_MODEL_ID="local/gemma3:4b"
+IMAGE_TOP_K=4
+IMAGE_MAX_PER_ANSWER=4
 
 # --- Ingestion (parsing and chunking) ------------------------------------------
 # pymupdf: slower (~2.3 s/page) but the only loader that yields citation highlights.
