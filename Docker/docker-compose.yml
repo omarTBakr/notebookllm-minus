@@ -578,11 +578,28 @@ services:
   # Nothing depends on it. If it is down or slow, retrieval falls back to
   # vector order and counts rerank_failures_total, so it gets no healthcheck
   # that could hold other services back.
+  #
+  # Memory is capped on purpose. With TEI's defaults (16384 batch tokens) the
+  # CPU backend grew to ~19 GB while loading this model and starved the host.
+  # 4096 batch tokens is enough for a RERANK_CANDIDATES=20 pool of chunks (TEI
+  # splits a larger request into several batches), and mem_limit makes any
+  # runaway an OOM-kill of this container rather than of the machine.
   reranker:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     container_name: reranker
     restart: unless-stopped
-    command: ["--model-id", "BAAI/bge-reranker-v2-m3", "--port", "80"]
+    command:
+      - "--model-id"
+      - "BAAI/bge-reranker-v2-m3"
+      - "--port"
+      - "80"
+      - "--max-batch-tokens"
+      - "4096"
+      - "--max-client-batch-size"
+      - "64"
+      - "--max-concurrent-requests"
+      - "16"
+    mem_limit: 4g
     ports:
       # 8082 on the host for local runs (RERANKER_URL in src/.env); inside
       # compose the app uses http://reranker:80.
