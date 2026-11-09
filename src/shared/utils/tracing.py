@@ -268,6 +268,17 @@ def current_trace_headers() -> dict[str, str]:
     if client is None:
         return {}
 
+    # Most tasks (an upload's ingest, a scheduled sweep) are queued outside
+    # any trace. Asking the SDK for ids then logs a "No active span" warning
+    # per task, so check the OpenTelemetry context first.
+    try:
+        from opentelemetry import trace as otel_trace
+
+        if not otel_trace.get_current_span().get_span_context().is_valid:
+            return {}
+    except Exception:
+        return {}
+
     try:
         trace_id = client.get_current_trace_id()
         span_id = client.get_current_observation_id()

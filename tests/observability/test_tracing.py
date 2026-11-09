@@ -167,7 +167,23 @@ def test_observation_marks_errors_and_reraises(langfuse):
     assert obs.attrs["level"] == "ERROR"
 
 
-def test_trace_headers_round_trip(langfuse):
+def test_no_headers_outside_a_trace(langfuse):
+    """Queued with no active span: nothing to propagate, and no SDK call
+    (which would log a "No active span" warning per task)."""
+    called = []
+    langfuse.get_current_trace_id = lambda: called.append(1) or "trace-1"
+
+    assert tracing.current_trace_headers() == {}
+    assert called == []
+
+
+def test_trace_headers_round_trip(langfuse, monkeypatch):
+    from opentelemetry import trace as otel_trace
+
+    active = otel_trace.NonRecordingSpan(
+        otel_trace.SpanContext(trace_id=1, span_id=2, is_remote=False, trace_flags=otel_trace.TraceFlags(1))
+    )
+    monkeypatch.setattr(otel_trace, "get_current_span", lambda: active)
     headers = tracing.current_trace_headers()
     assert headers == {
         tracing.TRACE_ID_HEADER: "trace-1",
