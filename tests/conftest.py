@@ -62,6 +62,9 @@ _ENV = {
     "LOG_TO_FILE": "false",
     "LOG_TO_CONSOLE": "false",
     "LOG_LEVEL": "CRITICAL",
+    # Tracing exports to a Langfuse server over the network; a developer's
+    # src/.env may switch it on, and the suite must never send a trace.
+    "LANGFUSE_ENABLED": "false",
 }
 os.environ.update(_ENV)
 
@@ -86,6 +89,16 @@ def _reset_probe_cache():
     ModelService.forget_probes()
     yield
     ModelService.forget_probes()
+
+
+@pytest.fixture(autouse=True)
+def _reset_tracing():
+    """The Langfuse client is resolved once per process; tests swap it out."""
+    from shared.utils import tracing
+
+    tracing.reset_for_tests()
+    yield
+    tracing.reset_for_tests()
 
 
 @pytest.fixture

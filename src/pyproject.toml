@@ -32,6 +32,10 @@ dependencies = [
     # shared/utils/metrics.py.
     "prometheus-client>=0.21",
     "prometheus-fastapi-instrumentator>=7.0",
+    # LLM tracing and prompt versioning, sent to the self-hosted Langfuse in
+    # compose. shared/utils/tracing.py wraps it so that with LANGFUSE_ENABLED
+    # off (tests, a bare dev box) every call is a no-op.
+    "langfuse>=3.0.0",
     # --- config and validation ---
     "pydantic>=2.7",            # imported directly by every model and schema
     "pydantic-settings>=2.14.2",
@@ -55,6 +59,11 @@ dependencies = [
     "langchain-community>=0.4.2",
     "langchain-core>=0.4.0",
     "langchain-text-splitters>=1.1.2",
+    # --- guardrails ---
+    # Only for the AgentMiddleware contract that application/guardrails/
+    # implements (before_model / after_model). LLM calls still go through our
+    # own providers, not LangChain chat models.
+    "langchain>=1.0.0",
     "pypdf>=6.14.2",            # PyPDFLoader's parser
     # NLTKTextSplitter's sentence tokenizer. langchain-text-splitters imports
     # it lazily and does not depend on it, so it has to be named here.
@@ -89,6 +98,9 @@ dependencies = [
     "kombu>=5.6.2",
     "billiard>=4.2.4",
     "vine>=5.1.0",
+    # Micro-batching for the guardrail queues: a batch runs as soon as N
+    # requests have arrived OR T seconds have passed, whichever comes first.
+    "celery-batches>=0.10",
 ]
 
 # Removed: "dotenv", which is a stub package whose only content is a dependency
@@ -136,3 +148,4 @@ select = ["E4", "E7", "E9", "F", "I"]
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
+

@@ -213,3 +213,16 @@ LOG_BACKUP_COUNT=5
 METRICS_ENABLED=true
 METRICS_PATH="/metrics"
 WORKER_METRICS_PORT=9808
+
+# --- Tracing + prompt versioning (Langfuse, http://localhost:3001) ------------
+# Create a project in the Langfuse UI and paste its keys here.
+LANGFUSE_ENABLED=false
+LANGFUSE_HOST="http://langfuse-web:3000"
+LANGFUSE_PUBLIC_KEY=""
+LANGFUSE_SECRET_KEY=""
+LANGFUSE_ENVIRONMENT="production"
+LANGFUSE_SAMPLE_RATE=1.0
+LANGFUSE_CAPTURE_IO=true
+LANGFUSE_PROMPTS_ENABLED=true
+LANGFUSE_PROMPT_LABEL="production"
+LANGFUSE_PROMPT_CACHE_TTL=60

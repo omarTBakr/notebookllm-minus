@@ -1,4 +1,4 @@
-from . import metrics
+from . import metrics, tracing
 from .config import Settings, get_settings
 from .logging_config import (
     get_logger,
@@ -45,6 +45,7 @@ from .resources import (
 
 __all__ = [
     "metrics",
+    "tracing",
     "get_settings",
     "Settings",
     "backend_for",

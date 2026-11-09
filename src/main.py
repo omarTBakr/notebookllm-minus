@@ -18,7 +18,7 @@ from presentation.routes import (
     ui_router,
 )
 from shared.exceptions import NotebookLLMError
-from shared.utils import get_logger, get_settings, setup_logging
+from shared.utils import get_logger, get_settings, setup_logging, tracing
 
 SETTINGS = get_settings()
 
@@ -87,6 +87,20 @@ async def lifespan(app: FastAPI):
 
     app.warm_task = asyncio.create_task(warm_models())
 
+    # Same idea for prompts: with Langfuse serving them, the first fetch of each
+    # one is a blocking HTTP call, so do all of them now, off the event loop.
+    async def warm_prompts() -> None:
+        try:
+            from application.prompts.template_parser import warm_prompts as fetch_all
+
+            served = await asyncio.to_thread(fetch_all)
+            if served:
+                logger.info("Prompt cache warm (%d prompts from Langfuse)", served)
+        except Exception as exc:
+            logger.warning("Could not warm the prompt cache: %s", exc)
+
+    app.warm_prompts_task = asyncio.create_task(warm_prompts())
+
     yield
 
     # shutdown: release the provider pools, then the MongoDB connection.
@@ -98,6 +112,7 @@ async def lifespan(app: FastAPI):
     for name, close in (
         ("database", app.db.disconnect),
         ("provider clients", app.providers.aclose_all),
+        ("Langfuse exporter", lambda: asyncio.to_thread(tracing.shutdown)),
     ):
         try:
             await close()

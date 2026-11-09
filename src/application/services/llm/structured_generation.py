@@ -30,7 +30,7 @@ from typing import get_args, get_origin
 from pydantic import BaseModel, ValidationError
 
 from shared.exceptions import StructuredOutputError
-from shared.utils import get_logger
+from shared.utils import get_logger, tracing
 
 logger = get_logger(__name__)
 
@@ -430,6 +430,41 @@ def salvage_items(raw: str, schema: type[BaseModel]) -> tuple[BaseModel, int] | 
 
 
 async def generate_structured(
+    client,
+    prompt: str,
+    schema: type[BaseModel],
+    *,
+    retries: int = 2,
+    max_tokens: int | None = None,
+    salvage: bool = False,
+    max_items: int | None = None,
+    attempt_timeout: float | None = None,
+) -> BaseModel:
+    """Traced entry point; see `_generate_structured` for the behaviour.
+
+    One Langfuse span per structured call, so a retry or a repair shows up as a
+    second generation nested under the same node instead of an unrelated call.
+    """
+    with tracing.observation(
+        f"structured.{schema.__name__}",
+        as_type="chain",
+        metadata={"retries": retries, "salvage": salvage, "max_items": max_items},
+    ) as span:
+        result = await _generate_structured(
+            client,
+            prompt,
+            schema,
+            retries=retries,
+            max_tokens=max_tokens,
+            salvage=salvage,
+            max_items=max_items,
+            attempt_timeout=attempt_timeout,
+        )
+        span.update(output=result.model_dump(mode="json"))
+        return result
+
+
+async def _generate_structured(
     client,
     prompt: str,
     schema: type[BaseModel],

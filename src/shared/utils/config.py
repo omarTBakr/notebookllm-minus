@@ -468,6 +468,27 @@ class Settings(BaseSettings):
     # histograms they record never reach Prometheus. See celery_app.py.
     WORKER_METRICS_PORT: int = 9808
 
+    # --- tracing + prompt versioning (Langfuse) ------------------------------
+    # Self-hosted Langfuse from Docker/docker-compose.yml. Off by default, and
+    # also off whenever either key is missing, so tests and a bare dev box
+    # never try to export. See shared/utils/tracing.py.
+    LANGFUSE_ENABLED: bool = False
+    LANGFUSE_HOST: str = "http://langfuse-web:3000"
+    LANGFUSE_PUBLIC_KEY: str | None = None
+    LANGFUSE_SECRET_KEY: str | None = None
+    LANGFUSE_ENVIRONMENT: str = "development"
+    # Fraction of traces kept. 1.0 keeps every chat; lower it on a busy box.
+    LANGFUSE_SAMPLE_RATE: float = 1.0
+    # Send prompt and answer text. Off keeps timings, models and token counts
+    # and replaces every input/output with "[redacted]".
+    LANGFUSE_CAPTURE_IO: bool = True
+    # Prompts are fetched from Langfuse by this label, so promoting a new
+    # version is a label move in the UI. The local locale files stay the
+    # fallback whenever Langfuse is off or unreachable.
+    LANGFUSE_PROMPTS_ENABLED: bool = True
+    LANGFUSE_PROMPT_LABEL: str = "production"
+    LANGFUSE_PROMPT_CACHE_TTL: int = 60
+
     # --- task queue / Celery -------------------------------------------------
     # Broker: RabbitMQ — celery_broker_url assembles these into an amqp:// DSN.
     CELERY_USERNAME: str = "appuser"

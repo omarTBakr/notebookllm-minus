@@ -2,9 +2,16 @@ import os
 from pathlib import Path
 
 from celery import Celery
-from celery.signals import worker_init, worker_process_shutdown
+from celery.signals import (
+    before_task_publish,
+    task_postrun,
+    task_prerun,
+    worker_init,
+    worker_process_shutdown,
+)
 
 from celery_queues import celery_queue_config
+from shared.utils import tracing
 from shared.utils.config import get_settings
 from shared.utils.logging_config import setup_logging
 
@@ -150,3 +157,58 @@ def _forget_dead_child(pid=None, **_) -> None:
     from prometheus_client import multiprocess
 
     multiprocess.mark_process_dead(pid)
+
+
+# --- tracing ------------------------------------------------------------------
+# A task queued from inside a traced request (a chat's guardrail check, a memory
+# extraction) continues that request's Langfuse trace instead of starting an
+# unrelated one. The trace and parent span ride along as message headers; the
+# worker opens a span under them for the whole task, and every LLM call the task
+# makes nests inside it. Tasks queued with no trace still get one span each, so
+# an ingest's correction calls are grouped per task rather than scattered.
+_task_spans: dict[str, object] = {}
+
+
+@before_task_publish.connect
+def _attach_trace_headers(headers=None, **_) -> None:
+    if headers is not None:
+        headers.update(tracing.current_trace_headers())
+
+
+@task_prerun.connect
+def _open_task_span(task_id=None, task=None, **_) -> None:
+    if not tracing.enabled() or task is None:
+        return
+
+    request = getattr(task, "request", None)
+    headers = {key: getattr(request, key, None) for key in (tracing.TRACE_ID_HEADER, tracing.PARENT_SPAN_HEADER)}
+    context = tracing.trace_context_from(headers)
+
+    cm = tracing.observation(
+        f"task.{task.name.rsplit('.', 1)[-1]}",
+        metadata={
+            "task_id": task_id,
+            "queue": (getattr(request, "delivery_info", None) or {}).get("routing_key"),
+        },
+        **({"trace_context": context} if context else {}),
+    )
+    cm.__enter__()
+    _task_spans[task_id] = cm
+
+
+@task_postrun.connect
+def _close_task_span(task_id=None, state=None, **_) -> None:
+    cm = _task_spans.pop(task_id, None)
+    if cm is None:
+        return
+    try:
+        cm.__exit__(None, None, None)
+    except Exception:
+        pass
+
+
+@worker_process_shutdown.connect
+def _flush_traces(**_) -> None:
+    # Spans are exported from a background thread in batches; a child that
+    # exits without this drops whatever the last batch had not sent yet.
+    tracing.shutdown()

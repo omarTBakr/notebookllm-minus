@@ -39,6 +39,7 @@ Then:
 | the app, direct | http://localhost:8000 — bypasses nginx |
 | Grafana | http://localhost:3000 — `admin` / `admin` on first boot |
 | Prometheus | http://localhost:9090 — check `/targets` first |
+| Langfuse | http://localhost:3001 — profile `langfuse`, see [Observability](#observability) |
 
 `docker compose down` stops it; `docker compose down -v` also destroys the databases.
 
@@ -254,6 +255,36 @@ columns that PostgreSQL 17 moved to `pg_stat_checkpointer`. This runs PostgreSQL
 exporter's `stat_bgwriter` collector finds nothing — enabling it changes nothing, which is why
 it is not enabled. *Lock tables* is empty for a related reason. `--collector.postmaster` **is**
 enabled, because the *Start Time* panel needs it and it does work.
+
+### LLM tracing and prompt versions: Langfuse
+
+Prometheus answers "how slow, how often". Langfuse answers "what did the model actually see and
+say": one trace per chat answer, with the input guardrail, the query plan, each retrieval and
+rerank, each sub-answer, the streamed synthesis and every output-guardrail check nested under it,
+plus token usage per generation and the prompt version that produced it. Worker tasks (ingest
+correction, Studio, memory, guardrail batches) continue the trace that queued them.
+
+It is a compose profile, because it adds six containers (web, worker, postgres, clickhouse,
+minio, redis):
+
+```bash
+cp env.example/.env.langfuse env/.env.langfuse     # fill in every REPLACE_ME
+docker compose --profile langfuse up -d            # or COMPOSE_PROFILES=langfuse in Docker/.env
+```
+
+The UI is on **http://localhost:3001**. The `LANGFUSE_INIT_*` values create the org, project,
+API keys and first user on first boot. Copy the two project keys into `env/.env.app` and set
+`LANGFUSE_ENABLED=true` there. Then push the prompts once:
+
+```bash
+docker compose exec fastapi python ../scripts/langfuse_seed_prompts.py   # or locally: cd src && uv run python ../scripts/langfuse_seed_prompts.py
+```
+
+From then on, a prompt edited in the Langfuse UI goes live when the `production` label is moved
+to it, within `LANGFUSE_PROMPT_CACHE_TTL` seconds and with no deploy. The locale files in
+`src/application/prompts/locales/` stay the fallback: with Langfuse off or unreachable, the app
+serves them unchanged. `LANGFUSE_CAPTURE_IO=false` keeps traces but redacts prompt and answer
+text.
 
 **`node_exporter` runs on the host, not as a container.** Docker Desktop's VM refuses the
 `/` slave-propagation mount the container needs, and would report the VM rather than the

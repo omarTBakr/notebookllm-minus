@@ -8,10 +8,11 @@ Anthropic for Cohere should be an ``.env`` edit, not a rewrite.
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from time import perf_counter
 
 from shared.enums import ChatRole
-from shared.utils import get_logger
+from shared.utils import get_logger, tracing
 from shared.utils.metrics import (
     GENERATION_REQUESTS,
     GENERATION_SECONDS,
@@ -101,6 +102,22 @@ class LLMChattingInterface(ABC):
 
         provider = type(self).__name__
 
+        # One Langfuse generation per call, opened here so every provider is
+        # traced identically. A no-op when tracing is off.
+        generation = tracing.start_generation(
+            "llm.generate",
+            model=self.model_id,
+            input=messages,
+            model_parameters={
+                "max_tokens": resolved_max_tokens,
+                "temperature": resolved_temperature,
+            },
+            metadata={
+                "provider": provider,
+                "json_schema": json_schema is not None and self.ENFORCES_SCHEMA,
+            },
+        )
+
         # Not logged here: a provider raises LLMProviderError and stays quiet,
         # and the handler in main.py logs it once. Counted, though -- the same
         # request/duration metrics stream_text records. Every Studio call and
@@ -113,14 +130,20 @@ class LLMChattingInterface(ABC):
                 )
             else:
                 text = await self._generate_text(messages, resolved_max_tokens, resolved_temperature)
-        except Exception:
+        except Exception as exc:
             GENERATION_REQUESTS.labels(provider, self.model_id, "error").inc()
+            tracing.end_generation(
+                generation,
+                level="ERROR",
+                status_message=f"{type(exc).__name__}: {exc}"[:500],
+            )
             raise
 
         elapsed_ms = (perf_counter() - started) * 1000
 
         GENERATION_REQUESTS.labels(provider, self.model_id, "ok").inc()
         GENERATION_SECONDS.labels(provider, self.model_id).observe(elapsed_ms / 1000)
+        tracing.end_generation(generation, output=text)
 
         self.logger.info(
             "Generated %d chars in %.0f ms (provider=%s, model=%s)",
@@ -167,8 +190,9 @@ class LLMChattingInterface(ABC):
         **Not every backend truly streams.** Providers that do override
         :meth:`_stream_text`; the rest fall back to generating the full answer
         and yielding it as one piece, so this endpoint works for all of them
-        and only the latency differs. Today Ollama streams and the hosted
-        providers do not.
+        and only the latency differs. Today Ollama and the OpenAI-compatible
+        providers (OpenAI, NVIDIA, OpenRouter) stream; Anthropic, Google and
+        Cohere do not.
         """
         messages = self._build_messages(prompt, chat_history)
 
@@ -192,6 +216,18 @@ class LLMChattingInterface(ABC):
         thinking_chars = 0
         provider = type(self).__name__
         first_piece_at = None
+        answer_parts: list[str] = []
+
+        generation = tracing.start_generation(
+            "llm.stream",
+            model=self.model_id,
+            input=messages,
+            model_parameters={
+                "max_tokens": resolved_max_tokens,
+                "temperature": resolved_temperature,
+            },
+            metadata={"provider": provider},
+        )
 
         try:
             async for piece in self._stream_text(messages, resolved_max_tokens, resolved_temperature):
@@ -201,22 +237,45 @@ class LLMChattingInterface(ABC):
                 if first_piece_at is None:
                     first_piece_at = perf_counter()
                     GENERATION_TTFT_SECONDS.labels(provider, self.model_id).observe(first_piece_at - started)
+                    tracing._safe(
+                        generation.update,
+                        completion_start_time=datetime.now(timezone.utc),
+                    )
 
                 if piece["kind"] == "thinking":
                     thinking_chars += len(piece["text"])
                 else:
                     chars += len(piece["text"])
                     chunks += 1
+                    answer_parts.append(piece["text"])
 
                 yield piece
-        except Exception:
-            GENERATION_REQUESTS.labels(provider, self.model_id, "error").inc()
+        except BaseException as exc:
+            # BaseException: a client that stops reading closes this generator
+            # with GeneratorExit, and the generation still has to be ended.
+            if isinstance(exc, Exception):
+                GENERATION_REQUESTS.labels(provider, self.model_id, "error").inc()
+            tracing.end_generation(
+                generation,
+                output="".join(answer_parts),
+                level="ERROR" if isinstance(exc, Exception) else "WARNING",
+                status_message=f"{type(exc).__name__}: {exc}"[:500],
+            )
             raise
 
         elapsed_ms = (perf_counter() - started) * 1000
 
         GENERATION_REQUESTS.labels(provider, self.model_id, "ok").inc()
         GENERATION_SECONDS.labels(provider, self.model_id).observe(elapsed_ms / 1000)
+        tracing.end_generation(
+            generation,
+            output="".join(answer_parts),
+            metadata={
+                "provider": provider,
+                "thinking_chars": thinking_chars,
+                "stream_chunks": chunks,
+            },
+        )
 
         # chunk count is the tell for whether this actually streamed: a
         # fallback provider reports exactly 1.
@@ -274,6 +333,7 @@ class LLMChattingInterface(ABC):
         # The log line below is DEBUG, so at the default LOG_LEVEL=INFO this
         # data never left the process. The counters are unconditional.
         provider = type(self).__name__
+        tracing.record_usage(input_tokens, output_tokens)
         if input_tokens is not None:
             GENERATION_TOKENS.labels(provider, self.model_id, "input").inc(input_tokens)
         if output_tokens is not None:

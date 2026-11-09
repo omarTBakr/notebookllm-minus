@@ -536,6 +536,148 @@ services:
       pgvector:
         condition: service_healthy
 
+  # --- LLM tracing + prompt versioning: Langfuse (profile `langfuse`) ----------
+  #
+  # Langfuse v4 self-hosted: web (UI + ingestion API) and worker, on its own
+  # postgres, clickhouse (traces), minio (raw events) and redis (queues). Six
+  # containers and ClickHouse's appetite for memory are why this is a profile:
+  #
+  #   docker compose --profile langfuse up -d
+  #
+  # or add `COMPOSE_PROFILES=langfuse` to Docker/.env to make it part of every
+  # `up`. The app only sends traces with LANGFUSE_ENABLED=true in .env.app, and
+  # works the same with this stack down (prompts fall back to the locale files).
+  #
+  # Every container reads env/.env.langfuse. Web and worker are pinned to the
+  # same release: they share a database schema.
+
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4.76.0
+    container_name: langfuse-web
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    env_file:
+      - ./env/.env.langfuse
+    ports:
+      # 3001: Grafana has 3000. NEXTAUTH_URL in .env.langfuse must match.
+      - "3001:3000"
+    networks:
+      - backend
+    depends_on: &langfuse-depends-on
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://$$(hostname -i):3000/api/public/health || wget -q --spider http://127.0.0.1:3000/api/public/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4.76.0
+    container_name: langfuse-worker
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    env_file:
+      - ./env/.env.langfuse
+    networks:
+      - backend
+    depends_on: *langfuse-depends-on
+
+  langfuse-postgres:
+    image: postgres:17-alpine
+    container_name: langfuse-postgres
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    env_file:
+      - ./env/.env.langfuse
+    environment:
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse_postgres:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:26.3.62.3
+    container_name: langfuse-clickhouse
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    user: "101:101"
+    env_file:
+      - ./env/.env.langfuse
+    volumes:
+      - langfuse_clickhouse:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  langfuse-minio:
+    # Chainguard publishes only `latest` on its free tier; this is the image
+    # Langfuse's own compose file uses.
+    image: cgr.dev/chainguard/minio:latest
+    container_name: langfuse-minio
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    env_file:
+      - ./env/.env.langfuse
+    entrypoint: sh
+    # The bucket has to exist before Langfuse writes its first event.
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    ports:
+      # Browser-facing for media links only (LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT).
+      # 9002, not Langfuse's default 9090: Prometheus is there.
+      - "9002:9000"
+    volumes:
+      - langfuse_minio:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  langfuse-redis:
+    # Separate from the app's redis on purpose: that one evicts (allkeys-lru),
+    # and Langfuse keeps its job queues in redis, where an evicted key is a
+    # silently lost trace. Langfuse requires noeviction.
+    image: redis:7.4-alpine
+    container_name: langfuse-redis
+    profiles: ["langfuse"]
+    restart: unless-stopped
+    env_file:
+      - ./env/.env.langfuse
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_AUTH\" --maxmemory-policy noeviction"]
+    volumes:
+      - langfuse_redis:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_AUTH\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # --- host-level exporters: deliberately absent -------------------------------
   #
   # node-exporter, cAdvisor and an NVIDIA exporter were here. They are removed
@@ -569,6 +711,11 @@ volumes:
   redis:
   prometheus:
   grafana:
+  langfuse_postgres:
+  langfuse_clickhouse:
+  langfuse_clickhouse_logs:
+  langfuse_minio:
+  langfuse_redis:
 
 networks:
   backend:

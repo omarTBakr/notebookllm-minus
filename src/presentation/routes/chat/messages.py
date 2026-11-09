@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from presentation import dependencies as deps
 from shared.exceptions import NotebookLLMError
+from shared.utils import request_id_ctx, tracing
 
 from ..schemas import MessageRequest
 from ._helpers import _sse, logger
@@ -64,7 +65,22 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
         selected_assets = [asset_id for asset_id in source_names if asset_id not in excluded]
 
     async def events():
-        answer: list[str] = []
+        # One Langfuse trace per answer: user and notebook become the trace's
+        # user and session, so the UI can show a whole conversation together.
+        with tracing.trace_attributes(
+            user_id=str(chat.user_id) if chat.user_id else None,
+            session_id=str(chat_id),
+            trace_name="chat.answer",
+            tags=["chat", chat.lang or settings.DEFAULT_LANG],
+            metadata={"request_id": request_id_ctx.get()},
+        ):
+            with tracing.observation("chat.answer", as_type="agent", input={"question": request.text}) as root:
+                answer: list[str] = []
+                async for frame in _answer_frames(answer):
+                    yield frame
+                root.update(output="".join(answer))
+
+    async def _answer_frames(answer: list[str]):
         citations: list[dict] = []
 
         try:
