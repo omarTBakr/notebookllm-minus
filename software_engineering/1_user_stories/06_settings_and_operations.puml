@@ -1,0 +1,42 @@
+@startuml
+!include ../_style.iuml
+title Epic 6 — Settings, observability and prompt versions
+
+rectangle "Settings" {
+  card US6_1 [
+    **US-6.1  Choose the models per notebook**
+    As a //reader//, I want to pick the chat and embedding model for each notebook
+    (local Ollama, NVIDIA, OpenRouter, OpenAI, Anthropic, Google, Cohere),
+    so that I can trade quality, cost and privacy.
+    ----
+    * Changing the embedding model rebuilds that notebook's index.
+    * Temperature, answer length, chunk size and overlap are per notebook.
+  ]
+}
+rectangle "Operations" {
+  card US6_2 [
+    **US-6.2  See what the model saw**
+    As an //operator//, I want one trace per answer with every step and model call nested in it,
+    so that I can debug a bad answer from the prompt that produced it.
+    ----
+    * Langfuse shows guardrails, plan, retrieval, rerank, sub-answers, synthesis and tokens.
+    * Worker tasks continue the trace of the request that queued them.
+  ]
+  card US6_3 [
+    **US-6.3  Change a prompt without a deploy**
+    As an //operator//, I want prompts versioned in Langfuse and served by label,
+    so that I can roll a prompt forward or back from the UI.
+    ----
+    * The locale files are the source of truth and the fallback.
+    * A version with a broken placeholder falls back to the local text.
+  ]
+  card US6_4 [
+    **US-6.4  Watch the system's health**
+    As an //operator//, I want Prometheus metrics and Grafana dashboards,
+    so that I can see latency, errors, queue depth and model time at a glance.
+  ]
+}
+US6_1 -[hidden]down- US6_2
+US6_2 -[hidden]down- US6_3
+US6_3 -[hidden]down- US6_4
+@enduml

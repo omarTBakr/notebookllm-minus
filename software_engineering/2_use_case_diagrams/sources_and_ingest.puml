@@ -1,0 +1,46 @@
+@startuml
+!include ../_style.iuml
+left to right direction
+title Use cases — Sources and ingestion
+
+actor Reader as reader
+actor "Celery workers" as workers <<system>>
+actor "Embedding provider" as embed <<system>>
+actor "Correction model" as fix <<system>>
+actor "Web sources" as web <<system>>
+
+rectangle "Sources" {
+  usecase "Upload a document\n(PDF, TXT, MD, CSV, XLSX)" as UC_upload
+  usecase "Add a link\n(PDF, article, YouTube, Sheet)" as UC_link
+  usecase "Reject a duplicate (409)" as UC_dup
+  usecase "Fetch the link" as UC_fetch
+  usecase "Parse pages in batches" as UC_parse
+  usecase "OCR unreadable Arabic pages" as UC_ocr
+  usecase "Repair split / fused words" as UC_repair
+  usecase "Chunk and store" as UC_chunk
+  usecase "Summarise chunks for Studio" as UC_summ
+  usecase "Embed and index" as UC_index
+  usecase "Follow indexing progress" as UC_progress
+  usecase "Rename / delete / select a source" as UC_manage
+}
+
+reader --> UC_upload
+reader --> UC_link
+reader --> UC_progress
+reader --> UC_manage
+
+UC_upload ..> UC_parse : <<include>>
+UC_dup .> UC_upload : <<extend>>
+UC_link ..> UC_fetch : <<include>>
+UC_fetch ..> UC_parse : <<include>>
+UC_ocr .> UC_parse : <<extend>>
+UC_parse ..> UC_repair : <<include>>
+UC_repair ..> UC_chunk : <<include>>
+UC_chunk ..> UC_index : <<include>>
+UC_chunk ..> UC_summ : <<include>>
+
+UC_parse --> workers
+UC_fetch --> web
+UC_repair --> fix
+UC_index --> embed
+@enduml

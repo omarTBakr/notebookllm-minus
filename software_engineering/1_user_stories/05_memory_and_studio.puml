@@ -1,0 +1,27 @@
+@startuml
+!include ../_style.iuml
+title Epic 5 — Memory and Studio
+
+rectangle "Memory" {
+  card US5_1 [
+    **US-5.1  Tell the assistant about myself**
+    As a //reader//, I want to type "/memory <fact>" and have it remembered,
+    so that later answers take me into account.
+    ----
+    * Facts are extracted on a worker and acknowledged in the chat.
+    * The closest facts are added to each prompt and listed under the answer.
+  ]
+}
+rectangle "Studio" {
+  card US5_2 [
+    **US-5.2  Study from my sources**
+    As a //student//, I want a quiz, flashcards and a mind map generated from a notebook,
+    so that I can revise what I uploaded.
+    ----
+    * Generation runs on a worker; the tile shows progress and the result opens in place.
+    * Quiz answer keys are checked against the options, not trusted as an index.
+    * Asking again while one is generating returns the one in progress.
+  ]
+}
+US5_1 -[hidden]down- US5_2
+@enduml

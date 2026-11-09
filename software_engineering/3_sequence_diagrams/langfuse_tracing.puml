@@ -1,0 +1,45 @@
+@startuml
+!include ../_style.iuml
+title Langfuse — one trace per answer, prompts served by version
+autonumber "<b>0"
+
+participant "messages route" as route
+participant "shared.utils.tracing" as tr
+participant "TemplateParser" as tp
+participant "LLMChattingInterface\n(any provider)" as llm
+participant "celery_app signals" as sig
+participant "Celery worker" as worker
+participant "Langfuse SDK\n(OTel exporter)" as sdk
+participant "Langfuse server\n(web + worker,\nClickHouse, MinIO)" as lf
+
+route -> tr : trace_attributes(user_id, session_id=chat_id)
+route -> tr : observation("chat.answer", agent)
+
+tr -> tp : get_with_ref("rag", "plan_prompt")
+tp -> sdk : get_prompt("en/rag.plan_prompt", label=production)
+alt cached / served
+  sdk --> tp : version N text
+else Langfuse off, unreachable or missing
+  tp -> tp : local locale file (fallback)
+end
+tp --> tr : (text, prompt_ref)
+
+tr -> llm : generate_text / stream_text\n(inside linked_prompt(prompt_ref))
+llm -> tr : start_generation(model, input, params, prompt)
+llm -> tr : record_usage(input, output tokens)
+llm -> tr : end_generation(output, TTFT)
+
+route -> sig : apply_async(guardrail / memory task)
+sig -> sig : before_task_publish: add trace + parent span headers
+sig -> worker : message with headers
+worker -> sig : task_prerun: observation(trace_context=headers)
+worker -> tr : nested spans and generations
+
+tr -> sdk : spans (batched in a background thread)
+sdk -> lf : OTLP export
+note over sdk, lf
+  LANGFUSE_ENABLED=false or no keys:
+  every helper is a no-op, nothing is exported.
+  LANGFUSE_CAPTURE_IO=false redacts text.
+end note
+@enduml

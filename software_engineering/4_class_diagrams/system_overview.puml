@@ -1,0 +1,118 @@
+@startuml
+!include ../_style.iuml
+title Whole system — layers and their main classes
+skinparam linetype ortho
+allowmixing
+
+package "Entry points" {
+  class "main.py\n(FastAPI app)" as Main
+  class "celery_app.py\n(Celery app + signals)" as CeleryApp
+}
+
+package "presentation" {
+  class "routes/*\n(base, data, process, nlp, ui, chat/*)" as Routes
+  class "dependencies.py" as Deps {
+    +chat_service(request, chat)
+    +guardrails(request, chat)
+    +nlp_service(request, chat)
+  }
+  class "RequestLoggingMiddleware" as MW
+  class "web/ (Jinja + ES modules)" as Web
+}
+
+package "application" {
+  package "services" {
+    class ChatService
+    class QueryPlanner <<module>>
+    class NLPService
+    class MemoryService
+    class StudioService
+    class AssetIngestService
+    class SourceService
+    class "generate_structured" as SG <<module>>
+  }
+  package "guardrails" {
+    abstract class ModelGuardrail
+    class InputGuardrail
+    class OutputGuardrail
+    class "guard_stream" as GS <<module>>
+    class CeleryGuardrailDispatcher
+  }
+  package "providers" {
+    class ProviderCache
+    interface LLMChattingInterface
+    interface LLMEmbeddingInterface
+    interface RerankerInterface
+  }
+  package "tasks" {
+    class "ingest jobs\n(fetch, process, parse,\npostprocess, assemble, summarise)" as IngestJobs
+    class "index jobs" as IndexJobs
+    class "studio / memory /\nmaintenance jobs" as OtherJobs
+    class "guardrail batch jobs\n(celery-batches)" as GuardJobs
+  }
+  class "prompts.TemplateParser" as TP
+}
+
+package "data" {
+  class DbFactory
+  abstract class DbProvider
+  interface VectorRepository
+  class "XRepository interfaces\n(User, Chat, Message, Asset,\nChunk, Artifact, Task, ...)" as Repos
+  class "models (Pydantic)" as Models
+}
+
+package "shared" {
+  class Settings
+  class "tracing (Langfuse)" as Tracing <<module>>
+  class "metrics (Prometheus)" as Metrics <<module>>
+  class "exceptions" as Exc <<module>>
+}
+
+Main --> Routes
+Main --> MW
+Routes --> Deps
+Deps --> ChatService
+Deps --> InputGuardrail
+Deps --> OutputGuardrail
+Deps --> ProviderCache
+Routes --> Web
+
+ChatService --> QueryPlanner
+ChatService --> NLPService
+ChatService --> MemoryService
+ChatService --> RerankerInterface
+ChatService --> InputGuardrail
+ChatService --> GS
+GS --> OutputGuardrail
+ModelGuardrail <|-- InputGuardrail
+ModelGuardrail <|-- OutputGuardrail
+ModelGuardrail --> CeleryGuardrailDispatcher
+CeleryGuardrailDispatcher ..> GuardJobs : apply_async + result
+QueryPlanner --> SG
+SG --> LLMChattingInterface
+ProviderCache --> LLMChattingInterface
+ProviderCache --> LLMEmbeddingInterface
+ProviderCache --> RerankerInterface
+NLPService --> LLMEmbeddingInterface
+NLPService --> VectorRepository
+
+CeleryApp --> IngestJobs
+CeleryApp --> IndexJobs
+CeleryApp --> OtherJobs
+CeleryApp --> GuardJobs
+AssetIngestService ..> IngestJobs : queues
+StudioService ..> OtherJobs : queues
+IngestJobs --> DbFactory
+GuardJobs --> ProviderCache
+
+DbFactory --> DbProvider
+DbProvider --> Repos
+DbProvider --> VectorRepository
+Repos --> Models
+
+ChatService ..> TP
+TP ..> Tracing : prompt versions
+LLMChattingInterface ..> Tracing : generations
+LLMChattingInterface ..> Metrics
+ChatService ..> Settings
+@enduml

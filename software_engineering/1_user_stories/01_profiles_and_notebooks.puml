@@ -1,0 +1,34 @@
+@startuml
+!include ../_style.iuml
+title Epic 1 — Profiles and notebooks
+
+rectangle "Profiles and notebooks" {
+  card US1_1 [
+    **US-1.1  Pick a profile**
+    As a //reader//, I want to pick or create a profile without signing in,
+    so that my notebooks and memories are kept apart from other people's on this machine.
+    ----
+    * A profile has a label and can be renamed or deleted.
+    * Deleting a profile removes its sessions, notebooks and memories.
+    * There is no password: the app is a profile picker, not a login.
+  ]
+  card US1_2 [
+    **US-1.2  Keep separate notebooks**
+    As a //reader//, I want a notebook per topic,
+    so that each conversation answers only from the sources I put in it.
+    ----
+    * A notebook is named automatically from its first question, and can be renamed.
+    * Its sources, transcript, Studio items and settings belong to it alone.
+  ]
+  card US1_3 [
+    **US-1.3  Read in Arabic or English**
+    As an //Arabic-speaking reader//, I want the interface and the answers in Arabic,
+    so that I can work with an Arabic corpus in its own language.
+    ----
+    * The UI switches to right-to-left with Arabic strings.
+    * Prompts are served in the notebook's language (en / ar).
+  ]
+}
+US1_1 -[hidden]down- US1_2
+US1_2 -[hidden]down- US1_3
+@enduml

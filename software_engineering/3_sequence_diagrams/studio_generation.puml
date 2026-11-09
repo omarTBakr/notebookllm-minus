@@ -1,0 +1,37 @@
+@startuml
+!include ../_style.iuml
+title Studio — quiz / flashcards / mind map
+autonumber "<b>0"
+
+participant "Browser" as ui
+participant "studio route" as route
+participant "StudioService" as studio
+database "DB" as db
+queue "studio queue" as q
+participant "generate_artifact_task" as task
+participant "Quiz / Flashcard /\nMindMap Service" as gen
+participant "generate_structured" as sg
+participant "LLM provider" as llm
+
+ui -> route : POST /chats/{id}/studio/{kind}
+route -> studio : start(chat, kind)
+studio -> db : one already GENERATING? → return it
+studio -> db : Artifact(status=GENERATING)
+studio -> q : generate_artifact_task
+route --> ui : 202 {artifact}
+
+q -> task : run
+task -> db : chunk summaries for the notebook
+task -> gen : build(kind, summaries, lang)
+gen -> sg : prompt + schema (QuizSet / FlashcardSet / MindMapOutline)
+loop until valid or retries spent
+  sg -> llm : generate_text(json_schema when supported)
+  llm --> sg : JSON
+  sg -> sg : validate; on error retry with the error attached
+end
+gen --> task : artifact content
+task -> db : status COMPLETE (or FAILED)
+
+ui -> route : GET /chats/{id}/studio/{kind} (poll)
+route --> ui : artifact
+@enduml

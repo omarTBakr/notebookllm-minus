@@ -1,0 +1,72 @@
+@startuml
+!include ../_style.iuml
+title Data tier — providers, repositories and models
+
+class DbFactory {
+  +create(): DbProvider
+}
+abstract class DbProvider {
+  +connect() / disconnect()
+  +setup_indexes()
+  +users() / sessions() / chats() / messages()
+  +projects() / assets() / chunks() / tasks()
+  +artifacts() / ingest_batches()
+  +vectors(): VectorRepository
+  +personal_user_info()
+}
+class MongoProvider
+class PostgresProvider
+DbProvider <|-- MongoProvider
+DbProvider <|-- PostgresProvider
+DbFactory ..> DbProvider : DOCUMENT_DB_BACKEND
+
+interface VectorRepository {
+  +create_collection(name, size)
+  +upsert(...)
+  +search_by_vector(name, vector, limit, asset_ids): list[hit]
+  +build_index(name)
+}
+class QdrantVectorRepository
+class PostgresVectorRepository
+VectorRepository <|.. QdrantVectorRepository
+VectorRepository <|.. PostgresVectorRepository
+
+interface "XRepository\n(User, Session, Chat, Message,\nProject, Asset, Chunk, Task,\nArtifact, IngestBatch, PersonalUserInfo)" as XRepo
+class "MongoXRepository" as MongoX
+class "PostgresXRepository\n(+ PostgresBaseRepository,\nSQLAlchemy *Row, Alembic)" as PgX
+XRepo <|.. MongoX
+XRepo <|.. PgX
+
+MongoProvider --> MongoX
+MongoProvider --> QdrantVectorRepository
+PostgresProvider --> PgX
+PostgresProvider --> PostgresVectorRepository
+
+package "models (Pydantic)" {
+  class User
+  class Session
+  class Chat {
+    chat_id (= project_id)
+    lang, generation_model, embedding_model
+    excluded_assets, temperature, max_tokens
+  }
+  class Message {
+    role, content, citations
+  }
+  class Asset
+  class DataChunk
+  class TaskExecution
+  class IngestBatch
+  class IngestRun
+  class Artifact
+  class "QuizSet / FlashcardSet /\nMindMapOutline / SummarySet" as ArtifactContent
+}
+User "1" -- "*" Session
+Session "1" -- "*" Chat
+Chat "1" -- "*" Message
+Chat "1" -- "*" Asset
+Asset "1" -- "*" DataChunk
+Chat "1" -- "*" Artifact
+Artifact --> ArtifactContent
+XRepo ..> User
+@enduml

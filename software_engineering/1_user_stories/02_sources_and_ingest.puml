@@ -1,0 +1,40 @@
+@startuml
+!include ../_style.iuml
+title Epic 2 — Sources and ingestion
+
+rectangle "Sources and ingestion" {
+  card US2_1 [
+    **US-2.1  Upload documents**
+    As a //reader//, I want to upload PDF, TXT, Markdown, CSV and XLSX files,
+    so that I can ask questions about them.
+    ----
+    * Upload answers 202 at once; parsing, correction, chunking and indexing run on workers.
+    * The same file uploaded twice (same sha256) is refused with 409.
+    * Progress is visible per source until it is indexed.
+  ]
+  card US2_2 [
+    **US-2.2  Add a link**
+    As a //reader//, I want to add an online PDF, an article, a YouTube video or a public Google Sheet by URL,
+    so that I do not have to download it first.
+    ----
+    * Articles lose menus and footers; videos are indexed from their captions with timestamps.
+    * A sheet is read row by row, and each row can be cited.
+  ]
+  card US2_3 [
+    **US-2.3  Read unsearchable Arabic PDFs**
+    As a //reader of Arabic scans//, I want pages without a usable text layer re-read by OCR
+    and split or fused words repaired by a model,
+    so that retrieval finds the words that are really on the page.
+  ]
+  card US2_4 [
+    **US-2.4  Choose which sources answer**
+    As a //reader//, I want to switch individual sources off,
+    so that an answer draws only on the ones I select.
+    ----
+    * With every source off, the answer is ungrounded rather than searching all of them.
+  ]
+}
+US2_1 -[hidden]down- US2_2
+US2_2 -[hidden]down- US2_3
+US2_3 -[hidden]down- US2_4
+@enduml

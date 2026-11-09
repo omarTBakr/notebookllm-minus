@@ -1,0 +1,37 @@
+@startuml
+!include ../_style.iuml
+left to right direction
+title Use cases — Operations and observability
+
+actor Operator as operator
+actor "Langfuse" as langfuse <<system>>
+actor "Prometheus + Grafana" as prom <<system>>
+actor "Flower" as flower <<system>>
+
+rectangle "Operations" {
+  usecase "Read one trace per answer" as UC_trace
+  usecase "Compare token usage and latency\nper model" as UC_cost
+  usecase "Seed prompts from the locale files" as UC_seed
+  usecase "Promote / roll back a prompt version" as UC_label
+  usecase "Watch HTTP, ingest, generation,\nrerank and guardrail metrics" as UC_metrics
+  usecase "Inspect workers and tasks" as UC_tasks
+  usecase "Set guard models, batch size,\nwait and fail mode" as UC_guard
+  usecase "Turn the reranker / agentic RAG\non or off" as UC_toggles
+}
+
+operator --> UC_trace
+operator --> UC_cost
+operator --> UC_seed
+operator --> UC_label
+operator --> UC_metrics
+operator --> UC_tasks
+operator --> UC_guard
+operator --> UC_toggles
+
+UC_trace --> langfuse
+UC_cost --> langfuse
+UC_seed --> langfuse
+UC_label --> langfuse
+UC_metrics --> prom
+UC_tasks --> flower
+@enduml

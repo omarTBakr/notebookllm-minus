@@ -1,0 +1,116 @@
+@startuml
+!include ../_style.iuml
+title Application services
+
+abstract class BaseService {
+  +settings: Settings
+  +logger
+}
+
+class ChatService {
+  +generation_client: LLMChattingInterface
+  +planner_client: LLMChattingInterface
+  +nlp: NLPService
+  +memory: MemoryService
+  +reranker: RerankerInterface
+  +input_guardrail: InputGuardrail
+  +output_guardrail: OutputGuardrail
+  +answer_stream(chat_id, question, lang, history, ...): AsyncIterator[dict]
+  +build_prompt(question, hits, memory_hits, lang, numbers)
+  +{static} to_citations(hits, names, pages)
+  +{static} number_globally(parts)
+  -_plan(question, lang, history): QueryPlan
+  -_search_and_rerank(chat_id, queries, rerank_query, top_k, asset_ids)
+  -_rerank(query, hits, top_k)
+  -_answer_complex(...)
+  -_subanswer(parser, query, hits, numbers, ...)
+  -_stream(question, system, user, history, ...)
+}
+
+class QueryPlan <<dataclass>> {
+  +intent: chitchat | simple | complex
+  +standalone_query: str
+  +sub_queries: list[str]
+  +fallback: bool
+  +is_complex: bool
+}
+class "QueryPlanner\n(plan_query)" as QueryPlanner <<module>> {
+  +plan_query(client, question, lang, history): QueryPlan
+  +normalise(raw, question, max_sub_queries)
+  +format_history(history)
+}
+
+class NLPService {
+  +search(chat_id, query, limit, asset_ids): list[hit]
+  +index_into_vector_db(...)
+  +get_index_info(chat_id)
+}
+class IndexService
+class MemoryService {
+  +extract_and_store(user_id, text, lang)
+  +search(user_id, question)
+}
+class ConversationService
+class MessageService {
+  +recent_history(chat_id, limit)
+  +add_user_message / add_assistant_message
+  +page_lookup()
+}
+class SourceService {
+  +queue_link(chat_id, url)
+  +attach(...)
+  +select / rename / delete / locate
+}
+class AssetIngestService
+class ProcessService
+class TextProcessingService
+class TextCorrectionService
+class UrlSourceService
+class DataService
+class UserService
+class IdempotencyService
+class ModelService
+class NvidiaModelService
+class OpenRouterModelService
+class StudioService {
+  +start(chat_id, kind): StartedGeneration
+  +find(chat_id, kind)
+}
+class ArtifactService
+class QuizService
+class FlashcardService
+class MindMapService
+class "generate_structured" as SG <<module>>
+
+BaseService <|-- ChatService
+BaseService <|-- NLPService
+BaseService <|-- IndexService
+BaseService <|-- MemoryService
+BaseService <|-- ConversationService
+BaseService <|-- MessageService
+BaseService <|-- SourceService
+BaseService <|-- AssetIngestService
+BaseService <|-- ProcessService
+BaseService <|-- TextProcessingService
+BaseService <|-- TextCorrectionService
+BaseService <|-- UrlSourceService
+BaseService <|-- DataService
+BaseService <|-- UserService
+BaseService <|-- IdempotencyService
+BaseService <|-- StudioService
+BaseService <|-- ModelService
+ModelService <|-- NvidiaModelService
+ModelService <|-- OpenRouterModelService
+ArtifactService <|-- QuizService
+ArtifactService <|-- FlashcardService
+ArtifactService <|-- MindMapService
+
+ChatService --> QueryPlanner
+QueryPlanner --> QueryPlan
+ChatService --> NLPService
+ChatService --> MemoryService
+QueryPlanner --> SG
+MemoryService --> SG
+ArtifactService --> SG
+TextCorrectionService --> SG
+@enduml

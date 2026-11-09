@@ -1,0 +1,44 @@
+@startuml
+!include ../_style.iuml
+title Epic 3 — Grounded chat (agentic RAG)
+
+rectangle "Grounded chat" {
+  card US3_1 [
+    **US-3.1  Ask and get a cited answer**
+    As a //reader//, I want answers that cite the passages they used,
+    so that I can check every claim against the source.
+    ----
+    * The answer streams token by token; sources appear before the first token.
+    * Each [n] opens the source at the cited page, row or video moment, highlighted.
+  ]
+  card US3_2 [
+    **US-3.2  Follow-up questions just work**
+    As a //reader//, I want "and what about the second one?" to be understood,
+    so that I can talk naturally instead of repeating context.
+    ----
+    * A planner rewrites the question to stand alone using the recent turns.
+    * Greetings and thanks are answered without searching the documents.
+  ]
+  card US3_3 [
+    **US-3.3  Complex questions are researched part by part**
+    As a //reader//, I want a question that asks several things answered completely,
+    so that one part does not crowd the others out.
+    ----
+    * The question is split into at most AGENTIC_MAX_SUB_QUERIES parts.
+    * Each part is retrieved, reranked and answered on its own; I see each part tick off.
+    * One final answer combines the parts with the original question and keeps their citations.
+    * A part the documents do not cover is reported, not invented.
+  ]
+  card US3_4 [
+    **US-3.4  The best passages, not just the nearest**
+    As a //reader//, I want the passages that actually answer my question chosen,
+    so that answers are precise even when many passages share the topic.
+    ----
+    * A multilingual cross-encoder (bge-reranker-v2-m3) re-scores a wider vector pool.
+    * If the reranker is down or slow, retrieval falls back to vector order.
+  ]
+}
+US3_1 -[hidden]down- US3_2
+US3_2 -[hidden]down- US3_3
+US3_3 -[hidden]down- US3_4
+@enduml

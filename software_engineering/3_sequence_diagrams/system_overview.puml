@@ -1,0 +1,67 @@
+@startuml
+!include ../_style.iuml
+title Whole system — from upload to a guarded, cited answer
+autonumber "<b>0"
+
+actor Reader as user
+participant "Browser\n(static JS)" as ui
+participant "nginx" as nginx
+participant "FastAPI\n(routes + services)" as api
+queue "RabbitMQ" as mq
+participant "Celery workers\nprocess / postprocess / index" as ingest
+participant "Guardrail workers\ninput / output" as guard
+database "Postgres + pgvector\n(or Mongo + Qdrant)" as db
+database "Redis\n(results)" as redis
+participant "Reranker\n(TEI bge-reranker-v2-m3)" as tei
+participant "LLM providers\n(Ollama, NVIDIA, ...)" as llm
+participant "Langfuse" as lf
+
+== Add a source ==
+user -> ui : choose file / paste link
+ui -> nginx : POST /chat/chats/{id}/documents
+nginx -> api
+api -> db : asset row + 3 task_executions
+api -> mq : process_data_task
+api --> ui : 202 + task id
+mq -> ingest : plan → parse batches → correct → assemble
+ingest -> llm : repair split / fused words
+ingest -> db : pages, chunks
+ingest -> llm : embed chunks
+ingest -> db : vectors + HNSW index
+ui -> api : GET /chats/{id}/indexing (poll)
+api --> ui : indexed
+
+== Ask a question ==
+user -> ui : question
+ui -> nginx : POST /chat/chats/{id}/message (SSE)
+nginx -> api
+api -> lf : open trace "chat.answer"
+api -> mq : guardrail_input_task
+mq -> guard : micro-batch (N items or T seconds)
+guard -> llm : one guard call per batch
+guard -> redis : verdict per request
+redis --> api : verdict
+alt question flagged
+  api --> ui : guardrail (refusal), done
+else safe
+  api -> llm : plan (intent, standalone, sub-queries)
+  api -> db : vector search per query (wide pool)
+  api -> tei : rerank candidates
+  api --> ui : meta (citations)
+  opt complex question
+    api -> llm : sub-answer per part (parallel)
+    api --> ui : step events (parts ticked off)
+  end
+  loop streamed answer
+    api -> llm : stream tokens
+    api -> mq : guardrail_output_task (per passage)
+    mq -> guard : micro-batch
+    guard -> redis : verdict
+    redis --> api : verdict
+    api --> ui : delta (released in order)
+  end
+  api --> ui : done
+end
+api -> db : store question + answer + citations
+api -> lf : spans, generations, token usage, prompt versions
+@enduml

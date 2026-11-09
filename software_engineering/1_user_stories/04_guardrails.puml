@@ -1,0 +1,43 @@
+@startuml
+!include ../_style.iuml
+title Epic 4 — Guardrails
+
+rectangle "Guardrails" {
+  card US4_1 [
+    **US-4.1  Refuse unsafe questions**
+    As an //operator//, I want harmful, prompt-injection and jailbreak questions refused
+    before the answer model sees them,
+    so that the assistant cannot be turned against its instructions or its users.
+    ----
+    * A guard model judges the question; a refusal is shown and stored in its place.
+    * No retrieval or generation runs for a refused question.
+  ]
+  card US4_2 [
+    **US-4.2  Withhold unsafe answer text as it streams**
+    As an //operator//, I want each passage of an answer checked before the reader sees it,
+    so that harmful text, leaked personal data or a leaked system prompt never reach the screen.
+    ----
+    * Passages are judged while the model keeps writing, and released in order.
+    * A flagged passage stops generation; the rest is replaced by a notice.
+  ]
+  card US4_3 [
+    **US-4.3  Guardrails cost little latency under load**
+    As an //operator//, I want guard checks batched,
+    so that many concurrent chats share guard-model calls.
+    ----
+    * A batch is judged when GUARDRAIL_BATCH_SIZE checks wait **or** GUARDRAIL_BATCH_MAX_WAIT_S passes.
+    * A lone request never waits for a batch to fill.
+    * Input and output checks have separate queues, workers and models.
+  ]
+  card US4_4 [
+    **US-4.4  Decide what happens when the guard is unavailable**
+    As an //operator//, I want to choose fail-open or fail-closed,
+    so that I trade availability against safety knowingly.
+    ----
+    * Undecidable checks are counted under source="fail_mode" and tagged on the trace.
+  ]
+}
+US4_1 -[hidden]down- US4_2
+US4_2 -[hidden]down- US4_3
+US4_3 -[hidden]down- US4_4
+@enduml

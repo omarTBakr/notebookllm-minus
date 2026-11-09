@@ -1,0 +1,96 @@
+@startuml
+!include ../_style.iuml
+title Guardrails (LangChain middleware) and the Celery jobs
+
+package "langchain.agents.middleware" {
+  abstract class AgentMiddleware {
+    +state_schema
+    +abefore_model(state, runtime)
+    +aafter_model(state, runtime)
+  }
+  class AgentState <<TypedDict>> {
+    messages
+    jump_to
+  }
+}
+
+package "application.guardrails" {
+  class GuardrailState <<TypedDict>> {
+    guardrail_verdict
+    guardrail_context
+  }
+  interface GuardrailDispatcher {
+    +submit(stage, item): dict
+  }
+  abstract class ModelGuardrail {
+    +stage: str
+    +dispatcher: GuardrailDispatcher
+    +lang, timeout, fail_mode
+    +judge(item): Verdict
+    +resolve(verdict): Verdict
+    +refusal_text(): str
+    -_stop(verdict, replaces): dict
+  }
+  class InputGuardrail {
+    +abefore_model(state): dict | None
+  }
+  class OutputGuardrail {
+    +aafter_model(state): dict | None
+    +check_passage(question, context, passage): Verdict
+  }
+  class CeleryGuardrailDispatcher {
+    -_EXECUTOR: ThreadPoolExecutor(64)
+    +submit(stage, item): dict
+  }
+  class Verdict <<dataclass>> {
+    +safe: bool | None
+    +category: str
+    +reason: str
+    +by_fail_mode: bool
+  }
+  class GuardVerdicts <<schema>> {
+    +verdicts: list[GuardItemVerdict]
+  }
+  class "guard_stream / split_point" as GS <<module>>
+  class "judge_batch" as JB <<module>>
+}
+
+AgentMiddleware <|-- ModelGuardrail
+AgentState <|-- GuardrailState
+ModelGuardrail ..> GuardrailState : state_schema
+ModelGuardrail <|-- InputGuardrail
+ModelGuardrail <|-- OutputGuardrail
+GuardrailDispatcher <|.. CeleryGuardrailDispatcher
+ModelGuardrail --> GuardrailDispatcher
+ModelGuardrail ..> Verdict
+GS --> OutputGuardrail
+JB ..> GuardVerdicts
+JB ..> Verdict
+
+package "application.tasks.jobs" {
+  class "Batches (celery-batches)" as Batches
+  class guardrail_input_task <<task>> {
+    flush_every = GUARDRAIL_BATCH_SIZE
+    flush_interval = GUARDRAIL_BATCH_MAX_WAIT_S
+    queue = <project>.guardrail_input_task
+  }
+  class guardrail_output_task <<task>> {
+    flush_every = GUARDRAIL_BATCH_SIZE
+    flush_interval = GUARDRAIL_BATCH_MAX_WAIT_S
+    queue = <project>.guardrail_output_task
+  }
+  class "run_batch(task, stage, requests)" as RunBatch <<function>>
+  class "fetch_url / process_data / parse_batch /\npostprocess_batch / assemble_chunks /\nsummarise_chunks" as Ingest <<task>>
+  class "index_project / build_vector_index" as Index <<task>>
+  class generate_artifact_task <<task>>
+  class extract_memory_task <<task>>
+  class maintenance_task <<task>>
+}
+Batches <|-- guardrail_input_task
+Batches <|-- guardrail_output_task
+guardrail_input_task --> RunBatch
+guardrail_output_task --> RunBatch
+RunBatch --> JB
+CeleryGuardrailDispatcher ..> guardrail_input_task : apply_async
+CeleryGuardrailDispatcher ..> guardrail_output_task : apply_async
+@enduml

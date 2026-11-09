@@ -1,0 +1,56 @@
+@startuml
+!include ../_style.iuml
+title Upload → ingest → index (database-coordinated fan-out, no chord)
+autonumber "<b>0"
+
+participant "Browser" as ui
+participant "assets route" as route
+participant "AssetIngestService" as svc
+database "DB" as db
+queue "process queue" as qp
+queue "postprocess queue" as qpp
+queue "index queue" as qi
+participant "process_data_task\n(planner)" as plan
+participant "parse_batch_task × N" as parse
+participant "postprocess_batch_task × N" as post
+participant "assemble_chunks_task" as asm
+participant "summarise_chunks_task" as summ
+participant "index_project_task" as idx
+participant "build_vector_index_task" as hnsw
+participant "Correction model" as fix
+participant "Embedding model" as emb
+
+ui -> route : POST /chats/{id}/documents (file)
+route -> svc : attach(file)
+svc -> db : sha256 duplicate? → 409
+svc -> db : asset + 3 task_executions (QueuedChain ids)
+svc -> qp : process_data_task
+route --> ui : 202 {task_id}
+
+qp -> plan : run
+plan -> db : ingest_run, page count
+plan -> qp : parse_batch_task per PDF_BATCH_PAGES
+
+par each batch
+  qp -> parse : extract text (pymupdf; OCR unreadable pages)
+  parse -> db : ingest_batches.pages
+  parse -> qpp : postprocess_batch_task
+  qpp -> post : repair words
+  post -> fix : correction pass
+  post -> db : atomic "last finisher claims the run"
+end
+post -> qp : assemble_chunks_task (claimer only)
+qp -> asm : chunk pages in order
+asm -> db : chunks
+asm -> qpp : summarise_chunks_task
+asm -> qi : index_project_task
+qpp -> summ : one-line chunk summaries (for Studio)
+qi -> idx : embed chunks
+idx -> emb : embed batches
+idx -> db : upsert vectors (uuid5(asset, chunk_order))
+idx -> qi : build_vector_index_task
+qi -> hnsw : build ANN index
+
+ui -> route : GET /chats/{id}/indexing (poll, follows next_task_id)
+route --> ui : progress / done
+@enduml

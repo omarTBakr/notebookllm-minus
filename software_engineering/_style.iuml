@@ -1,0 +1,27 @@
+' Shared look for every diagram. Included as: !include ../_style.iuml
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 12
+skinparam roundCorner 8
+skinparam ArrowColor #44546A
+skinparam BorderColor #44546A
+skinparam backgroundColor #FFFFFF
+skinparam titleFontSize 16
+skinparam titleFontStyle bold
+skinparam noteBackgroundColor #FFF8DC
+skinparam noteBorderColor #C9B458
+skinparam packageBackgroundColor #F5F7FA
+skinparam classBackgroundColor #FFFFFF
+skinparam classHeaderBackgroundColor #E8EEF7
+skinparam participantBackgroundColor #E8EEF7
+skinparam actorBackgroundColor #E8EEF7
+skinparam usecaseBackgroundColor #E8EEF7
+skinparam databaseBackgroundColor #EEF5E9
+skinparam queueBackgroundColor #FCEFE3
+skinparam sequenceGroupBackgroundColor #F5F7FA
+skinparam sequenceLifeLineBorderColor #9AA5B1
+skinparam cardBackgroundColor #FFFFFF
+skinparam cardBorderColor #44546A
+skinparam rectangleBackgroundColor #F5F7FA
+hide circle
+hide empty members

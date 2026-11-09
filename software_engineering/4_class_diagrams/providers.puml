@@ -1,0 +1,97 @@
+@startuml
+!include ../_style.iuml
+title Providers — chat, embedding and reranking adapters
+
+class ProviderCache {
+  -settings: Settings
+  -_chatting: dict
+  -_embedding: dict
+  -_reranker: RerankerInterface
+  +chatting(model_id, num_ctx, thinking): LLMChattingInterface
+  +embedding(model_id, dimensions): LLMEmbeddingInterface
+  +reranker(): RerankerInterface
+  +aclose_all()
+}
+
+abstract class LLMChattingInterface {
+  +ENFORCES_SCHEMA: bool
+  +model_id: str
+  +generate_text(prompt, chat_history, max_tokens, temperature, json_schema): str
+  +stream_text(prompt, chat_history, ...): AsyncIterator[dict]
+  #{abstract} _generate_text(messages, max_tokens, temperature): str
+  #_stream_text(messages, ...): AsyncIterator[dict]
+  #_log_usage(input_tokens, output_tokens)
+  +construct_message(role, content): dict
+}
+note right of LLMChattingInterface
+  generate_text / stream_text record
+  Prometheus metrics and a Langfuse
+  generation for every provider.
+end note
+
+class OpenAIChatProvider
+class NvidiaChatProvider
+class OpenRouterChatProvider
+class AnthropicChatProvider
+class GoogleChatProvider
+class CohereChatProvider
+class OllamaChatProvider
+class LLMChattingFactory {
+  +create(provider): LLMChattingInterface
+}
+
+LLMChattingInterface <|-- OpenAIChatProvider
+OpenAIChatProvider <|-- NvidiaChatProvider
+OpenAIChatProvider <|-- OpenRouterChatProvider
+LLMChattingInterface <|-- AnthropicChatProvider
+LLMChattingInterface <|-- GoogleChatProvider
+LLMChattingInterface <|-- CohereChatProvider
+LLMChattingInterface <|-- OllamaChatProvider
+LLMChattingFactory ..> LLMChattingInterface : builds
+
+abstract class LLMEmbeddingInterface {
+  +embedding_size: int
+  +embed(texts, input_type): list[list[float]]
+  #{abstract} _embed(texts, input_type)
+}
+class OpenAIEmbeddingProvider
+class NvidiaEmbeddingProvider
+class OpenRouterEmbeddingProvider
+class GoogleEmbeddingProvider
+class CohereEmbeddingProvider
+class OllamaEmbeddingProvider
+class LLMEmbeddingFactory {
+  +create(provider): LLMEmbeddingInterface
+}
+LLMEmbeddingInterface <|-- OpenAIEmbeddingProvider
+OpenAIEmbeddingProvider <|-- NvidiaEmbeddingProvider
+OpenAIEmbeddingProvider <|-- OpenRouterEmbeddingProvider
+LLMEmbeddingInterface <|-- GoogleEmbeddingProvider
+LLMEmbeddingInterface <|-- CohereEmbeddingProvider
+LLMEmbeddingInterface <|-- OllamaEmbeddingProvider
+LLMEmbeddingFactory ..> LLMEmbeddingInterface : builds
+
+abstract class RerankerInterface {
+  +ENABLED: bool
+  +model_id: str
+  +rerank(query, texts, top_n): list[(index, score)]
+  #{abstract} _rerank(query, texts)
+}
+class TEIRerankerProvider {
+  -client: httpx.AsyncClient
+  #_rerank(query, texts)  ' POST /rerank
+}
+class NoopReranker {
+  +ENABLED = false
+}
+class RerankerFactory {
+  +create(): RerankerInterface
+}
+RerankerInterface <|-- TEIRerankerProvider
+RerankerInterface <|-- NoopReranker
+RerankerFactory ..> RerankerInterface : builds
+
+ProviderCache --> LLMChattingFactory
+ProviderCache --> LLMEmbeddingFactory
+ProviderCache --> RerankerFactory
+@enduml

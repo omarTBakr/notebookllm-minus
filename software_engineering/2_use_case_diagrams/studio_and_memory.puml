@@ -1,0 +1,42 @@
+@startuml
+!include ../_style.iuml
+left to right direction
+title Use cases — Studio and memory
+
+actor Reader as reader
+actor "Studio worker" as studio <<system>>
+actor "Memory worker" as memw <<system>>
+actor "LLM provider" as llm <<system>>
+
+rectangle "Studio" {
+  usecase "Generate a quiz" as UC_quiz
+  usecase "Generate flashcards" as UC_cards
+  usecase "Generate a mind map" as UC_map
+  usecase "Return the generation\nalready in progress" as UC_idem
+  usecase "Open the result" as UC_open
+}
+rectangle "Memory" {
+  usecase "Store a /memory fact" as UC_store
+  usecase "List my facts" as UC_list
+  usecase "Personalise answers\nwith the closest facts" as UC_personal
+}
+
+reader --> UC_quiz
+reader --> UC_cards
+reader --> UC_map
+reader --> UC_open
+reader --> UC_store
+reader --> UC_list
+
+UC_idem .> UC_quiz : <<extend>>
+UC_idem .> UC_cards : <<extend>>
+UC_idem .> UC_map : <<extend>>
+UC_quiz --> studio
+UC_cards --> studio
+UC_map --> studio
+studio --> llm
+
+UC_store --> memw
+memw --> llm
+UC_store ..> UC_personal : <<enables>>
+@enduml

@@ -1,0 +1,45 @@
+@startuml
+!include ../_style.iuml
+title Guardrail check — micro-batched on its own Celery queue (N items or T seconds)
+autonumber "<b>0"
+
+participant "ModelGuardrail.judge\n(API, per request)" as guard
+participant "CeleryGuardrailDispatcher\n(dedicated thread pool)" as disp
+queue "RabbitMQ\nguardrail_<stage>_task" as mq
+participant "celery-guardrail-<stage>\n(celery-batches buffer)" as worker
+participant "judge_batch" as judge
+participant "Guard model\n(GUARDRAIL_<STAGE>_MODEL)" as model
+database "Redis\n(result backend)" as redis
+participant "Langfuse" as lf
+
+guard -> disp : submit(stage, item)
+disp -> mq : apply_async(item) + trace headers
+note right of mq
+  prefetch >= GUARDRAIL_BATCH_SIZE,
+  so the worker holds enough
+  unacked messages to fill a batch
+end note
+mq -> worker : deliver
+worker -> worker : buffer request
+
+alt GUARDRAIL_BATCH_SIZE requests buffered
+  worker -> worker : flush now
+else GUARDRAIL_BATCH_MAX_WAIT_S timer fires first
+  worker -> worker : flush what is there (even 1)
+end
+
+worker -> judge : run_batch(requests)
+judge -> model : one structured call:\n"### Item 0 ... ### Item n-1"
+model --> judge : {verdicts:[{idx, safe, category, reason}]}
+judge -> judge : map by batch-local idx;\nmissing / out of range → undecided
+loop each request
+  worker -> redis : mark_as_done(request.id, verdict)
+  worker -> lf : event on the request's own trace
+end
+
+disp -> redis : AsyncResult.get(timeout)
+redis --> disp : verdict
+disp --> guard : verdict
+guard -> guard : resolve(): undecided / timeout →\nGUARDRAIL_FAIL_MODE (open | closed)
+guard -> lf : guardrail span (verdict, wait time)
+@enduml

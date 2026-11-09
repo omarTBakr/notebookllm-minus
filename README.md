@@ -248,6 +248,9 @@ approximate rather than silently pointing at the wrong sentence.
 - Reasoning models stream their scratchpad into a collapsing panel — shown, never stored
 - Generation can be stopped mid-answer, and the partial reply is kept
 - `/memory I prefer short answers` stores a durable fact about the user, extracted on a worker and folded into every later answer
+- **Agentic answering:** every grounded question is planned first. One structured call classifies it (chit-chat, simple, complex), rewrites it to stand alone without the chat history, and lists the retrieval queries. A complex question is researched part by part: each part is retrieved, reranked and answered with its own citations in parallel, then one streamed answer combines the parts with the original question. The UI ticks the parts off as they finish (`AGENTIC_RAG_ENABLED`)
+- **Reranking:** vector search fetches a wider pool (`RERANK_CANDIDATES`), and a multilingual cross-encoder (`BAAI/bge-reranker-v2-m3`, served by text-embeddings-inference in the `reranker` container) keeps the best `top_k`. A failed or slow rerank falls back to vector order
+- **Guardrails:** a guard model checks the question before the answer model sees it (`InputGuardrail.abefore_model`), and checks the answer passage by passage as it streams (`OutputGuardrail.aafter_model`). Both are LangChain `AgentMiddleware`. Each stage has its own Celery queue, worker and model. Checks are micro-batched: a batch goes when `GUARDRAIL_BATCH_SIZE` checks are waiting or `GUARDRAIL_BATCH_MAX_WAIT_S` has passed, whichever comes first
 
 **Studio**
 - A **mind map**, **flashcards** and a **quiz** generated from a notebook's own chunks, on a worker, as schema-validated structured output (see [Structured output](#structured-output))
@@ -274,6 +277,7 @@ approximate rather than silently pointing at the wrong sentence.
 - Repeat submissions join the run already in flight instead of paying for it twice
 - Prometheus metrics at `/metrics`: ingest duration per stage, embedding latency and batch size, time-to-first-token, retrieval latency, whether an answer was grounded — labels bounded to `provider`, `model` and `stage`, never a `chat_id`
 - Provisioned Grafana dashboards, Flower for Celery, structured logs with per-request correlation ids
+- **Langfuse** (self-hosted, compose profile `langfuse`): one trace per answer, with guardrails, plan, retrieval, rerank, sub-answers, synthesis and every model call nested inside it, plus token usage. Worker tasks continue the trace that queued them. Prompts are versioned in Langfuse and served by label, with the locale files as the fallback (`scripts/langfuse_seed_prompts.py`)
 - A health probe that actually calls the database, the embedding model and the vector store rather than reporting what is configured
 
 **Not yet**
@@ -282,6 +286,12 @@ approximate rather than silently pointing at the wrong sentence.
 - Audio overview, slide deck, reports, infographic and data table tiles in Studio are placeholders
 
 ## Architecture
+
+> UML for the whole system (user stories, use cases, sequence and class diagrams, PlantUML with
+> rendered PNGs) lives in [`software_engineering/`](software_engineering/README.md). The
+> whole-system views are
+> [the sequence diagram](software_engineering/3_sequence_diagrams/system_overview.png) and
+> [the class diagram](software_engineering/4_class_diagrams/system_overview.png).
 
 Three tiers, each talking only to the one below it, plus a `shared/` layer of cross-cutting
 vocabulary and infrastructure that all three depend on. Nothing above `application/providers/`

@@ -1,0 +1,35 @@
+@startuml
+!include ../_style.iuml
+title /memory — store a fact, then use it in later answers
+autonumber "<b>0"
+
+participant "Browser" as ui
+participant "messages route" as route
+participant "memory command\nhandler" as cmd
+queue "memory queue" as q
+participant "extract_memory_task" as task
+participant "MemoryService" as mem
+participant "LLM (thinking=False)" as llm
+participant "Embedding model" as emb
+database "DB\n(personal_user_info +\nvectors)" as db
+participant "ChatService" as chat
+
+ui -> route : POST /chats/{id}/message "/memory I teach chemistry"
+route -> cmd : is_memory_command → handle
+cmd -> q : extract_memory_task
+cmd --> ui : SSE ack
+q -> task : run
+task -> mem : extract_and_store(user, text, lang)
+mem -> llm : generate_structured(ExtractedFacts)
+mem -> emb : embed each fact
+mem -> db : upsert facts + vectors
+task -> db : assistant reply in the chat
+
+== a later question ==
+ui -> route : POST /chats/{id}/message
+route -> chat : answer_stream(user_id=...)
+chat -> mem : search(user, question)
+mem --> chat : closest facts
+chat -> chat : "What you know about this user" block in the prompt
+chat --> ui : meta.memories + answer
+@enduml

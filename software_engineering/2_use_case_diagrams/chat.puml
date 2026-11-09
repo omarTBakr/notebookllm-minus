@@ -1,0 +1,51 @@
+@startuml
+!include ../_style.iuml
+left to right direction
+title Use cases — Grounded chat with guardrails
+
+actor Reader as reader
+actor "Input guard model" as gin <<system>>
+actor "Output guard model" as gout <<system>>
+actor "Answer model" as llm <<system>>
+actor "Reranker (TEI)" as tei <<system>>
+
+rectangle "Chat" {
+  usecase "Ask a question" as UC_ask
+  usecase "Check the question\n(input guardrail)" as UC_gin
+  usecase "Refuse the question" as UC_refuse
+  usecase "Plan: intent, rewrite, split" as UC_plan
+  usecase "Answer chit-chat" as UC_chit
+  usecase "Retrieve passages" as UC_retrieve
+  usecase "Rerank passages" as UC_rerank
+  usecase "Answer each part" as UC_parts
+  usecase "Combine the parts" as UC_synth
+  usecase "Stream the answer" as UC_stream
+  usecase "Check each passage\n(output guardrail)" as UC_gout
+  usecase "Withhold the rest" as UC_withhold
+  usecase "Open a citation" as UC_cite
+  usecase "Stop / copy / save the answer" as UC_actions
+}
+
+reader --> UC_ask
+reader --> UC_cite
+reader --> UC_actions
+
+UC_ask ..> UC_gin : <<include>>
+UC_refuse .> UC_gin : <<extend>>\n[flagged]
+UC_ask ..> UC_plan : <<include>>
+UC_chit .> UC_plan : <<extend>>\n[chitchat]
+UC_plan ..> UC_retrieve : <<include>>
+UC_retrieve ..> UC_rerank : <<include>>
+UC_parts .> UC_rerank : <<extend>>\n[complex]
+UC_parts ..> UC_synth : <<include>>
+UC_ask ..> UC_stream : <<include>>
+UC_stream ..> UC_gout : <<include>>
+UC_withhold .> UC_gout : <<extend>>\n[flagged]
+
+UC_gin --> gin
+UC_gout --> gout
+UC_plan --> llm
+UC_parts --> llm
+UC_stream --> llm
+UC_rerank --> tei
+@enduml

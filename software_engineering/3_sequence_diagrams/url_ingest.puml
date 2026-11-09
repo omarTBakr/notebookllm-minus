@@ -1,0 +1,36 @@
+@startuml
+!include ../_style.iuml
+title Add a link source → fetch → the upload pipeline
+autonumber "<b>0"
+
+participant "Browser" as ui
+participant "assets route" as route
+participant "SourceService" as src
+participant "UrlSourceService" as url
+database "DB" as db
+queue "process queue" as qp
+participant "fetch_url_task" as fetch
+participant "Web\n(site / YouTube / Sheets)" as web
+participant "process_data_task …" as pipeline
+
+ui -> route : POST /chats/{id}/sources/url {url}
+route -> src : queue_link(chat, url)
+src -> db : placeholder asset + task rows
+src -> qp : fetch_url_task
+route --> ui : 202 {task_id}
+
+qp -> fetch : run
+fetch -> url : classify + fetch
+alt online PDF
+  url -> web : GET file
+else article
+  url -> web : GET page → trafilatura main text
+else YouTube
+  url -> web : captions with timestamps
+else public Google Sheet
+  url -> web : export as CSV → one row per chunk
+end
+fetch -> db : attach like an upload
+fetch -> qp : process_data_task
+qp -> pipeline : same stages as an upload\n(see upload_ingest)
+@enduml

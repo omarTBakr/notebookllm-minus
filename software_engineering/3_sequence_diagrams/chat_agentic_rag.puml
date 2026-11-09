@@ -1,0 +1,78 @@
+@startuml
+!include ../_style.iuml
+title Chat answer — guardrails, planning, rerank, part-by-part research, synthesis
+autonumber "<b>0"
+
+participant "Browser" as ui
+participant "messages route\n(send_message)" as route
+participant "ChatService" as chat
+participant "InputGuardrail\n(abefore_model)" as gin
+participant "QueryPlanner\n(plan_query)" as planner
+participant "NLPService" as nlp
+participant "Reranker" as rr
+participant "planner client\n(thinking=False)" as small
+participant "generation client" as gen
+participant "guard_stream +\nOutputGuardrail" as gout
+database "DB" as db
+
+ui -> route : POST /chats/{id}/message
+route -> db : history, store user turn
+route -> chat : answer_stream(question, history, ...)
+
+chat -> gin : abefore_model({messages:[question]})
+gin --> chat : None | {jump_to:"end", refusal}
+alt flagged
+  chat --> route : guardrail(stage=input), done
+  route --> ui : refusal
+  route -> db : store refusal as the answer
+else safe
+  chat -> chat : memory search (user facts)
+  chat -> nlp : is_grounded(chat)
+  alt grounded
+    chat -> planner : plan_query(question, history)
+    planner -> small : generate_structured(QueryPlanSchema)
+    small --> planner : intent, standalone_query, sub_queries
+    planner --> chat : QueryPlan (fallback: simple on raw question)
+  end
+
+  alt chitchat or ungrounded
+    chat -> chat : plain chat prompt (+ memory)
+    chat --> route : meta(grounded=false)
+  else simple
+    chat -> nlp : search each sub-query (limit = RERANK_CANDIDATES)
+    chat -> rr : rerank(standalone_query, candidates, top_k)
+    rr --> chat : best top_k (fallback: vector order)
+    chat -> chat : build_prompt(question, hits, memory)
+    chat --> route : meta(citations)
+  else complex
+    chat --> route : step(plan, sub_queries)
+    par for each part
+      chat -> nlp : search(part)
+      chat -> rr : rerank(part)
+    end
+    chat -> chat : number passages once across parts
+    chat --> route : meta(all citations)
+    par for each part
+      chat -> small : sub-answer from its passages (global [n])
+      chat --> route : step(part i done)
+    end
+    chat -> chat : synthesis prompt = question + findings (+ memory)
+    chat --> route : step(synthesis)
+  end
+
+  chat -> gout : guard_stream(gen.stream_text(...))
+  loop passages of >= GUARDRAIL_OUTPUT_CHUNK_CHARS
+    gen --> gout : deltas
+    gout -> gout : check_passage(question, context, passage) [in flight]
+    gout --> route : delta (when its verdict passes, in order)
+  end
+  alt a passage is flagged
+    gout -> gen : close the stream
+    gout --> route : guardrail(stage=output), done
+  else all passed
+    gout --> route : done
+  end
+  route --> ui : SSE frames
+  route -> db : store answer (+ refusal) and citations
+end
+@enduml

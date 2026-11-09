@@ -1,0 +1,56 @@
+@startuml
+!include ../_style.iuml
+left to right direction
+title Use cases — NotebookLLM⁻ (whole system)
+
+actor Reader as reader
+actor Operator as operator
+actor "LLM / embedding\nproviders" as llm <<system>>
+actor "Guard models" as guard <<system>>
+actor "Reranker (TEI)" as tei <<system>>
+actor "Web sources\n(YouTube, sites, Sheets)" as web <<system>>
+actor "Langfuse" as langfuse <<system>>
+
+rectangle "NotebookLLM⁻" {
+  usecase "Pick or manage a profile" as UC_profile
+  usecase "Create / rename a notebook" as UC_notebook
+  usecase "Upload a document" as UC_upload
+  usecase "Add a link source" as UC_link
+  usecase "Select active sources" as UC_select
+  usecase "Ask a question" as UC_ask
+  usecase "Open a citation at its page" as UC_cite
+  usecase "Store a /memory fact" as UC_memory
+  usecase "Generate quiz / flashcards / mind map" as UC_studio
+  usecase "Choose models and settings" as UC_settings
+  usecase "Trace an answer" as UC_trace
+  usecase "Version a prompt" as UC_prompt
+  usecase "Monitor workers and metrics" as UC_monitor
+  usecase "Configure guardrails" as UC_guardcfg
+}
+
+reader --> UC_profile
+reader --> UC_notebook
+reader --> UC_upload
+reader --> UC_link
+reader --> UC_select
+reader --> UC_ask
+reader --> UC_cite
+reader --> UC_memory
+reader --> UC_studio
+reader --> UC_settings
+
+UC_trace <-- operator
+UC_prompt <-- operator
+UC_monitor <-- operator
+UC_guardcfg <-- operator
+
+UC_ask --> llm
+UC_ask --> guard
+UC_ask --> tei
+UC_upload --> llm
+UC_link --> web
+UC_studio --> llm
+UC_memory --> llm
+UC_trace --> langfuse
+UC_prompt --> langfuse
+@enduml
