@@ -630,7 +630,9 @@ services:
       langfuse-redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://$$(hostname -i):3000/api/public/health || wget -q --spider http://127.0.0.1:3000/api/public/health"]
+      # Next.js listens on $HOSTNAME (the container's own address, which Docker
+      # sets), not on 127.0.0.1, and the image has no `hostname` command.
+      test: ["CMD-SHELL", "wget -q --spider \"http://$$HOSTNAME:3000/api/public/health\""]
       interval: 15s
       timeout: 5s
       retries: 5
