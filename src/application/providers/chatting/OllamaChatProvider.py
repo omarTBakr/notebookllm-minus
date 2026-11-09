@@ -152,6 +152,11 @@ class OllamaChatProvider(LLMChattingInterface):
                 if part.message.content:
                     yield {"kind": "content", "text": part.message.content}
 
+                # ...and the token counts, which were dropped here before, so
+                # every streamed answer reached Langfuse with no usage or cost.
+                if getattr(part, "done", False):
+                    self._log_usage(getattr(part, "prompt_eval_count", None), getattr(part, "eval_count", None))
+
         except Exception as exc:
             # Raised mid-iteration once the caller has already begun consuming.
             # Still LLMProviderError, so the route's error frame reports the

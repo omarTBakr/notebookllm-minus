@@ -566,6 +566,12 @@ class Settings(BaseSettings):
     LANGFUSE_PROMPTS_ENABLED: bool = True
     LANGFUSE_PROMPT_LABEL: str = "production"
     LANGFUSE_PROMPT_CACHE_TTL: int = 60
+    # USD per million tokens, keyed "<backend>/<model id>" with wildcards, e.g.
+    # {"nvidia/meta/*": {"input": 0.02, "output": 0.05}}. Added to the built-in
+    # table in shared/utils/model_pricing.py (local Ollama models cost 0). A
+    # priced model's generations carry cost_details to Langfuse; an unpriced
+    # one is left for Langfuse's own price list (OpenAI, Anthropic, Google).
+    MODEL_PRICES: dict[str, dict[str, float]] = {}
 
     # --- task queue / Celery -------------------------------------------------
     # Broker: RabbitMQ — celery_broker_url assembles these into an amqp:// DSN.

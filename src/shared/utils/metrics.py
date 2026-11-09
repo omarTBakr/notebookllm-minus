@@ -131,6 +131,14 @@ GENERATION_TTFT_SECONDS = Histogram(
     registry=REGISTRY,
 )
 
+GENERATION_COST = Counter(
+    "generation_cost_usd_total",
+    "Spend on model calls in USD, from token counts and MODEL_PRICES.",
+    # Only models with a known price are counted (see model_pricing.py).
+    ["provider", "model"],
+    registry=REGISTRY,
+)
+
 GENERATION_TOKENS = Counter(
     "generation_tokens_total",
     "Tokens reported by the provider, in and out.",

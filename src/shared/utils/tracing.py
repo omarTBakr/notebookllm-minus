@@ -199,8 +199,12 @@ def end_generation(gen: Any, **attrs: Any) -> None:
         _current_generation.set(None)
 
 
-def record_usage(input_tokens: int | None, output_tokens: int | None) -> None:
-    """Attach token counts to the generation in flight, if any."""
+def record_usage(
+    input_tokens: int | None,
+    output_tokens: int | None,
+    cost: dict[str, float] | None = None,
+) -> None:
+    """Attach token counts, and the cost when known, to the generation in flight."""
     gen = _current_generation.get()
     if gen is None or gen is NOOP:
         return
@@ -211,7 +215,9 @@ def record_usage(input_tokens: int | None, output_tokens: int | None) -> None:
     if output_tokens is not None:
         usage["output"] = int(output_tokens)
 
-    if usage:
+    if cost is not None:
+        _safe(gen.update, usage_details=usage, cost_details=cost)
+    elif usage:
         _safe(gen.update, usage_details=usage)
 
 

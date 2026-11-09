@@ -12,13 +12,15 @@ from datetime import datetime, timezone
 from time import perf_counter
 
 from shared.enums import ChatRole
-from shared.utils import get_logger, tracing
+from shared.utils import get_logger, get_settings, tracing
 from shared.utils.metrics import (
+    GENERATION_COST,
     GENERATION_REQUESTS,
     GENERATION_SECONDS,
     GENERATION_TOKENS,
     GENERATION_TTFT_SECONDS,
 )
+from shared.utils.model_pricing import backend_of, cost_details
 
 
 class LLMChattingInterface(ABC):
@@ -333,7 +335,12 @@ class LLMChattingInterface(ABC):
         # The log line below is DEBUG, so at the default LOG_LEVEL=INFO this
         # data never left the process. The counters are unconditional.
         provider = type(self).__name__
-        tracing.record_usage(input_tokens, output_tokens)
+        cost = cost_details(
+            backend_of(provider), self.model_id, input_tokens, output_tokens, get_settings().MODEL_PRICES
+        )
+        tracing.record_usage(input_tokens, output_tokens, cost)
+        if cost is not None:
+            GENERATION_COST.labels(provider, self.model_id).inc(cost["total"])
         if input_tokens is not None:
             GENERATION_TOKENS.labels(provider, self.model_id, "input").inc(input_tokens)
         if output_tokens is not None:

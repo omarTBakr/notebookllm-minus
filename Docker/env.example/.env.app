@@ -263,3 +263,5 @@ LANGFUSE_CAPTURE_IO=true
 LANGFUSE_PROMPTS_ENABLED=true
 LANGFUSE_PROMPT_LABEL="production"
 LANGFUSE_PROMPT_CACHE_TTL=60
+# USD per million tokens per "<backend>/<model>" (wildcards allowed); Ollama = 0.
+# MODEL_PRICES={"nvidia/meta/*": {"input": 0.02, "output": 0.05}}
