@@ -1,6 +1,9 @@
-# This repo mirrors the working machine — Docker/.env and everything under
-# Docker/env/ ARE tracked here on purpose (see the root .gitignore for why).
-# Do not re-add `.env` or `env` below: an ignore rule on a tracked path only
-# makes `git add` silently refuse new files under it, which is exactly what
-# blocked rabbitmq's and redis's real .env files until this was fixed.
+# Real environment files and compose's own .env hold live secrets: never commit
+# them. Only the templates in env.example/ are tracked. Copy them to env/ and
+# fill them in locally (see Docker/README.md).
+#
+# This replaces the old "env/ is tracked on purpose" rule. That rule existed for
+# a private mirror repo, which is no longer kept up to date.
+env/
+.env
 mongodb

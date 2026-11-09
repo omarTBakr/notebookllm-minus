@@ -10,6 +10,10 @@
 # AWS SSH keys are secrets too.
 private_ssh_aws/
 
+# Real Docker environment (live secrets). Only Docker/env.example/ is tracked.
+Docker/env/
+Docker/.env
+
 # Everything listed here is machine-specific or regenerated, and none of it is
 # portable: a virtualenv hardcodes absolute paths, caches rebuild themselves.
 
@@ -21,8 +25,10 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments — rebuilt with `uv sync`, ~500 MB, absolute paths inside
+# Virtual environments — rebuilt with `uv sync`, ~500 MB, absolute paths inside.
+# .venv*/ also covers a broken one set aside (e.g. .venv.broken-intxlnk).
 .venv
+.venv*/
 
 # Caches
 .pytest_cache/
