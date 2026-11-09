@@ -67,7 +67,11 @@
   inset-block-start: calc(var(--topbar-h) - 6px);
   inset-inline-end: 16px;
   min-width: 250px;
-  max-width: 320px;
+  /* Never wider or taller than the window: on a narrow or short screen the
+     menu scrolls inside itself instead of running off the edge. */
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--topbar-h) - 12px);
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -117,6 +121,19 @@
   border-top: 1px solid var(--border);
 }
 .dropdown__actions .btn { flex: 1; font-size: 0.78rem; padding: 5px 8px; }
+
+/* The account menu has five actions with long labels ("Sign out everywhere"),
+   which a single row cannot hold: stacked, full width, label at the start. */
+#profile-menu .dropdown__actions { flex-direction: column; gap: 2px; }
+#profile-menu .dropdown__actions .btn {
+  flex: none;
+  width: 100%;
+  justify-content: flex-start;
+  text-align: start;
+  white-space: normal;
+  font-size: 0.85rem;
+  padding: 7px 9px;
+}
 
 /* --- workspace ------------------------------------------------------------ */
 
