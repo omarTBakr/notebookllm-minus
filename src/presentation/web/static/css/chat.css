@@ -78,6 +78,23 @@
 .thinking__body ul, .thinking__body ol { margin: 0 0 0.45em; }
 .thinking__body strong { color: var(--text); }
 
+/* --- research progress (complex questions, answered part by part) --- */
+
+.research {
+  font-size: 0.82rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 6px 10px;
+}
+.research > summary { cursor: pointer; color: var(--text-muted); font-style: italic; list-style: none; }
+.research > summary::before { content: "🔎 "; font-style: normal; }
+.research[open] > summary { margin-block-end: 6px; }
+.research__parts { margin: 0; padding-inline-start: 1.2em; color: var(--text-muted); }
+.research__parts li { margin: 2px 0; overflow-wrap: anywhere; }
+.research__parts li::marker { content: "○  "; }
+.research__parts li.is-done::marker { content: "✓  "; color: var(--accent, currentColor); }
+
 /* --- citations --- */
 
 .sources-block { font-size: 0.8rem; }

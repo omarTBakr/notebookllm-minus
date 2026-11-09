@@ -10,6 +10,6 @@ defensible because of the retrieval.
 from .ChatService import ChatService
 from .IndexService import IndexService
 from .NLPService import NLPService
-from .QueryDecomposer import SubQuestions, decompose_query
+from .QueryPlanner import QueryPlan, QueryPlanSchema, plan_query
 
-__all__ = ["ChatService", "IndexService", "NLPService", "SubQuestions", "decompose_query"]
+__all__ = ["ChatService", "IndexService", "NLPService", "QueryPlan", "QueryPlanSchema", "plan_query"]

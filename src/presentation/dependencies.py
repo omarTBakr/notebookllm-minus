@@ -69,7 +69,7 @@ def chat_service(request: Request, chat=None) -> ChatService:
     Falls back to the .env defaults per field, so a chat that only overrides
     its chat model still embeds with the configured one.
 
-    Builds a *second* chat client for query decomposition, on the same model
+    Builds a *second* chat client for planning and sub-answers, on the same model
     as generation_client but with thinking=False -- the same reason
     memory_service's extract_and_store call needs one of its own: a
     reasoning model asked for structured output leaves `content` empty and
@@ -95,7 +95,7 @@ def chat_service(request: Request, chat=None) -> ChatService:
         generation_client=request.app.providers.chatting(getattr(chat, "generation_model", None)),
         nlp_controller=nlp_service(request, chat),
         memory_controller=memory_controller,
-        decompose_client=request.app.providers.chatting(getattr(chat, "generation_model", None), thinking=False),
+        planner_client=request.app.providers.chatting(getattr(chat, "generation_model", None), thinking=False),
         reranker=request.app.providers.reranker(),
     )
 

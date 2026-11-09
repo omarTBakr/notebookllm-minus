@@ -325,6 +325,40 @@ function thinkingPanel() {
   return { details, summary, body, render };
 }
 
+/** Progress for a complex question: one line per part, ticked as each is
+ * answered, then folded away once the combined answer starts streaming.
+ */
+function researchPanel(queries) {
+  const details = document.createElement("details");
+  details.className = "research";
+  details.open = true;
+
+  const summary = document.createElement("summary");
+  summary.textContent = `${t("researching")}…`;
+
+  const list = document.createElement("ol");
+  list.className = "research__parts";
+  const items = queries.map((query) => {
+    const item = document.createElement("li");
+    // The model's own words, never HTML.
+    item.textContent = query;
+    list.append(item);
+    return item;
+  });
+
+  details.append(summary, list);
+
+  return {
+    details,
+    done(index) { items[index]?.classList.add("is-done"); },
+    writing() { summary.textContent = t("writingAnswer"); },
+    fold() {
+      details.open = false;
+      summary.textContent = t("researchedParts").replace("{n}", String(items.length));
+    },
+  };
+}
+
 /** `plain` skips citations and the Save/Copy/Download row — for a `/memory`
  * reply, which is a confirmation rather than an answer (see `ask`'s own
  * `isCommand`, the equivalent for the live-streamed case).
@@ -401,6 +435,7 @@ export async function ask(chatId, text, { onDone, isCommand = false } = {}) {
   let markdown = "";
   let thinking = null;
   let reasoning = "";
+  let research = null;
 
   // onRender, not a call after update(): see followEnd.
   const answerRender = frameRenderer(answer.body, { onRender: followEnd });
@@ -409,7 +444,19 @@ export async function ask(chatId, text, { onDone, isCommand = false } = {}) {
     for await (const event of api.streamMessage(chatId, text, {
       signal: inFlight.signal,
     })) {
-      if (event.type === "meta") {
+      if (event.type === "step") {
+        // Only complex questions send these: the plan, each part as it is
+        // answered, then the start of the combined answer.
+        if (event.phase === "plan") {
+          research = researchPanel(event.sub_queries ?? []);
+          answer.wrap.insertBefore(research.details, answer.body);
+        } else if (event.phase === "part" && event.status === "done") {
+          research?.done(event.index);
+        } else if (event.phase === "synthesis") {
+          research?.writing();
+        }
+        followEnd();
+      } else if (event.type === "meta") {
         grounded = event.grounded;
         citations = event.citations ?? [];
         // Sources are appended before the first token so the reader can see
@@ -428,6 +475,7 @@ export async function ask(chatId, text, { onDone, isCommand = false } = {}) {
         followEnd();
       } else if (event.type === "delta") {
         received += 1;
+        if (research && research.details.open) research.fold();
         // The answer has begun, so fold the scratchpad away.
         if (thinking && thinking.details.open) {
           thinking.render.flush();

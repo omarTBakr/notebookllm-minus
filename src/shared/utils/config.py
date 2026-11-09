@@ -416,6 +416,20 @@ class Settings(BaseSettings):
     # you have looked at real scores for your corpus and model.
     RETRIEVAL_MIN_SCORE: float = 0.0
 
+    # --- agentic answering ---------------------------------------------------
+    # Before retrieving, a planner call classifies the question (chitchat,
+    # simple, complex), rewrites it to stand alone without the chat history,
+    # and lists retrieval queries. A complex question is answered part by part
+    # (retrieve, rerank, a short cited sub-answer each, in parallel), then one
+    # streamed call writes the final answer from those parts and the original
+    # question. Off restores single-pass retrieval on the raw question.
+    AGENTIC_RAG_ENABLED: bool = True
+    # Parts a complex question may be split into: each one is a retrieval, a
+    # rerank and a model call, all concurrent.
+    AGENTIC_MAX_SUB_QUERIES: int = 3
+    # A sub-answer is a few cited sentences; this caps a model that rambles.
+    AGENTIC_SUBANSWER_MAX_TOKENS: int = 800
+
     # --- reranking -----------------------------------------------------------
     # A cross-encoder re-scores the vector hits before the best top_k reach the
     # prompt. Served by the `reranker` container (Hugging Face TEI running

@@ -23,7 +23,7 @@ from shared.utils.metrics import (
 from ..core.BaseService import BaseService
 from ..memory.MemoryService import MemoryService
 from .NLPService import NLPService
-from .QueryDecomposer import decompose_query
+from .QueryPlanner import QueryPlan, fallback_plan, plan_query
 
 
 class ChatService(BaseService):
@@ -39,7 +39,7 @@ class ChatService(BaseService):
         generation_client: LLMChattingInterface,
         nlp_controller: NLPService,
         memory_controller: MemoryService | None = None,
-        decompose_client: LLMChattingInterface | None = None,
+        planner_client: LLMChattingInterface | None = None,
         reranker: RerankerInterface | None = None,
     ) -> None:
 
@@ -52,19 +52,15 @@ class ChatService(BaseService):
         # a test exercising retrieval alone) -- answer_stream treats it the
         # same as a user with no stored facts.
         self.memory = memory_controller
-        # A second client, built with thinking=False, for QueryDecomposer's
-        # generate_structured call -- see that module's docstring for why
-        # generation_client (possibly a reasoning model) cannot be reused for
-        # it: a reasoning model asked for structured output leaves `content`
-        # empty and puts everything in `reasoning_content`, which fails
-        # validation on every retry. None falls back to generation_client
-        # itself, which is fine for a caller (e.g. a test) that does not care
-        # about that failure mode -- decompose_query degrades to a single
-        # search on the raw question if it ever hits it, same as omitting
-        # decomposition entirely. dependencies.chat_service always supplies a
-        # dedicated client in production, the same way it does for
-        # MemoryService's chat_client.
-        self.decompose_client = decompose_client or generation_client
+        # A second client on the same model, built with thinking=False, for
+        # the calls whose output is not shown as it streams: the planner's
+        # structured call and the complex path's sub-answers. A reasoning
+        # model asked for JSON leaves `content` empty and puts everything in
+        # `reasoning_content`, which fails validation on every retry; and a
+        # sub-answer gains nothing from a scratchpad nobody sees but latency.
+        # None falls back to generation_client, which suits a test;
+        # dependencies.chat_service always supplies a dedicated one.
+        self.planner_client = planner_client or generation_client
         # The pass-through when none is given, so retrieval has one code path.
         self.reranker = reranker or NoopReranker()
 
@@ -93,8 +89,13 @@ class ChatService(BaseService):
         hits: list[dict],
         memory_hits: list[dict],
         lang: str,
+        numbers: list[int] | None = None,
     ) -> tuple[str, str]:
         """Return ``(system_prompt, user_prompt)`` for this question.
+
+        ``numbers`` gives each hit the citation number it should carry, when
+        that is not simply its 1-based position (a sub-answer on the complex
+        path shows its passages under their global numbers).
 
         Three shapes, not two:
           - Neither documents nor memories: an ordinary assistant, the bare
@@ -134,7 +135,7 @@ class ChatService(BaseService):
                         "content": hit.get("text") or "",
                     },
                 )
-                for number, hit in enumerate(hits, start=1)
+                for number, hit in zip(numbers or range(1, len(hits) + 1), hits)
             )
 
         if memory_hits:
@@ -229,43 +230,18 @@ class ChatService(BaseService):
 
         return citations
 
-    # --- retrieval --------------------------------------------------------------
+    # --- planning and retrieval ------------------------------------------------
 
-    async def _retrieve(
-        self,
-        chat_id: str,
-        question: str,
-        lang: str,
-        top_k: int,
-        asset_ids: list[str] | None,
-    ) -> list[dict]:
-        """The merged, best top-`top_k` hits across *question*'s sub-queries.
+    async def _plan(self, question: str, lang: str, history: list[dict] | None) -> QueryPlan:
+        """How to answer *question*: see QueryPlanner.
 
-        `decompose_query` turns *question* into 1-3 retrieval-oriented queries
-        -- either a real split for a compound question, or just a better
-        rephrasing when it isn't one (see QueryDecomposer's docstring). Each
-        runs through `NLPService.search` concurrently rather than in
-        sequence: they are independent reads against the same collection, and
-        there is no reason the second query's embedding call should wait on
-        the first's round trip.
-
-        The same chunk routinely surfaces for more than one sub-query --
-        deduplication is by `id`, the field NLPService.search's hits carry
-        from the vector store's own row id (see PostgresVectorRepository.
-        search_by_vector's `SELECT id, ...`), which names one chunk uniquely
-        regardless of which sub-query's embedding found it. Ties are broken by
-        keeping the higher score: the same chunk can be scored differently by
-        two different query embeddings, and the higher score is the more
-        honest one to show and to rank by.
-
-        Sorted by score descending and cut to `top_k` last, not per
-        sub-query -- with up to MAX_SUB_QUESTIONS queries each returning up to
-        `top_k` hits, capping per-query first would let a weak sub-query's
-        hits crowd out a strong one's from a different sub-query.
+        With AGENTIC_RAG_ENABLED off there is no planning call at all, and the
+        plan is one grounded pass on the raw question.
         """
-        sub_questions = await decompose_query(self.decompose_client, question, lang)
+        if not self.settings.AGENTIC_RAG_ENABLED:
+            return fallback_plan(question)
 
-        return await self._search_and_rerank(chat_id, sub_questions, question, top_k, asset_ids)
+        return await plan_query(self.planner_client, question, lang, history)
 
     async def _search_and_rerank(
         self,
@@ -366,6 +342,15 @@ class ChatService(BaseService):
         The caller assembles the deltas — and only the deltas — to persist the
         finished answer; the scratchpad is shown live and not stored.
 
+        A grounded question is planned first (see QueryPlanner):
+
+        * ``chitchat`` skips retrieval and answers as plain chat;
+        * ``simple`` retrieves on the plan's queries, reranks against the
+          standalone question and answers in one streamed pass;
+        * ``complex`` emits ``step`` events while each part is retrieved,
+          reranked and answered on its own, then streams one answer written
+          from those parts (see :meth:`_answer_complex`).
+
         ``page_lookup`` takes the hits and returns the page map that turns
         citations into links. An opaque awaitable rather than a repository:
         this class still never opens a database, so the whole answering path
@@ -388,33 +373,47 @@ class ChatService(BaseService):
         # An empty list is not the same as None: it means every source was
         # switched off, so there is nothing to retrieve and the answer should
         # be ungrounded rather than searching all of them.
-        if asset_ids != [] and await self.is_grounded(chat_id):
+        grounded = asset_ids != [] and await self.is_grounded(chat_id)
+
+        plan: QueryPlan | None = None
+        if grounded:
+            plan = await self._plan(question, lang, history)
+            if plan.intent == "chitchat":
+                grounded = False
+
+        if grounded and plan.is_complex:
+            async for event in self._answer_complex(
+                chat_id=chat_id,
+                question=question,
+                plan=plan,
+                lang=lang,
+                history=history,
+                top_k=top_k,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                asset_ids=asset_ids,
+                source_names=source_names,
+                page_lookup=page_lookup,
+                memory_hits=memory_hits,
+            ):
+                yield event
+            return
+
+        if grounded:
             _search_started = perf_counter()
-            hits = await self._retrieve(chat_id, question, lang, top_k, asset_ids)
+            hits = await self._search_and_rerank(chat_id, plan.sub_queries, plan.standalone_query, top_k, asset_ids)
             RETRIEVAL_SECONDS.observe(perf_counter() - _search_started)
             RETRIEVAL_HITS.observe(len(hits))
 
         system_prompt, user_prompt = self.build_prompt(question, hits, memory_hits, lang)
 
-        # One round trip before the first frame, and the meta frame is what the
-        # UI paints sources from — so it is deliberately kept to a single
-        # indexed lookup. A failure here costs the page links, nothing else:
-        # an unlinked citation is still a citation, and losing the answer over
-        # it would be a far worse trade.
-        pages = None
-        if hits and page_lookup is not None:
-            try:
-                pages = await page_lookup(hits)
-            except Exception as exc:
-                self.logger.warning("Could not resolve citation pages: %s", exc)
-
-        citations = self.to_citations(hits, source_names, pages)
-        memories = MemoryService.to_citations(memory_hits)
+        meta = await self._meta(hits, source_names, page_lookup, memory_hits)
 
         self.logger.info(
-            "Answering chat %r (grounded=%s, hits=%d, lang=%s, history=%d, sources=%s)",
+            "Answering chat %r (grounded=%s, intent=%s, hits=%d, lang=%s, history=%d, sources=%s)",
             chat_id,
             bool(hits),
+            plan.intent if plan else "ungrounded",
             len(hits),
             lang,
             len(history or []),
@@ -425,8 +424,49 @@ class ChatService(BaseService):
         # mid-answer, and an answer that started grounded still was.
         ANSWERS.labels(str(bool(hits)).lower()).inc()
 
-        yield {"type": "meta", "grounded": bool(hits), "citations": citations, "memories": memories}
+        yield meta
 
+        async for event in self._stream(system_prompt, user_prompt, history, max_tokens, temperature):
+            yield event
+
+    async def _meta(
+        self,
+        hits: list[dict],
+        source_names: dict[str, str] | None,
+        page_lookup: Callable[[list[dict]], Awaitable[dict]] | None,
+        memory_hits: list[dict],
+    ) -> dict:
+        """The ``meta`` event: groundedness, citations and memories.
+
+        One round trip before the first frame, and the meta frame is what the
+        UI paints sources from — so it is deliberately kept to a single
+        indexed lookup. A failure here costs the page links, nothing else:
+        an unlinked citation is still a citation, and losing the answer over
+        it would be a far worse trade.
+        """
+        pages = None
+        if hits and page_lookup is not None:
+            try:
+                pages = await page_lookup(hits)
+            except Exception as exc:
+                self.logger.warning("Could not resolve citation pages: %s", exc)
+
+        return {
+            "type": "meta",
+            "grounded": bool(hits),
+            "citations": self.to_citations(hits, source_names, pages),
+            "memories": MemoryService.to_citations(memory_hits),
+        }
+
+    async def _stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        history: list[dict] | None,
+        max_tokens: int | None,
+        temperature: float | None,
+    ) -> AsyncIterator[dict]:
+        """Stream the final answer as ``thinking`` / ``delta`` events, then ``done``."""
         # The system turn leads the history so the provider's _split_system can
         # lift it out for the backends that want it separately.
         messages = [self.generation_client.construct_message(ChatRole.SYSTEM, system_prompt)]
@@ -448,3 +488,211 @@ class ChatService(BaseService):
                 yield {"type": "delta", "text": piece["text"]}
 
         yield {"type": "done"}
+
+    # --- the complex path ---------------------------------------------------------
+
+    @staticmethod
+    def number_globally(parts: list[list[dict]]) -> tuple[list[dict], list[list[int]]]:
+        """One citation numbering across every part's hits.
+
+        Returns the union of hits (deduplicated by id, in part order, then rank
+        order) and, for each part, the global number of each of its hits. A
+        passage found by two parts keeps one number, so the final answer can
+        cite it once whichever part it came through.
+        """
+        union: list[dict] = []
+        number_of: dict[str, int] = {}
+        numbers: list[list[int]] = []
+
+        for hits in parts:
+            part_numbers = []
+            for hit in hits:
+                key = hit.get("id")
+                if key not in number_of:
+                    union.append(hit)
+                    number_of[key] = len(union)
+                part_numbers.append(number_of[key])
+            numbers.append(part_numbers)
+
+        return union, numbers
+
+    async def _answer_complex(
+        self,
+        *,
+        chat_id: str,
+        question: str,
+        plan: QueryPlan,
+        lang: str,
+        history: list[dict] | None,
+        top_k: int,
+        temperature: float | None,
+        max_tokens: int | None,
+        asset_ids: list[str] | None,
+        source_names: dict[str, str] | None,
+        page_lookup: Callable[[list[dict]], Awaitable[dict]] | None,
+        memory_hits: list[dict],
+    ) -> AsyncIterator[dict]:
+        """Answer each part on its own, then write one answer from the parts.
+
+        1. Every sub-query is retrieved and reranked against itself, in
+           parallel. Each part keeps its own top_k, so one part's strong hits
+           cannot crowd out another part's.
+        2. Hits are numbered once across all parts, and ``meta`` goes out with
+           all of them.
+        3. Each part gets a short, cited sub-answer from its own passages only,
+           in parallel; a ``step`` event marks each one as it finishes.
+        4. One streamed call writes the final answer from the original question
+           and the (part, sub-answer) pairs. It never sees the passages, so its
+           citations are the ones the sub-answers carried.
+        """
+        parser = TemplateParser(lang=lang, default_lang=self.settings.DEFAULT_LANG)
+        queries = plan.sub_queries
+        total = len(queries)
+
+        yield {"type": "step", "phase": "plan", "intent": plan.intent, "sub_queries": queries}
+
+        _search_started = perf_counter()
+        parts = await asyncio.gather(
+            *(self._search_and_rerank(chat_id, [query], query, top_k, asset_ids) for query in queries)
+        )
+        RETRIEVAL_SECONDS.observe(perf_counter() - _search_started)
+
+        union, numbers = self.number_globally(parts)
+        RETRIEVAL_HITS.observe(len(union))
+
+        meta = await self._meta(union, source_names, page_lookup, memory_hits)
+
+        self.logger.info(
+            "Answering chat %r (grounded=%s, intent=complex, parts=%d, hits=%d, lang=%s)",
+            chat_id,
+            bool(union),
+            total,
+            len(union),
+            lang,
+        )
+        ANSWERS.labels(str(bool(union)).lower()).inc()
+
+        yield meta
+
+        if not union:
+            # Nothing found for any part: there is nothing to combine, so answer
+            # as the ungrounded path would rather than synthesise from blanks.
+            system_prompt, user_prompt = self.build_prompt(question, [], memory_hits, lang)
+            async for event in self._stream(system_prompt, user_prompt, history, max_tokens, temperature):
+                yield event
+            return
+
+        answers: list[str | None] = [None] * total
+        tasks = {
+            asyncio.create_task(self._subanswer(parser, query, hits, part_numbers, lang, temperature)): index
+            for index, (query, hits, part_numbers) in enumerate(zip(queries, parts, numbers))
+        }
+
+        try:
+            for index, query in enumerate(queries):
+                yield {
+                    "type": "step",
+                    "phase": "part",
+                    "index": index,
+                    "total": total,
+                    "query": query,
+                    "status": "started",
+                }
+
+            pending = set(tasks)
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    index = tasks[task]
+                    answers[index] = task.result()
+                    yield {
+                        "type": "step",
+                        "phase": "part",
+                        "index": index,
+                        "total": total,
+                        "query": queries[index],
+                        "status": "done",
+                    }
+        finally:
+            # The reader pressed Stop, or something failed: do not leave model
+            # calls running for an answer nobody will read.
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+
+        findings = "\n\n".join(
+            parser.get("rag", "finding_prompt", {"num": index + 1, "question": query, "answer": answer})
+            for index, (query, answer) in enumerate(zip(queries, answers))
+        )
+
+        synthesis, prompt_ref = parser.get_with_ref(
+            "rag", "synthesis_prompt", {"question": question, "findings": findings}
+        )
+
+        if memory_hits:
+            facts = "\n".join(
+                parser.get("memory", "memory_fact_prompt", {"description": hit.get("text") or ""})
+                for hit in memory_hits
+            )
+            synthesis = parser.get("memory", "memory_context_prompt", {"facts": facts}) + "\n\n" + synthesis
+
+        yield {"type": "step", "phase": "synthesis", "total": total}
+
+        with tracing.observation("synthesis", as_type="chain", input={"question": question, "parts": total}):
+            with tracing.linked_prompt(prompt_ref):
+                async for event in self._stream(
+                    parser.get("rag", "system_prompt"), synthesis, history, max_tokens, temperature
+                ):
+                    yield event
+
+    async def _subanswer(
+        self,
+        parser: TemplateParser,
+        query: str,
+        hits: list[dict],
+        numbers: list[int],
+        lang: str,
+        temperature: float | None,
+    ) -> str:
+        """A short, cited answer to one part, from that part's passages only.
+
+        Never raises: a part that cannot be answered (no passages, or the model
+        call failed) says so, and the final answer reports the gap instead of
+        the whole answer failing.
+        """
+        not_covered = parser.get("rag", "part_not_covered")
+
+        if not hits:
+            return not_covered
+
+        with tracing.observation("subanswer", as_type="chain", input={"query": query, "passages": len(hits)}) as span:
+            system_prompt = parser.get("rag", "system_prompt")
+            documents = "\n\n".join(
+                parser.get(
+                    "rag",
+                    "document_prompt",
+                    {
+                        "num": number,
+                        "source": (hit.get("metadata") or {}).get("source") or "unknown",
+                        "content": hit.get("text") or "",
+                    },
+                )
+                for number, hit in zip(numbers, hits)
+            )
+            prompt, prompt_ref = parser.get_with_ref("rag", "subanswer_prompt", {"question": query})
+
+            try:
+                with tracing.linked_prompt(prompt_ref):
+                    answer = await self.planner_client.generate_text(
+                        prompt=f"{documents}\n\n{prompt}",
+                        chat_history=[self.planner_client.construct_message(ChatRole.SYSTEM, system_prompt)],
+                        max_tokens=self.settings.AGENTIC_SUBANSWER_MAX_TOKENS,
+                        temperature=temperature,
+                    )
+            except Exception as exc:
+                self.logger.warning("Sub-answer failed for one part; reporting it as not covered: %s", exc)
+                span.update(level="WARNING", status_message=str(exc)[:300])
+                return not_covered
+
+            span.update(output=answer)
+            return answer.strip() or not_covered

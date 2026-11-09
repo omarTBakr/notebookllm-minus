@@ -77,6 +77,10 @@ const STRINGS = {
     assistant: "Assistant",
     thinking: "Thinking…",
     thoughtFor: "Thought for",
+    // Agentic answers: a complex question is researched part by part.
+    researching: "Researching",
+    researchedParts: "Researched {n} parts",
+    writingAnswer: "Writing the answer…",
     chars: "characters",
     citations: "Sources",
     // Abbreviated because it sits inline in a citation, after the filename.
@@ -271,6 +275,9 @@ const STRINGS = {
     assistant: "المساعد",
     thinking: "جارٍ التفكير…",
     thoughtFor: "فكّر بمقدار",
+    researching: "جارٍ البحث",
+    researchedParts: "بُحث في {n} أجزاء",
+    writingAnswer: "جارٍ كتابة الإجابة…",
     chars: "حرفًا",
     citations: "المصادر",
     page: "ص.",

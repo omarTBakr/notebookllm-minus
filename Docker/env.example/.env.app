@@ -96,6 +96,11 @@ RETRIEVAL_TOP_K=5
 # Similarity floor a passage must clear (0.0 = keep all top-k).
 RETRIEVAL_MIN_SCORE=0.0
 
+# --- Agentic answering (plan, split complex questions, combine) ---------------
+AGENTIC_RAG_ENABLED=true
+AGENTIC_MAX_SUB_QUERIES=3
+AGENTIC_SUBANSWER_MAX_TOKENS=800
+
 # --- Reranking (the `reranker` service: TEI + BAAI/bge-reranker-v2-m3) --------
 RERANKER_ENABLED=true
 RERANKER_PROVIDER="tei"

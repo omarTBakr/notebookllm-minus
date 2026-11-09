@@ -28,7 +28,9 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
     """Ask a question; stream the answer back as server-sent events.
 
     Frames: one ``meta`` (grounded flag + citations), then ``delta`` per piece
-    of text, then ``done``.
+    of text, then ``done``. A complex question also sends ``step`` frames
+    (the plan, each part as it is answered, then the start of the combined
+    answer); see ChatService.answer_stream.
     """
     from shared.utils import get_settings
 

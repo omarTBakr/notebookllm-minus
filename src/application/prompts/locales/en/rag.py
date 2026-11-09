@@ -44,28 +44,93 @@ document_prompt = "\n".join(
     ]
 )
 
-# Drives QueryDecomposer.decompose_query, ahead of the single search() call
-# ChatService.answer_stream used to make. Explicitly told not to invent a
-# split that isn't there: a model asked for "queries" tends to pad out a
-# simple question into several near-duplicates, which just wastes search
-# calls and clutters the merged hit list with near-identical passages.
-decompose_prompt = "\n".join(
+# Drives QueryPlanner.plan_query, the first step of every grounded answer.
+# Three jobs in one call: classify the intent, rewrite the question so it
+# stands alone without the chat history, and give the retrieval queries.
+# Told explicitly not to invent a split: a model asked for "queries" tends to
+# pad a simple question into near-duplicates, which costs a sub-answer each.
+plan_prompt = "\n".join(
     [
-        "A user asked the question below in a chat backed by their own documents.",
-        "Rewrite it as 1 to 3 short, independent search queries that will retrieve",
-        "the passages needed to answer it.",
+        "You plan how to answer a question in a chat backed by the user's own documents.",
         "",
-        "If the question is genuinely compound -- it asks for more than one thing",
-        "-- give one query per thing, each self-contained (resolve pronouns like",
-        "'it' or 'they' using the rest of the question).",
+        "Recent conversation (oldest first):",
+        "{history}",
         "",
-        "If the question is not compound, return exactly one query: a rephrasing",
-        "of it that is likely to retrieve better than the question's own wording,",
-        "not a fabricated multi-part split. Most questions belong here -- do not",
-        "invent sub-parts that are not actually in the question.",
-        "",
-        "Question:",
+        "New question:",
         "{question}",
+        "",
+        "Decide three things.",
+        "",
+        "1. intent -- exactly one of:",
+        '   - "chitchat": a greeting, thanks, small talk, or a question about you, the',
+        "     assistant. Nothing needs to be looked up in the documents.",
+        '   - "simple": it asks for one thing, even if that thing is detailed.',
+        '   - "complex": it asks for several distinct things, or needs separate facts',
+        "     found and then combined (a comparison, a before-and-after, a list of",
+        "     unrelated items).",
+        "   Most questions are simple. When unsure between simple and complex, choose",
+        "   simple. When unsure whether the documents are needed, they are: never pick",
+        "   chitchat for a question about a topic.",
+        "",
+        "2. standalone_query -- the new question rewritten so it is fully understood",
+        "   without the conversation: replace pronouns and references like 'it', 'they'",
+        "   or 'the second one' with what they refer to. Keep the user's language.",
+        "",
+        "3. sub_queries -- short search queries that will retrieve the passages needed:",
+        "   - simple: one query, a rephrasing likely to retrieve better than the",
+        "     question's own wording.",
+        "   - complex: one self-contained query per part, at most {max_sub_queries}.",
+        "     Do not invent parts the question does not ask for.",
+        "   - chitchat: just repeat the standalone question.",
+    ]
+)
+
+# Drives one sub-answer on the complex path: a narrow question answered from
+# the passages retrieved for it alone. The numbers on those passages are the
+# global ones the final answer will cite, so "[7]" here stays "[7]" there.
+subanswer_prompt = "\n".join(
+    [
+        "---",
+        "Using only the documents above, answer this one part of a larger question.",
+        "Cite every fact with the document number in brackets, like [3], using exactly",
+        "the numbers shown above. Be brief: a few sentences or a short list. If the",
+        "documents do not cover it, say so in one sentence.",
+        "",
+        "Part: {question}",
+        "Answer:",
+    ]
+)
+
+# The final call on the complex path. It never sees the passages, only the
+# partial answers written from them, so its citations have to be carried
+# over rather than invented.
+synthesis_prompt = "\n".join(
+    [
+        "A question was split into parts, and each part was researched separately in",
+        "the user's documents. The findings are below, with document numbers in brackets.",
+        "",
+        "{findings}",
+        "",
+        "---",
+        "Write one answer to the original question from these findings.",
+        "- Combine them; do not just list them part by part unless that reads best.",
+        "- Keep the bracketed document numbers on every fact you use, exactly as they",
+        "  appear above. Never add a number that is not in the findings.",
+        "- Where a finding says the documents do not cover something, say so.",
+        "",
+        "Original question: {question}",
+        "Answer:",
+    ]
+)
+
+# What a part with no passages, or a failed sub-answer, reports to synthesis.
+part_not_covered = "The documents do not cover this part."
+
+# One finding inside synthesis_prompt.
+finding_prompt = "\n".join(
+    [
+        "### Part {num}: {question}",
+        "{answer}",
     ]
 )
 
