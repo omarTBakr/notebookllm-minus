@@ -101,6 +101,13 @@ class UserService(BaseService):
                 if await db.vectors().delete_collection(collection):
                     removed["collections"] += 1
 
+            from application.services.rag.ImageIndexService import ImageIndexService
+
+            image_collection = ImageIndexService.collection_name(chat_id)
+            if await db.vectors().collection_exists(image_collection):
+                if await db.vectors().delete_collection(image_collection):
+                    removed["collections"] += 1
+
             # --- chunks and assets, via the project the chat's documents sit in ---
             # A notebook nobody uploaded to has no project row, and that is
             # normal rather than an error: there is nothing under it to remove.
