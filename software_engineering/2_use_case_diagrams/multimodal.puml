@@ -1,0 +1,45 @@
+@startuml
+!include ../_style.iuml
+left to right direction
+title Use cases — Pictures (multimodal retrieval)
+
+actor Reader as reader
+actor Operator as operator
+actor "EmbeddingGemma 2\n(Ollama)" as embedder <<system>>
+actor "Vision chat model\n(captions, answers)" as vision <<system>>
+
+rectangle "Pictures" {
+  usecase "Upload a picture" as UC_upload_img
+  usecase "Upload a PDF with figures" as UC_upload_pdf
+  usecase "Find figures on each page" as UC_find
+  usecase "Caption each picture" as UC_caption
+  usecase "Index pictures\n(project_<id>__img)" as UC_index
+  usecase "Ask a question" as UC_ask
+  usecase "Attach / paste / drop\na picture into the question" as UC_attach
+  usecase "Search pictures\n(text or picture query)" as UC_search
+  usecase "Show the cited pictures\nto a vision model" as UC_show
+  usecase "Open an image citation\n(thumbnail, outlined figure)" as UC_cite
+  usecase "Switch multimodal on or off" as UC_toggle
+}
+
+reader --> UC_upload_img
+reader --> UC_upload_pdf
+reader --> UC_ask
+reader --> UC_cite
+UC_attach .> UC_ask : <<extend>>
+reader --> UC_attach
+
+UC_upload_pdf ..> UC_find : <<include>>
+UC_upload_img ..> UC_caption : <<include>>
+UC_find ..> UC_caption : <<include>>
+UC_caption ..> UC_index : <<include>>
+UC_ask ..> UC_search : <<include>>
+UC_show .> UC_ask : <<extend>>\n[model has vision]
+
+operator --> UC_toggle
+
+UC_caption --> vision
+UC_show --> vision
+UC_index --> embedder
+UC_search --> embedder
+@enduml

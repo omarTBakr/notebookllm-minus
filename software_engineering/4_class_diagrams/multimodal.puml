@@ -1,0 +1,124 @@
+@startuml
+!include ../_style.iuml
+title Pictures — embedders, index, captions, regions and the vision gate
+
+package "application.providers.embedding.image" {
+  abstract class ImageEmbeddingInterface {
+    +model_id: str
+    +embedding_size: int
+    +embed_images(images: list[bytes]): list[vector]
+    +embed_texts(texts, input_type): list[vector]
+    #_embed_images(images)
+    #_embed_texts(texts, input_type)
+  }
+  class OllamaImageEmbeddingProvider {
+    POST /api/embed
+    input: [{"image": base64}]
+  }
+  class LlamaCppImageEmbeddingProvider {
+    POST /embeddings
+    multimodal prompt + mmproj
+  }
+  class ImageEmbeddingFactory {
+    +create(): ImageEmbeddingInterface
+  }
+  ImageEmbeddingInterface <|-- OllamaImageEmbeddingProvider
+  ImageEmbeddingInterface <|-- LlamaCppImageEmbeddingProvider
+  ImageEmbeddingFactory ..> ImageEmbeddingInterface
+}
+
+package "application.providers" {
+  class ProviderCache {
+    +image_embedding(): ImageEmbeddingInterface | None
+  }
+  abstract class LLMChattingInterface {
+    +generate_text(prompt, ..., images)
+    +stream_text(prompt, ..., images)
+    +construct_message(role, content, images)
+    #_ollama_messages / _openai_messages / _anthropic_messages
+    #_for_trace(messages)  ' no base64 in Langfuse
+  }
+}
+
+package "application.services.ingest" {
+  class "ImageRegionService" as Regions <<module>> {
+    +find_figures(path, start, end, rules)
+    +page_has_marks(path, index)
+    +whole_page_region(w, h)
+    +render_region(data, is_pdf, page, bbox, max_side)  ' LRU cached
+  }
+  class FigureRules <<dataclass>> {
+    +min_side_px
+    +min_area_ratio
+    +max_repeat
+  }
+  class ImageCaptionService {
+    +caption(pages): int
+  }
+  class "caption helpers" as CapFns <<module>> {
+    +nearby_text(page, bbox)
+    +fallback_caption(page, region)
+    +caption_picture(client, data, mime, lang)
+  }
+}
+
+package "application.services.rag" {
+  class ImageIndexService {
+    +collection_name(project_id): "project_<id>__img"
+    +index_images(chunks, assets, project, asset_id)
+    +search(project_id, text | image, limit, asset_ids)
+    +delete_asset / drop
+  }
+  class ChatService {
+    +image_index: ImageIndexService | None
+    +vision: bool
+    +answer_stream(..., image, image_caption, image_lookup)
+    -_image_search(...)
+    -_pictures(hits, numbers, image, image_lookup)
+  }
+  class "images" as ImgFns <<module>> {
+    +load_hit_images(db, hits)
+    +load_chunk_image(db, asset, order)
+  }
+}
+
+package "application.services.llm" {
+  class "vision" as Vision <<module>> {
+    +has_vision(model_id): bool  ' cached 1 h
+  }
+}
+
+package "shared.utils" {
+  class "images" as SharedImages <<module>> {
+    +sniff_mime(data)
+    +prepare(data, max_side): PreparedImage
+  }
+}
+
+package "presentation" {
+  class "routes/chat/messages.py" as Msg {
+    MessageRequest.image (data URL)
+  }
+  class "routes/chat/assets.py" as Assets {
+    GET .../content (image/*)
+    GET .../chunks/{n}/image
+  }
+}
+
+ProviderCache --> ImageEmbeddingFactory
+ImageIndexService --> ImageEmbeddingInterface
+ImageIndexService --> Regions : render
+ImageCaptionService --> LLMChattingInterface : vision model
+ImageCaptionService --> CapFns
+Regions --> SharedImages
+Regions ..> FigureRules
+ChatService --> ImageIndexService
+ChatService --> LLMChattingInterface : images when vision
+ChatService ..> ImgFns : via image_lookup
+ImgFns --> Regions
+Msg --> Vision
+Msg --> CapFns : caption the attached picture
+Msg --> SharedImages : check the data URL
+Msg --> ChatService
+Assets --> ImgFns
+@enduml
