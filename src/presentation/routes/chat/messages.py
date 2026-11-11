@@ -5,9 +5,10 @@ import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from application.prompts.template_parser import TemplateParser
 from presentation import dependencies as deps
 from shared.exceptions import InvalidInputError, NotebookLLMError
-from shared.utils import request_id_ctx, tracing
+from shared.utils import get_settings, request_id_ctx, tracing
 
 from ..schemas import MessageRequest
 from ._helpers import _sse, logger
@@ -55,6 +56,52 @@ def _decode_picture(data_url: str, max_bytes: int, max_side: int) -> tuple[bytes
     return prepared.data, prepared.mime
 
 
+async def _attached_picture(data_url: str | None, chat, settings, http_request: Request):
+    """The composer's picture as ``((bytes, mime), caption)``, or ``(None, None)``.
+
+    Checked before anything is stored, so a bad upload is a 400 and leaves no
+    orphan question in the transcript.
+    """
+    if not data_url:
+        return None, None
+
+    if not settings.MULTIMODAL_ENABLED:
+        raise InvalidInputError("Image questions are switched off (MULTIMODAL_ENABLED)")
+
+    picture = _decode_picture(data_url, settings.IMAGE_QUERY_MAX_BYTES, settings.IMAGE_MAX_SIDE_PX)
+    caption = await deps.describe_picture(http_request, picture[0], picture[1], chat.lang or "en")
+
+    return picture, caption
+
+
+def _stored_text(text: str, picture, caption: str | None, chat, settings) -> str:
+    """What the transcript keeps for this question.
+
+    Text only: the question, plus a note of what an attached picture showed.
+    The pixels are not kept, so a later turn knows the picture by caption.
+    """
+    if picture is None:
+        return text
+
+    note = TemplateParser(lang=chat.lang, default_lang=settings.DEFAULT_LANG).get(
+        "rag", "user_image_note", {"caption": caption or "-"}
+    )
+    return f"{text}\n{note}".strip()
+
+
+def _selected_assets(chat, source_names: dict) -> list[str] | None:
+    """The sources to search: None for all of them, a list once some are excluded.
+
+    Resolved here rather than in the service so the stored exclusions stay a
+    route concern.
+    """
+    if not chat.excluded_assets:
+        return None
+
+    excluded = set(chat.excluded_assets)
+    return [asset_id for asset_id in source_names if asset_id not in excluded]
+
+
 @messages_router.post("/chats/{chat_id}/message")
 async def send_message(chat_id: str, request: MessageRequest, http_request: Request):
     """Ask a question; stream the answer back as server-sent events.
@@ -66,8 +113,6 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
     question or a withheld passage sends a ``guardrail`` frame with the
     refusal text in place of the answer.
     """
-    from shared.utils import get_settings
-
     settings = get_settings()
     service = deps.messages(http_request)
     chat = await service.get_chat(chat_id)
@@ -78,31 +123,8 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
     # arrives in the model's context twice — once as history, once as the prompt.
     history = await service.recent_history(chat_id, settings.CHAT_HISTORY_LIMIT)
 
-    # A picture from the composer: checked before anything is stored, so a
-    # bad upload is a 400 and leaves no orphan question in the transcript.
-    picture: tuple[bytes, str] | None = None
-    picture_caption: str | None = None
-    if request.image:
-        if not settings.MULTIMODAL_ENABLED:
-            raise InvalidInputError("Image questions are switched off (MULTIMODAL_ENABLED)")
-        picture = _decode_picture(request.image, settings.IMAGE_QUERY_MAX_BYTES, settings.IMAGE_MAX_SIDE_PX)
-
-        from application.services.ingest.ImageCaptionService import caption_picture
-
-        captioner = deps.caption_client(http_request)
-        if captioner is not None:
-            picture_caption = await caption_picture(captioner, picture[0], picture[1], chat.lang or "en")
-
-    # What is stored is text: the question, plus what the picture showed.
-    # The pixels are not kept, so a later turn knows the picture by caption.
-    stored_text = request.text
-    if picture is not None:
-        from application.prompts.template_parser import TemplateParser
-
-        note = TemplateParser(lang=chat.lang, default_lang=settings.DEFAULT_LANG).get(
-            "rag", "user_image_note", {"caption": picture_caption or "-"}
-        )
-        stored_text = f"{request.text}\n{note}".strip()
+    picture, picture_caption = await _attached_picture(request.image, chat, settings, http_request)
+    stored_text = _stored_text(request.text, picture, picture_caption, chat, settings)
 
     await service.add_user_message(chat_id, stored_text)
 
@@ -113,24 +135,11 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
 
     await service.name_chat_from_question(chat, history, request.text or stored_text)
 
-    vision = False
-    if settings.MULTIMODAL_ENABLED:
-        from application.services.llm.vision import has_vision
-
-        vision = await has_vision(getattr(chat, "generation_model", None))
-
-    controller = deps.chat_service(http_request, chat, vision=vision)
+    controller = deps.chat_service(http_request, chat, vision=await deps.model_has_vision(chat))
     top_k = request.top_k or settings.RETRIEVAL_TOP_K
 
     source_names = await service.source_names(chat_id)
-
-    # None means "search everything"; a list narrows it. Resolved here rather
-    # than in the controller so the stored exclusions stay a route concern.
-    selected_assets = None
-
-    if chat.excluded_assets:
-        excluded = set(chat.excluded_assets)
-        selected_assets = [asset_id for asset_id in source_names if asset_id not in excluded]
+    selected_assets = _selected_assets(chat, source_names)
 
     async def events():
         # One Langfuse trace per answer: user and notebook become the trace's

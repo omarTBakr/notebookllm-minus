@@ -86,6 +86,26 @@ def caption_client(request: Request):
     return request.app.providers.chatting(settings.IMAGE_CAPTION_MODEL_ID, thinking=False)
 
 
+async def describe_picture(request: Request, data: bytes, mime: str, lang: str) -> str | None:
+    """A caption for a picture attached to a question, or None with no caption model."""
+    from application.services.ingest.ImageCaptionService import caption_picture
+
+    captioner = caption_client(request)
+    if captioner is None:
+        return None
+    return await caption_picture(captioner, data, mime, lang)
+
+
+async def model_has_vision(chat) -> bool:
+    """Whether the chat's answer model can be shown pictures. False while multimodal is off."""
+    from application.services.llm.vision import has_vision
+    from shared.utils import get_settings
+
+    if not get_settings().MULTIMODAL_ENABLED:
+        return False
+    return await has_vision(getattr(chat, "generation_model", None))
+
+
 def chat_service(request: Request, chat=None, vision: bool = False) -> ChatService:
     """Answering stack, using the chat's own models when it names them.
 
