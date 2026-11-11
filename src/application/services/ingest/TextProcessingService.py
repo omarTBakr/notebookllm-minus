@@ -332,7 +332,7 @@ class TextProcessingService(BaseService):
         # definition far smaller than a chunk; a quarter is a generous ceiling
         # on what can be called debris, and leaves the configured 100 in force
         # at any chunk_size of 400 or more.
-        floor = min(getattr(self.settings, "MIN_CHUNK_CHARS", 0), self.chunk_size // 4)
+        floor = min(self.settings.MIN_CHUNK_CHARS, self.chunk_size // 4)
 
         if floor <= 0 or len(chunks) < 2:
             return chunks

@@ -81,9 +81,9 @@ class TesseractBestExtractor(TesseractExtractor):
         Environment first, so the package still runs standalone, then the
         application's own setting. Reading only the environment was a real bug:
         `TESSDATA_BEST` existed in Settings and in the image, nothing exported
-        it into the process, and OCR_ENABLED=true therefore took the "cannot
-        run" path and quietly kept the broken text layer — a feature that looks
-        enabled and does nothing.
+        it into the process, and OCR therefore took the "cannot run" path and
+        quietly kept the broken text layer — a feature that looks enabled and
+        does nothing.
         """
         import os
 

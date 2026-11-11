@@ -1,7 +1,7 @@
 """Measuring the engines, kept out of the application's way.
 
-Nothing the running application imports lives here. `arabic_extraction.base`, `arabic_extraction.language`,
-`arabic_extraction.pipeline` and `arabic_extraction.registry` are the library; this subpackage is the
+Nothing the running application imports lives here. `arabic_extraction.base`, `arabic_extraction.language`
+and `arabic_extraction.registry` are the library; this subpackage is the
 harness that compares extractors against each other, and it pulls in matplotlib,
 Pillow rendering and whole OCR stacks that the production image does not have.
 

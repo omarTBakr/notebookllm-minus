@@ -32,7 +32,9 @@ def test_json_columns_are_decoded(repo):
     from data.models import Chat
 
     row = {
-        "chat_id": "c1", "session_id": "s1", "user_id": "u1",
+        "chat_id": "c1",
+        "session_id": "s1",
+        "user_id": "u1",
         "excluded_assets": json.dumps(["a1", "a2"]),
     }
 
@@ -140,9 +142,7 @@ def test_an_orm_row_becomes_a_model(repo):
 
     now = datetime.now(timezone.utc)
     oid = ObjectId()
-    row = UserRow(
-        id=str(oid), user_id="u1", label="Omar", created_at=now, updated_at=now
-    )
+    row = UserRow(id=str(oid), user_id="u1", label="Omar", created_at=now, updated_at=now)
 
     user = repo._record_to_model(row, User)
 

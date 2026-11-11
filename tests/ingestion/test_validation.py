@@ -10,8 +10,7 @@ from shared.exceptions import InvalidFileError
 
 
 def upload(name="a.txt", content_type="text/plain", size=10):
-    file = UploadFile(filename=name, file=io.BytesIO(b"x" * size),
-                      headers={"content-type": content_type})
+    file = UploadFile(filename=name, file=io.BytesIO(b"x" * size), headers={"content-type": content_type})
     file.size = size
     return file
 
@@ -72,9 +71,9 @@ def test_an_unknown_size_is_allowed_through(controller):
 @pytest.mark.xfail(
     strict=True,
     reason="KNOWN BUG: _validate_file_extension does an exact string match on "
-           "the Content-Type header, so a legal parameter such as "
-           "'; charset=utf-8' makes a permitted type look forbidden. Same root "
-           "cause as AssetType.from_content_type. Remove this marker with the fix.",
+    "the Content-Type header, so a legal parameter such as "
+    "'; charset=utf-8' makes a permitted type look forbidden. Same root "
+    "cause as AssetType.from_content_type. Remove this marker with the fix.",
 )
 def test_a_charset_parameter_does_not_make_a_permitted_type_invalid(controller):
     controller.validate_file(upload(content_type="text/plain; charset=utf-8"))

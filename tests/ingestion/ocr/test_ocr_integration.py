@@ -1,8 +1,8 @@
-"""OCR in the ingestion path: when it runs, and what it costs when it does.
+"""OCR in the ingestion path: what it costs when it runs.
 
-The decision is narrower than "OCR the document", and every narrowing here is a
-page that would otherwise be re-read at seconds each for no gain — or, in the
-highlight case, a citation that would point at the wrong sentence.
+How many pages are read at once, the approximate highlight a replaced page
+keeps, and the fork constraint a Celery worker puts on page extraction. Which
+pages get OCR'd is test_ocr_unreadable_pages.py.
 """
 
 from pathlib import Path
@@ -12,125 +12,18 @@ import pytest
 
 from application.services import ProcessService
 
-ARABIC_GOOD = "اليسار حينئذ بديدو ومعناه الهاربة. وحدث في أيام بيكماليون أن رامان " * 3
-ARABIC_FRAGMENTED = "ا ليسا ر حينئذ بديد و و معنا ه ا لها ر بة. و حد ث في أ يا م بيكماليو ن " * 3
-ENGLISH = "The quick brown fox jumps over the lazy dog and keeps on running. " * 3
-
-
-def _page(index, text, label=None):
-    """Stands in for PdfLayoutService.PageWords."""
-    return SimpleNamespace(page_index=index, text=text, page_label=label or str(index + 1))
-
 
 @pytest.fixture
-def controller(monkeypatch):
-    controller = ProcessService()
-    monkeypatch.setattr(controller.settings, "OCR_ENABLED", True)
-    monkeypatch.setattr(controller.settings, "OCR_EXTRACTOR", "fake-ocr")
-    return controller
-
-
-@pytest.fixture
-def fake_engine(monkeypatch):
-    """Register a fake extractor so nothing here needs tesseract installed."""
-    from application.arabic_extraction.base import ArabicExtractor
-
-    class Fake(ArabicExtractor):
-        name = "fake-ocr"
-        calls: list = []
-
-        def _extract(self, page):
-            Fake.calls.append(page.number)
-            return "نص أعيدت قراءته بواسطة محرك التعرف الضوئي على الحروف"
-
-    Fake.calls = []
-    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", (Fake,))
-    return Fake
-
-
-def test_a_healthy_arabic_page_is_not_re_read(controller, fake_engine, tmp_path):
-    """The text layer is the characters the author typed. OCR trades those for
-    a guess at the pixels — strictly worse, as well as seconds slower."""
-    pages = [_page(0, ARABIC_GOOD)]
-
-    replacements = controller._reread_unusable_arabic(tmp_path / "x.pdf", pages)
-
-    assert replacements == {}
-    assert fake_engine.calls == []
-
-
-def test_english_is_never_re_read(controller, fake_engine, tmp_path):
-    """However badly segmented. An Arabic engine on English makes it worse."""
-    pages = [_page(0, ENGLISH.replace(" ", "  "))]
-
-    assert controller._reread_unusable_arabic(tmp_path / "x.pdf", pages) == {}
-    assert fake_engine.calls == []
-
-
-def test_an_unusable_arabic_page_is_re_read(controller, fake_engine, tmp_path):
-    pages = [_page(0, ARABIC_FRAGMENTED)]
-
-    replacements = controller._reread_unusable_arabic(tmp_path / "x.pdf", pages)
-
-    assert fake_engine.calls == [0]
-    assert "أعيدت" in replacements[0]
-
-
-def test_only_the_broken_pages_are_re_read(controller, fake_engine, tmp_path):
-    """Per page, not per document: a book with three good pages and one bad one
-    pays for one page of OCR, not four."""
-    pages = [
-        _page(0, ARABIC_GOOD),
-        _page(1, ARABIC_FRAGMENTED),
-        _page(2, ARABIC_GOOD),
-        _page(3, ARABIC_FRAGMENTED),
-    ]
-
-    replacements = controller._reread_unusable_arabic(tmp_path / "x.pdf", pages)
-
-    assert sorted(fake_engine.calls) == [1, 3]
-    assert sorted(replacements) == [1, 3]
-
-
-def test_a_short_page_is_left_alone(controller, fake_engine, tmp_path):
-    """A plate or a chapter heading has no spacing statistics worth judging,
-    and would otherwise be re-read for nothing."""
-    pages = [_page(0, "تقرير سنوي")]
-
-    assert controller._reread_unusable_arabic(tmp_path / "x.pdf", pages) == {}
-    assert fake_engine.calls == []
-
-
-def test_nothing_happens_when_ocr_is_disabled(controller, fake_engine, tmp_path, monkeypatch):
-    monkeypatch.setattr(controller.settings, "OCR_ENABLED", False)
-
-    assert controller._reread_unusable_arabic(tmp_path / "x.pdf", [_page(0, ARABIC_FRAGMENTED)]) == {}
-    assert fake_engine.calls == []
+def controller():
+    return ProcessService()
 
 
 # --- the part a user would notice ---------------------------------------------
 
 
-def test_an_ocred_page_keeps_its_boxes_and_records_a_scale(controller, fake_engine, tmp_path):
-    """OCR produces no coordinates, so the word boxes remain the only positional
-    information about the page. They are kept, along with the length ratio
-    between the two renderings, so offsets from one can be mapped onto the
-    other — see highlight_metadata, which marks the result approximate."""
-    controller._pdf_pages = {0: _page(0, ARABIC_FRAGMENTED), 1: _page(1, ARABIC_GOOD)}
-    pages = [controller._pdf_pages[0], controller._pdf_pages[1]]
-
-    controller._reread_unusable_arabic(tmp_path / "x.pdf", pages)
-
-    assert 0 in controller._pdf_pages, "the re-read page lost the only boxes it had"
-    assert controller._text_scale[0] > 0, "no scale recorded, so offsets cannot be mapped"
-    assert 1 not in controller._text_scale, "an untouched page should need no scaling"
-
-
 def test_a_scaled_highlight_is_marked_approximate():
     """A reader has to be able to tell an exact highlight from a close one, and
     a future change has to be able to find the close ones."""
-    from types import SimpleNamespace
-
     from application.services.ingest.PdfLayoutService import highlight_metadata
 
     page = SimpleNamespace(
@@ -156,40 +49,6 @@ def test_a_scaled_highlight_is_marked_approximate():
     assert scaled["approx"] == 1
     # scale=2.0 turns 0-15 into 0-30, so both cover the same words.
     assert scaled["r"] == exact["r"]
-
-
-def test_a_missing_engine_keeps_the_text_layer(controller, tmp_path, monkeypatch, caplog):
-    """Failing an upload because an OCR binary is absent would be a worse
-    outcome than indexing imperfect text."""
-    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", ())
-
-    with caplog.at_level("WARNING"):
-        replacements = controller._reread_unusable_arabic(tmp_path / "x.pdf", [_page(0, ARABIC_FRAGMENTED)])
-
-    assert replacements == {}
-    assert any("cannot run" in record.message for record in caplog.records)
-
-
-def test_a_failing_engine_leaves_that_page_alone(controller, tmp_path, monkeypatch, caplog):
-    """One unreadable page must not lose the rest of the document."""
-    from application.arabic_extraction.base import ArabicExtractor
-
-    class Exploding(ArabicExtractor):
-        name = "fake-ocr"
-
-        def _extract(self, page):
-            raise RuntimeError("the traineddata is corrupt")
-
-    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", (Exploding,))
-    controller._pdf_pages = {0: _page(0, ARABIC_FRAGMENTED)}
-
-    with caplog.at_level("WARNING"):
-        replacements = controller._reread_unusable_arabic(tmp_path / "x.pdf", [controller._pdf_pages[0]])
-
-    assert replacements == {}
-    # The OCR did not happen, so the boxes still describe the text.
-    assert 0 in controller._pdf_pages
-    assert any("OCR failed" in record.message for record in caplog.records)
 
 
 # --- the constraint the Celery migration introduced ----------------------------
@@ -220,7 +79,7 @@ def test_page_extraction_does_not_fork_inside_a_daemonic_worker(monkeypatch):
 
     # Completing at all is the assertion: with the pool, this raises. The
     # fixture is rendered from an image and so carries no text layer, which is
-    # beside the point here and is what `_reread_unusable_arabic` is for.
+    # beside the point here.
     assert len(pages) == 2
     assert [page.page_index for page in pages] == [0, 1]
 
@@ -285,44 +144,7 @@ def _arabic_pdf() -> Path:
 # --- using the machine it is running on ----------------------------------------
 
 
-def test_pages_are_read_concurrently(controller, tmp_path, monkeypatch):
-    """OCR is the slowest step in ingestion and every page is independent, so
-    the pages of one document are read in parallel.
-
-    Threads rather than processes: a Celery prefork worker is daemonic and may
-    not fork (see the daemonic test above), and tesseract runs as a subprocess
-    anyway, so the GIL is released for the whole of the work.
-    """
-    import threading
-
-    from application.arabic_extraction.base import ArabicExtractor
-
-    seen: set[int] = set()
-    barrier = threading.Barrier(4, timeout=10)
-
-    class Concurrent(ArabicExtractor):
-        name = "fake-ocr"
-
-        def _extract(self, page):
-            seen.add(threading.get_ident())
-            # Blocks until four pages are being read at once; times out and
-            # raises if they are being read one at a time.
-            barrier.wait()
-            return "نص أعيدت قراءته بواسطة محرك التعرف الضوئي على الحروف"
-
-    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", (Concurrent,))
-    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 4)
-
-    pages = [_page(n, ARABIC_FRAGMENTED) for n in range(4)]
-    controller._pdf_pages = {page.page_index: page for page in pages}
-
-    replacements = controller._reread_unusable_arabic(tmp_path / "x.pdf", pages)
-
-    assert sorted(replacements) == [0, 1, 2, 3]
-    assert len(seen) > 1, "every page was read on the same thread"
-
-
-def test_the_pool_is_never_wider_than_the_work(controller, fake_engine, tmp_path, monkeypatch):
+def test_the_pool_is_never_wider_than_the_work(controller, monkeypatch):
     """Two pages must not start twenty-four threads."""
     monkeypatch.setattr(controller.settings, "OCR_WORKERS", 24)
 
@@ -344,18 +166,6 @@ def test_worker_count_falls_back_to_the_available_cpus(controller, monkeypatch):
     monkeypatch.setattr(sys.modules["application.services.ingest.ProcessService"], "cpu_count", lambda: 2)
 
     assert controller._ocr_workers(50) == 2
-
-
-def test_tesseract_internal_threading_is_capped(controller, fake_engine, tmp_path, monkeypatch):
-    """Tesseract's own OpenMP threads stacked under the page pool oversubscribe
-    every core and run slower than either level of parallelism alone."""
-    import os
-
-    monkeypatch.delenv("OMP_THREAD_LIMIT", raising=False)
-
-    controller._reread_unusable_arabic(tmp_path / "x.pdf", [_page(0, ARABIC_FRAGMENTED)])
-
-    assert os.environ["OMP_THREAD_LIMIT"] == "1"
 
 
 def test_worker_count_is_capped_by_memory_not_just_cpus(controller, monkeypatch):
@@ -489,107 +299,3 @@ def test_the_share_never_falls_below_one(controller, monkeypatch):
     monkeypatch.setattr(module, "available_memory_mb", lambda: 8192.0)
 
     assert controller._ocr_workers(214) == 1
-
-
-def test_progress_is_reported_per_page(controller, fake_engine, tmp_path, monkeypatch):
-    """Per page, not per asset.
-
-    The counters used to advance only as whole documents finished, so a single
-    222-page upload reported 0 of 1 for its entire run: the bar sat still for
-    minutes, which is indistinguishable from a hang and was reported as one.
-    """
-    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 1)
-    pages = [_page(n, ARABIC_FRAGMENTED) for n in range(5)]
-    controller._pdf_pages = {p.page_index: p for p in pages}
-
-    seen = []
-    controller._reread_unusable_arabic(
-        tmp_path / "x.pdf", pages, on_progress=lambda done, total: seen.append((done, total))
-    )
-
-    assert seen == [
-        (1, 5),
-        (2, 5),
-        (3, 5),
-        (4, 5),
-        (5, 5),
-    ], "progress should advance once per page, ending at the total"
-
-
-def test_progress_advances_as_pages_finish_not_in_submission_order(controller, tmp_path, monkeypatch):
-    """`pool.map` yields in submission order, so a slow early page holds back
-    every completed page behind it and the bar moves in lurches. Completion
-    order is what the user is actually watching."""
-    import time
-
-    from application.arabic_extraction.base import ArabicExtractor
-
-    class Uneven(ArabicExtractor):
-        name = "fake-ocr"
-
-        def _extract(self, page):
-            # The first page submitted is the slowest to finish.
-            time.sleep(0.25 if page.number == 0 else 0.01)
-            return "نص أعيدت قراءته بواسطة محرك التعرف الضوئي على الحروف"
-
-    monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", (Uneven,))
-    monkeypatch.setattr(controller.settings, "OCR_WORKERS", 4)
-
-    pages = [_page(n, ARABIC_FRAGMENTED) for n in range(4)]
-    controller._pdf_pages = {p.page_index: p for p in pages}
-
-    first_report = []
-    controller._reread_unusable_arabic(
-        tmp_path / "x.pdf",
-        pages,
-        on_progress=lambda done, total: first_report.append(time.monotonic()),
-    )
-
-    assert len(first_report) == 4
-    # The three fast pages report well before the slow one finishes; with
-    # submission order nothing could be reported until page 0 was done.
-    assert first_report[-1] - first_report[0] > 0.1
-
-
-def test_progress_is_optional(controller, fake_engine, tmp_path):
-    """Every other caller — the benchmark, a script, a test — passes nothing."""
-    pages = [_page(0, ARABIC_FRAGMENTED)]
-    controller._pdf_pages = {0: pages[0]}
-
-    assert controller._reread_unusable_arabic(tmp_path / "x.pdf", pages) != {}
-
-
-async def test_process_and_split_forwards_progress_to_the_layer_below(controller, monkeypatch):
-    """The callback has to survive every hop, and one of them dropped it.
-
-    `process_and_split` accepted `on_progress` and then called `process_bytes`
-    without it, so every layer underneath was wired correctly and never heard
-    from. On the server that showed as a task row written once at start-up and
-    never again -- `stage=chunking done=0 total=1`, unchanged through seven
-    minutes of OCR while four tesseract processes ran.
-
-    Asserted at the seam rather than end to end: the break was *between* two
-    calls, and a fixture rich enough to trigger real OCR would test the OCR
-    rather than the wiring.
-    """
-    captured = {}
-
-    def fake_process_bytes(file_bytes, filename, on_progress=None):
-        captured["on_progress"] = on_progress
-        return []
-
-    monkeypatch.setattr(controller, "process_bytes", fake_process_bytes)
-
-    def callback(done, total):
-        pass
-
-    await controller.process_and_split(b"bytes", "book.pdf", on_progress=callback)
-
-    assert captured["on_progress"] is callback, "process_and_split dropped the progress callback before process_bytes"
-
-
-async def test_process_and_split_still_works_without_a_callback(controller, monkeypatch):
-    """Every other caller -- the benchmark, a script -- passes nothing."""
-    monkeypatch.setattr(controller, "process_bytes", lambda *a, **k: [])
-
-    assert await controller.process_and_split(b"bytes", "book.pdf") == []

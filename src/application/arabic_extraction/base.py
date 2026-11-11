@@ -82,10 +82,6 @@ class Page:
 
         return buffer.getvalue()
 
-    @property
-    def has_text_layer(self) -> bool:
-        return len(self.text_layer.strip()) > 20
-
     def close(self) -> None:
         if "_document" in self.__dict__:
             self._document.close()

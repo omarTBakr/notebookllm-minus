@@ -27,9 +27,7 @@ def flagged(monkeypatch):
     from application.arabic_extraction.extractors.qalam_extractor import QalamExtractor
 
     pages = [2, 4]
-    monkeypatch.setattr(
-        QalamExtractor, "available", classmethod(lambda cls: (True, ""))
-    )
+    monkeypatch.setattr(QalamExtractor, "available", classmethod(lambda cls: (True, "")))
     monkeypatch.setattr(
         QalamExtractor,
         "pages_needing_ocr",
@@ -75,9 +73,7 @@ def test_arabic_and_english_are_read_together(controller, flagged, tesseract, tm
 
 def test_a_picture_is_not_indexed_as_text(controller, flagged, tesseract, tmp_path):
     """What tesseract really returned for ذخائر_لبنان.pdf's cover photograph."""
-    tesseract.text = {
-        2: '©. L ©. ©. U ©. [1] [ J Cc 0" a REE pn. SIAC Ph 7 بي ل Sho 1 PUI EQN Zo'
-    }
+    tesseract.text = {2: '©. L ©. ©. U ©. [1] [ J Cc 0" a REE pn. SIAC Ph 7 بي ل Sho 1 PUI EQN Zo'}
 
     replacements = controller.ocr_unreadable_pages(tmp_path / "x.pdf", 0, 10)
 
@@ -90,18 +86,14 @@ def test_a_blank_page_stays_empty(controller, flagged, tesseract, tmp_path):
     assert sorted(controller.ocr_unreadable_pages(tmp_path / "x.pdf", 0, 10)) == [4]
 
 
-def test_nothing_happens_when_disabled(
-    controller, flagged, tesseract, tmp_path, monkeypatch
-):
+def test_nothing_happens_when_disabled(controller, flagged, tesseract, tmp_path, monkeypatch):
     monkeypatch.setattr(controller.settings, "OCR_UNREADABLE_PAGES", False)
 
     assert controller.ocr_unreadable_pages(tmp_path / "x.pdf", 0, 10) == {}
     assert tesseract.calls == []
 
 
-def test_a_missing_tesseract_keeps_the_ingest_going(
-    controller, flagged, tmp_path, monkeypatch, caplog
-):
+def test_a_missing_tesseract_keeps_the_ingest_going(controller, flagged, tmp_path, monkeypatch, caplog):
     monkeypatch.setattr("application.arabic_extraction.registry.ALL_EXTRACTORS", ())
 
     with caplog.at_level("WARNING"):
@@ -110,17 +102,13 @@ def test_a_missing_tesseract_keeps_the_ingest_going(
     assert any("cannot run" in record.message for record in caplog.records)
 
 
-def test_a_failing_qalam_keeps_the_ingest_going(
-    controller, tesseract, tmp_path, monkeypatch, caplog
-):
+def test_a_failing_qalam_keeps_the_ingest_going(controller, tesseract, tmp_path, monkeypatch, caplog):
     from application.arabic_extraction.extractors.qalam_extractor import QalamExtractor
 
     def explode(cls, path, start, end):
         raise RuntimeError("qalam could not parse this PDF")
 
-    monkeypatch.setattr(
-        QalamExtractor, "available", classmethod(lambda cls: (True, ""))
-    )
+    monkeypatch.setattr(QalamExtractor, "available", classmethod(lambda cls: (True, "")))
     monkeypatch.setattr(QalamExtractor, "pages_needing_ocr", classmethod(explode))
 
     with caplog.at_level("WARNING"):
@@ -182,15 +170,11 @@ def test_qalam_flags_an_image_only_page_within_the_slice(tmp_path):
 
             if index == 2:
                 # A picture and nothing else: no glyphs are painted.
-                pixmap = pymupdf.Pixmap(
-                    pymupdf.csRGB, pymupdf.IRect(0, 0, 50, 50), False
-                )
+                pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 50, 50), False)
                 pixmap.clear_with(200)
                 page.insert_image(page.rect, pixmap=pixmap)
             else:
-                page.insert_text(
-                    (72, 72), f"Page {index} has an ordinary text layer on it."
-                )
+                page.insert_text((72, 72), f"Page {index} has an ordinary text layer on it.")
 
         document.save(pdf)
 
@@ -230,9 +214,7 @@ def test_an_ocred_page_replaces_its_text_and_drops_its_boxes(monkeypatch):
 
     assert scanned["text"] == OCR_ARABIC
     assert scanned["starts"] == scanned["words"] == scanned["boxes"] == []
-    assert untouched["text"] == "kept" and untouched["boxes"], (
-        "a readable page was touched"
-    )
+    assert untouched["text"] == "kept" and untouched["boxes"], "a readable page was touched"
 
 
 # --- the highlight a reader sees -----------------------------------------------
@@ -275,9 +257,7 @@ def test_a_page_with_no_geometry_gets_no_highlight():
 def test_a_page_with_boxes_is_still_highlighted_by_word():
     from application.services.ingest.PdfLayoutService import highlight_metadata
 
-    highlight = highlight_metadata(
-        _page(boxes=[(10.0, 20.0, 110.0, 30.0, 0, 0, 0)]), 0, 30
-    )
+    highlight = highlight_metadata(_page(boxes=[(10.0, 20.0, 110.0, 30.0, 0, 0, 0)]), 0, 30)
 
     assert highlight["r"] == [[10.0, 20.0, 110.0, 30.0]]
     assert "approx" not in highlight
@@ -308,7 +288,4 @@ def test_a_chunk_of_an_ocred_page_carries_the_whole_page_highlight(monkeypatch):
     chunks = controller.split_file(documents, extension=".pdf")
 
     assert chunks
-    assert all(
-        chunk.metadata["highlight"]["r"] == [[0.0, 0.0, 595.0, 842.0]]
-        for chunk in chunks
-    )
+    assert all(chunk.metadata["highlight"]["r"] == [[0.0, 0.0, 595.0, 842.0]] for chunk in chunks)

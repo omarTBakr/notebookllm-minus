@@ -18,8 +18,17 @@ def _write(directory, suite, payload):
 
 
 def _summary(name, ok=1, pages=1, **extra):
-    return {"extractor": name, "ok": ok, "pages": pages, "usable": ok,
-            "cer": None, "wer": None, "seconds": 1.0, "space_ratio": 0.17, **extra}
+    return {
+        "extractor": name,
+        "ok": ok,
+        "pages": pages,
+        "usable": ok,
+        "cer": None,
+        "wer": None,
+        "seconds": 1.0,
+        "space_ratio": 0.17,
+        **extra,
+    }
 
 
 def test_engines_from_separate_directories_end_up_in_one_report(tmp_path):
@@ -34,10 +43,8 @@ def test_engines_from_separate_directories_end_up_in_one_report(tmp_path):
 def test_a_successful_rerun_supersedes_a_failed_first_attempt(tmp_path):
     """PaddleOCR failed with the wrong language code, then worked once it was
     corrected. The report must describe the engine, not the mistake."""
-    _write(tmp_path / "a-paddle-first", "real",
-           {"summary": [_summary("paddleocr", ok=0)], "runs": []})
-    _write(tmp_path / "z-paddle-retry", "real",
-           {"summary": [_summary("paddleocr", ok=4, pages=4)], "runs": []})
+    _write(tmp_path / "a-paddle-first", "real", {"summary": [_summary("paddleocr", ok=0)], "runs": []})
+    _write(tmp_path / "z-paddle-retry", "real", {"summary": [_summary("paddleocr", ok=4, pages=4)], "runs": []})
 
     combined = merge(tmp_path, "real")
 
@@ -60,8 +67,11 @@ def test_a_failure_never_overwrites_a_success(tmp_path):
 def test_an_engine_that_ran_is_no_longer_listed_as_skipped(tmp_path):
     """Otherwise the report says both that an engine could not run and what it
     scored, which is the contradiction the reason field exists to avoid."""
-    _write(tmp_path / "a-first", "real",
-           {"summary": [], "skipped": {"qari": "transformers/torch are not installed"}, "runs": []})
+    _write(
+        tmp_path / "a-first",
+        "real",
+        {"summary": [], "skipped": {"qari": "transformers/torch are not installed"}, "runs": []},
+    )
     _write(tmp_path / "z-later", "real", {"summary": [_summary("qari")], "runs": []})
 
     combined = merge(tmp_path, "real")
@@ -75,12 +85,22 @@ def test_extractions_for_one_page_are_gathered_across_engines(tmp_path):
     same page has to end up in the same run."""
     page = {"source": "book.pdf", "page": 55, "truth": None}
 
-    _write(tmp_path / "tesseract", "real",
-           {"summary": [_summary("tesseract")],
-            "runs": [{**page, "extractions": [{"extractor": "tesseract", "text": "اليسار"}]}]})
-    _write(tmp_path / "easyocr", "real",
-           {"summary": [_summary("easyocr")],
-            "runs": [{**page, "extractions": [{"extractor": "easyocr", "text": "اليسار حينئذ"}]}]})
+    _write(
+        tmp_path / "tesseract",
+        "real",
+        {
+            "summary": [_summary("tesseract")],
+            "runs": [{**page, "extractions": [{"extractor": "tesseract", "text": "اليسار"}]}],
+        },
+    )
+    _write(
+        tmp_path / "easyocr",
+        "real",
+        {
+            "summary": [_summary("easyocr")],
+            "runs": [{**page, "extractions": [{"extractor": "easyocr", "text": "اليسار حينئذ"}]}],
+        },
+    )
 
     combined = merge(tmp_path, "real")
 
@@ -118,9 +138,11 @@ def test_a_later_run_cannot_re_skip_an_engine_that_already_scored(tmp_path):
     an earlier run had scored, and the report claimed both that an engine could
     not run and what it scored."""
     _write(tmp_path / "a-scored", "real", {"summary": [_summary("gemini")], "runs": []})
-    _write(tmp_path / "z-only-tesseract", "real",
-           {"summary": [_summary("tesseract")],
-            "skipped": {"gemini": "GOOGLE_API_KEY is not set"}, "runs": []})
+    _write(
+        tmp_path / "z-only-tesseract",
+        "real",
+        {"summary": [_summary("tesseract")], "skipped": {"gemini": "GOOGLE_API_KEY is not set"}, "runs": []},
+    )
 
     combined = merge(tmp_path, "real")
 

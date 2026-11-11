@@ -44,9 +44,6 @@ class UserService(BaseService):
         self.logger.debug("Created user %r (%s)", user.user_id, user.label)
         return user
 
-    async def list_users(self) -> list[User]:
-        return [u async for u in self.users.iter_users()]
-
     async def get(self, user_id: str) -> User:
         return await self.users.get_user(user_id)
 

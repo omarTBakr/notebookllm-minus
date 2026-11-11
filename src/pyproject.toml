@@ -13,7 +13,7 @@ dependencies = [
     # the word-box path splits inside words and the raw path fuses them. OCR of
     # the rendered page beats both, measured (see src/application/arabic_extraction/benchmark/reports/FINDINGS.md).
     # pytesseract is a thin wrapper; the engine and its ara model are installed
-    # in the image, not here. qalam is OCR_EXTRACTOR's default -- Rust
+    # in the image, not here. qalam picks the pages that need it -- Rust
     # bindings published on PyPI, no build toolchain or external model needed.
     "pytesseract>=0.3.13",
     "qalam>=0.1.1",

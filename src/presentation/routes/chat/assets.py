@@ -190,7 +190,7 @@ async def asset_content(chat_id: str, asset_id: str, http_request: Request, down
 
     if asset.asset_type == AssetType.IMAGE:
         # Re-sniffed rather than trusted from the upload: the stored bytes were
-        # checked at upload (DataService._checked_image_type), and nosniff
+        # checked at upload (AssetIngestService._checked_image_type), and nosniff
         # keeps a browser from guessing anything else out of them.
         from shared.utils.images import sniff_mime
 

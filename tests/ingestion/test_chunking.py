@@ -305,15 +305,13 @@ def test_txt_and_pdf_extensions_are_unaffected_by_markdown_support(controller):
     )
 
 
-def test_process_and_split_picks_the_splitter_from_the_real_filename():
-    """process_and_split takes bytes and a name; the extension has to come
-    from the name, since there is no file on disk to inspect."""
-    import asyncio
-
+def test_bytes_are_split_by_the_real_filename_extension():
+    """Ingest has bytes and a name; the extension has to come from the name,
+    since there is no file on disk to inspect."""
     controller = ProcessService(chunk_size=50, chunk_overlap=10)
     markdown = b"# Heading\n\n" + (b"word " * 40) + b"\n\n# Two\n\n" + (b"word " * 40)
 
-    chunks = asyncio.run(controller.process_and_split(markdown, "doc.md"))
+    chunks = controller.split_file(controller.process_bytes(markdown, "doc.md"), extension=".md")
 
     assert any(c.page_content.startswith("# Heading") for c in chunks)
 
@@ -396,17 +394,14 @@ def test_a_highlight_rect_is_computed_from_the_right_page(monkeypatch, tmp_path)
         assert len(chunk.metadata["highlight"]["r"]) > 0
 
 
-def test_process_and_split_attaches_highlights_end_to_end(monkeypatch, tmp_path):
-    """The real ingest path: bytes in, chunk_metadata out — same route
-    presentation/routes/chat/assets.py actually calls."""
-    import asyncio
-
+def test_bytes_in_chunk_metadata_out_attaches_highlights(monkeypatch, tmp_path):
+    """Bytes in, chunk_metadata out, through process_bytes and split_file."""
     controller = _with_pdf_loader(monkeypatch, "pymupdf")
     pdf = tmp_path / "doc.pdf"
     _synthetic_pdf(pdf, ["hello world this is a highlighted passage"])
     pdf_bytes = pdf.read_bytes()
 
-    chunks = asyncio.run(controller.process_and_split(pdf_bytes, "doc.pdf"))
+    chunks = controller.split_file(controller.process_bytes(pdf_bytes, "doc.pdf"), extension=".pdf")
 
     assert any("highlight" in c.metadata for c in chunks)
     assert all(c.metadata["source"] == "doc.pdf" for c in chunks)

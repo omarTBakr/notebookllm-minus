@@ -145,11 +145,7 @@ MIN_CHUNK_CHARS=100
 # Chunks embedded per request to the embedding model.
 CHUNKING_BATCH_SIZE=512
 
-# --- OCR (re-read unsearchable Arabic pages) -----------------------------------
-# Off: the post-processing pass below replaced it and keeps citation highlights.
-OCR_ENABLED=false
-# qalam | tesseract-best | openrouter
-OCR_EXTRACTOR="tesseract-best"
+# --- OCR (pages with no usable text layer) -------------------------------------
 # qalam's word-break gap, as a fraction of the type size (upstream: 0.25).
 # Needs the patched qalam build; stock qalam ignores it.
 QALAM_WORD_GAP=0.15
@@ -158,8 +154,6 @@ QALAM_WORD_GAP=0.15
 OCR_UNREADABLE_PAGES=true
 # Where the image installs the tessdata_best models.
 TESSDATA_BEST="/usr/share/tessdata-best"
-# Pages with fewer characters than this are never re-read.
-OCR_MIN_CHARS=80
 # Pages OCR'd in parallel. 0 = sized from the container's CPUs and memory.
 OCR_WORKERS=0
 

@@ -48,11 +48,6 @@ def UserModel(db):
     return db.users()
 
 
-def PersonalUserInfoModel(db):
-    """Durable facts extracted from a user's `/memory` messages."""
-    return db.personal_user_info()
-
-
 def ProjectModel(db):
     return db.projects()
 
@@ -75,7 +70,6 @@ __all__ = [
     "MessageModel",
     "SessionModel",
     "UserModel",
-    "PersonalUserInfoModel",
     "ProjectModel",
     "IngestBatchModel",
     "TaskModel",

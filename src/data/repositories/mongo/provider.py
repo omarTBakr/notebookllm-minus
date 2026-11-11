@@ -48,9 +48,11 @@ class MongoProvider(DbProvider):
         self.logger = get_logger(type(self).__module__)
 
         self._vector_repo = QdrantVectorRepository(
-            path=getattr(settings, "VECTOR_DB_PATH", None),
+            # Embedded mode is not configurable (VECTOR_DB_PATH is not a setting);
+            # Qdrant is reached by url.
+            path=None,
             url=settings.vector_db_url,
-            api_key=getattr(settings, "VECTOR_DB_API_KEY", None),
+            api_key=settings.VECTOR_DB_API_KEY,
             distance_method=DistanceMethod(settings.VECTOR_DB_DISTANCE_METHOD),
             index_type=IndexType(settings.VECTOR_DB_INDEX_TYPE),
         )

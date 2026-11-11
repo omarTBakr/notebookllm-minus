@@ -4,22 +4,9 @@ from enum import Enum
 class FileExtension(str, Enum):
     TXT = ".txt"
     PDF = ".pdf"
-    # for later usage
-    DOC = ".doc"
-    DOCX = ".docx"
     XLSX = ".xlsx"
     MD = ".md"
-    JSON = ".json"
     CSV = ".csv"
-    PY = ".py"
-    PNG = ".png"
-    JPG = ".jpg"
-    JPEG = ".jpeg"
-    WEBP = ".webp"
-
-
-#: Extensions handled as one picture each (ProcessService's image branch).
-IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
 
 class PdfLoader(str, Enum):

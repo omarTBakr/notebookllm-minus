@@ -30,8 +30,14 @@ def page_of(words, boxes):
         starts.append(cursor)
         cursor += len(w) + 1
     return PageWords(
-        page_index=0, page_label="1", width=600.0, height=800.0,
-        text=" ".join(words), starts=starts, words=list(words), boxes=list(boxes),
+        page_index=0,
+        page_label="1",
+        width=600.0,
+        height=800.0,
+        text=" ".join(words),
+        starts=starts,
+        words=list(words),
+        boxes=list(boxes),
     )
 
 

@@ -261,7 +261,8 @@ class TestOpenRouter:
 
         cls = self._extractor(monkeypatch, model="some/vision")
         monkeypatch.setattr(
-            urllib.request, "urlopen",
+            urllib.request,
+            "urlopen",
             lambda *a, **k: (_ for _ in ()).throw(OSError("no network")),
         )
 
@@ -289,12 +290,7 @@ def _fake_catalogue(monkeypatch, models: dict):
     import json
     import urllib.request
 
-    body = {
-        "data": [
-            {"id": name, "architecture": {"input_modalities": mods}}
-            for name, mods in models.items()
-        ]
-    }
+    body = {"data": [{"id": name, "architecture": {"input_modalities": mods}} for name, mods in models.items()]}
 
     class _Response(io.BytesIO):
         def __enter__(self):
@@ -304,6 +300,7 @@ def _fake_catalogue(monkeypatch, models: dict):
             return False
 
     monkeypatch.setattr(
-        urllib.request, "urlopen",
+        urllib.request,
+        "urlopen",
         lambda *a, **k: _Response(json.dumps(body).encode()),
     )

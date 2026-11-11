@@ -195,9 +195,7 @@ def test_the_opclass_names_are_the_vector_ones_with_the_type_substituted():
     renames an operator class fails here rather than in a worker at 3am."""
     from shared.enums import DISTANCE_METHOD_TO_PGVECTOR
 
-    assert {
-        method: opclass for method, (_, opclass) in DISTANCE_METHOD_TO_PGVECTOR.items()
-    } == {
+    assert {method: opclass for method, (_, opclass) in DISTANCE_METHOD_TO_PGVECTOR.items()} == {
         DistanceMethod.COSINE: "vector_cosine_ops",
         DistanceMethod.DOT: "vector_ip_ops",
         DistanceMethod.EUCLID: "vector_l2_ops",
