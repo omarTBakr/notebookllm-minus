@@ -116,6 +116,7 @@ async def test_a_broken_page_value_is_skipped(fake_db):
 
 async def test_a_database_failure_costs_the_links_not_the_answer(fake_db):
     """An unlinked citation is still a usable citation."""
+
     async def boom(asset_id, chunk_orders):
         raise RuntimeError("database is down")
 

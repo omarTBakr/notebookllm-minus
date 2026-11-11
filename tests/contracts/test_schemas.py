@@ -15,22 +15,28 @@ from presentation.routes.schemas.nlp_request import PushRequest, SearchRequest
 from presentation.routes.schemas.process_request import ProcessRequest
 
 
-@pytest.mark.parametrize("model, field", [
-    (RenameUserRequest, "label"),
-    (RenameChatRequest, "title"),
-    (RenameAssetRequest, "name"),
-])
+@pytest.mark.parametrize(
+    "model, field",
+    [
+        (RenameUserRequest, "label"),
+        (RenameChatRequest, "title"),
+        (RenameAssetRequest, "name"),
+    ],
+)
 @pytest.mark.parametrize("value", ["", "   ", "\t\n"])
 def test_rename_requests_reject_blank(model, field, value):
     with pytest.raises(ValidationError):
         model(**{field: value})
 
 
-@pytest.mark.parametrize("model, field", [
-    (RenameUserRequest, "label"),
-    (RenameChatRequest, "title"),
-    (RenameAssetRequest, "name"),
-])
+@pytest.mark.parametrize(
+    "model, field",
+    [
+        (RenameUserRequest, "label"),
+        (RenameChatRequest, "title"),
+        (RenameAssetRequest, "name"),
+    ],
+)
 def test_rename_requests_strip_surrounding_space(model, field):
     assert getattr(model(**{field: "  Name  "}), field) == "Name"
 

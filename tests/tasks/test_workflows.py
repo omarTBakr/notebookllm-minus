@@ -199,7 +199,9 @@ def test_every_declared_queue_has_a_worker():
 
     prefix = f"{SETTINGS.CELERY_PROJECT_NAME}."
     declared = {
-        queue.name.removeprefix(prefix) for queue in celery_app.conf.task_queues if queue.name != SETTINGS.CELERY_TASK_DEFAULT_QUEUE
+        queue.name.removeprefix(prefix)
+        for queue in celery_app.conf.task_queues
+        if queue.name != SETTINGS.CELERY_TASK_DEFAULT_QUEUE
     }
 
     assert declared, "no queues declared, so this test checks nothing"

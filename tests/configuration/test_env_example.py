@@ -56,7 +56,7 @@ def test_every_documented_key_is_a_real_field():
     assert not unknown, (
         f"{ENV_EXAMPLE.name} sets {sorted(unknown)}, which {Settings.__name__} "
         "no longer has a field for — a rename left behind a stale key that "
-        "pydantic-settings' extra=\"ignore\" will drop without a word."
+        'pydantic-settings\' extra="ignore" will drop without a word.'
     )
 
 
@@ -119,6 +119,5 @@ def test_every_key_in_the_docker_app_example_is_a_real_field():
 
     unknown = keys - set(Settings.model_fields)
     assert not unknown, (
-        f"Docker/env.example/.env.app sets {sorted(unknown)}, which "
-        f"{Settings.__name__} has no field for."
+        f"Docker/env.example/.env.app sets {sorted(unknown)}, which " f"{Settings.__name__} has no field for."
     )

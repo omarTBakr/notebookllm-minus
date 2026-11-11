@@ -115,9 +115,7 @@ async def test_deleting_a_user_removes_their_messages(client, seed, fake_db):
     from data.models import Message
     from shared.enums import ChatRole
 
-    fake_db.messages().items.append(
-        Message(message_id="m1", chat_id="c1", role=ChatRole.USER, content="hello")
-    )
+    fake_db.messages().items.append(Message(message_id="m1", chat_id="c1", role=ChatRole.USER, content="hello"))
 
     await client.delete("/chat/users/u1")
 
@@ -144,9 +142,7 @@ async def test_deleting_a_user_leaves_another_users_data_alone(ingest, client, s
 
     fake_db.users().items["u2"] = User(user_id="u2", label="Someone else")
     fake_db.sessions().items["s2"] = Session(session_id="s2", user_id="u2")
-    fake_db.chats().items["c2"] = Chat(
-        chat_id="c2", session_id="s2", user_id="u2", title="Their notebook"
-    )
+    fake_db.chats().items["c2"] = Chat(chat_id="c2", session_id="s2", user_id="u2", title="Their notebook")
     fake_db.projects().items["c2"] = Project(project_id="c2", name="Their notebook")
     # Uploading into c2 has to be done as its owner now.
     from tests.conftest import sign_in
@@ -161,9 +157,7 @@ async def test_deleting_a_user_leaves_another_users_data_alone(ingest, client, s
     assert "s2" in fake_db.sessions().items
     assert "c2" in fake_db.chats().items
     assert [a for a in fake_db.assets().items.values() if a.project_id == "c2"]
-    assert [c for c in fake_db.chunks().items if str(c.project_id) == str(
-        fake_db.projects().items["c2"].id
-    )]
+    assert [c for c in fake_db.chunks().items if str(c.project_id) == str(fake_db.projects().items["c2"].id)]
 
 
 async def test_deleting_a_user_with_an_empty_notebook_works(client, seed, fake_db):

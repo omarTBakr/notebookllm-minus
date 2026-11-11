@@ -18,8 +18,7 @@ from shared.utils import CLOUD, LOCAL, NVIDIA, backend_for, qualify, split_sourc
         ("local/dimavz/whisper-tiny:latest", (LOCAL, "dimavz/whisper-tiny:latest")),
         # A vendor prefix works the same way — and NVIDIA's own ids contain a
         # slash (the publisher), which only the *first* segment may claim.
-        ("nvidia/meta/llama-3.2-11b-vision-instruct",
-         (NVIDIA, "meta/llama-3.2-11b-vision-instruct")),
+        ("nvidia/meta/llama-3.2-11b-vision-instruct", (NVIDIA, "meta/llama-3.2-11b-vision-instruct")),
         ("nvidia/nvidia/nemotron-3-embed-1b", (NVIDIA, "nvidia/nemotron-3-embed-1b")),
         # A prefix with nothing after it is not a qualified id.
         ("cloud/", (LOCAL, "cloud/")),
@@ -44,14 +43,17 @@ def test_qualify_survives_a_slash_in_the_tag():
 # --- which provider a prefix selects ------------------------------------------
 
 
-@pytest.mark.parametrize("source, backend", [
-    # Both Ollama sources differ only in which machine answers.
-    (LOCAL, "ollama"),
-    (CLOUD, "ollama"),
-    # A vendor prefix names the backend itself, which is what lets one chat
-    # run on a local model and the next on a hosted one.
-    (NVIDIA, "nvidia"),
-])
+@pytest.mark.parametrize(
+    "source, backend",
+    [
+        # Both Ollama sources differ only in which machine answers.
+        (LOCAL, "ollama"),
+        (CLOUD, "ollama"),
+        # A vendor prefix names the backend itself, which is what lets one chat
+        # run on a local model and the next on a hosted one.
+        (NVIDIA, "nvidia"),
+    ],
+)
 def test_backend_for(source, backend):
     assert backend_for(source) == backend
 
@@ -65,18 +67,18 @@ def test_backend_for(source, backend):
 # as a 404.
 
 
-@pytest.mark.parametrize("backend, model, expected", [
-    ("ollama", "gemma4:e4b", "local/gemma4:e4b"),
-    ("nvidia", "nvidia/nemotron-3-embed-1b", "nvidia/nvidia/nemotron-3-embed-1b"),
-    ("nvidia", "meta/llama-3.2-11b-vision-instruct",
-     "nvidia/meta/llama-3.2-11b-vision-instruct"),
-])
+@pytest.mark.parametrize(
+    "backend, model, expected",
+    [
+        ("ollama", "gemma4:e4b", "local/gemma4:e4b"),
+        ("nvidia", "nvidia/nemotron-3-embed-1b", "nvidia/nvidia/nemotron-3-embed-1b"),
+        ("nvidia", "meta/llama-3.2-11b-vision-instruct", "nvidia/meta/llama-3.2-11b-vision-instruct"),
+    ],
+)
 def test_a_default_is_qualified_by_its_backend(settings, backend, model, expected):
     from shared.utils import default_chat_model
 
-    configured = settings.model_copy(
-        update={"GENERATION_BACKEND": backend, "GENERATION_MODEL_ID": model}
-    )
+    configured = settings.model_copy(update={"GENERATION_BACKEND": backend, "GENERATION_MODEL_ID": model})
 
     assert default_chat_model(configured) == expected
 

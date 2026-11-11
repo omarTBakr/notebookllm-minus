@@ -46,12 +46,11 @@ def _fake_chain(calls, index_id="index-1", build_id="build-1"):
     Two deep, and nested the way Celery nests: apply_async names the last task
     and reaches the one before through .parent.
     """
+
     def build(project_id, asset_id=None, reset=False, batch_size=None):
         calls.append((project_id, asset_id, reset, batch_size))
         return SimpleNamespace(
-            apply_async=lambda: SimpleNamespace(
-                id=build_id, parent=SimpleNamespace(id=index_id, parent=None)
-            )
+            apply_async=lambda: SimpleNamespace(id=build_id, parent=SimpleNamespace(id=index_id, parent=None))
         )
 
     return build
@@ -122,9 +121,7 @@ async def test_a_broker_outage_on_push_is_still_a_503(client, chunked, monkeypat
     def refuse():
         raise BrokerOperationalError("broker unavailable")
 
-    monkeypatch.setattr(
-        nlp_route, "index_chain", lambda *a, **k: SimpleNamespace(apply_async=refuse)
-    )
+    monkeypatch.setattr(nlp_route, "index_chain", lambda *a, **k: SimpleNamespace(apply_async=refuse))
 
     response = await client.post("/nlp/index/push/c1", json={})
 
@@ -154,17 +151,13 @@ async def _dimensions(tag):
     return 8
 
 
-async def test_switching_the_embedding_model_rebuilds_the_index(
-    client, chunked, fake_db, probeable
-):
+async def test_switching_the_embedding_model_rebuilds_the_index(client, chunked, fake_db, probeable):
     """This path has no chain to append a build to, and reset=True has just
     dropped the collection *and its index*. Skipping the rebuild leaves the new
     model's vectors searchable only by exact scan."""
     fake_db.chats().items["c1"].has_documents = True
 
-    response = await client.patch(
-        "/chat/chats/c1/models", json={"embedding_model": "local/nomic-embed-text:latest"}
-    )
+    response = await client.patch("/chat/chats/c1/models", json={"embedding_model": "local/nomic-embed-text:latest"})
 
     assert response.status_code == 200
     assert response.json()["reindexed_chunks"] == 1
@@ -176,9 +169,7 @@ async def test_a_chat_with_no_documents_indexes_nothing(client, chunked, fake_db
     build should run — the chat just changes model."""
     fake_db.chats().items["c1"].has_documents = False
 
-    response = await client.patch(
-        "/chat/chats/c1/models", json={"embedding_model": "local/nomic-embed-text:latest"}
-    )
+    response = await client.patch("/chat/chats/c1/models", json={"embedding_model": "local/nomic-embed-text:latest"})
 
     assert response.status_code == 200
     assert fake_db.vectors().indexed == []

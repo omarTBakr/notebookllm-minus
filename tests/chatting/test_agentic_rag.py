@@ -95,8 +95,16 @@ def test_simple_with_several_distinct_parts_is_complex():
 
 @pytest.mark.parametrize(
     "message",
-    ["Hi there, thanks for the help!", "thanks", "Thank you so much", "ok, got it", "Good morning",
-     "شكرًا جزيلًا!", "السلام عليكم", "تمام"],
+    [
+        "Hi there, thanks for the help!",
+        "thanks",
+        "Thank you so much",
+        "ok, got it",
+        "Good morning",
+        "شكرًا جزيلًا!",
+        "السلام عليكم",
+        "تمام",
+    ],
 )
 def test_small_talk_skips_the_model(message):
     assert is_small_talk(message)
@@ -104,8 +112,14 @@ def test_small_talk_skips_the_model(message):
 
 @pytest.mark.parametrize(
     "message",
-    ["Thanks! When was the lighthouse built?", "hello, what is in chapter 2", "Summarise the report",
-     "شكرًا، متى بُنيت المنارة؟", "", "thanks " * 20],
+    [
+        "Thanks! When was the lighthouse built?",
+        "hello, what is in chapter 2",
+        "Summarise the report",
+        "شكرًا، متى بُنيت المنارة؟",
+        "",
+        "thanks " * 20,
+    ],
 )
 def test_real_questions_are_not_small_talk(message):
     assert not is_small_talk(message)

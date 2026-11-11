@@ -255,9 +255,7 @@ async def test_an_entirely_blank_batch_costs_no_call(controller):
     """A cover, a plate section, a scanned insert: no text, no model call."""
     client = FakeClient(_answer([(1, PAGE)]))
 
-    result = await controller(client).correct(
-        [{"page_index": 0, "text": ""}, {"page_index": 1, "text": "  \n "}]
-    )
+    result = await controller(client).correct([{"page_index": 0, "text": ""}, {"page_index": 1, "text": "  \n "}])
 
     assert result == {}
     assert client.prompts == [], "a batch with no text still called the model"

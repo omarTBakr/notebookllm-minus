@@ -15,8 +15,9 @@ from tests.support.llm import FailingChatClient, FakeChatClient, FakeStreamingCh
 
 
 def test_construct_message_accepts_an_enum_and_a_string():
-    assert LLMChattingInterface.construct_message(ChatRole.USER, "hi") == \
-           LLMChattingInterface.construct_message("user", "hi")
+    assert LLMChattingInterface.construct_message(ChatRole.USER, "hi") == LLMChattingInterface.construct_message(
+        "user", "hi"
+    )
 
 
 def test_construct_message_rejects_an_unknown_role():
@@ -130,10 +131,17 @@ async def test_a_provider_failure_propagates():
 # --- the factory --------------------------------------------------------------
 
 
-@pytest.mark.parametrize("value, expected", [
-    ("true", True), ("True", True), ("false", False),
-    ("low", "low"), ("medium", "medium"), ("high", "high"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("true", True),
+        ("True", True),
+        ("false", False),
+        ("low", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+    ],
+)
 def test_thinking_flag(value, expected):
     assert _thinking_flag(value) == expected
 
@@ -146,9 +154,7 @@ def test_factory_rejects_an_unknown_backend(settings):
 def test_factory_rejects_a_backend_with_no_key(settings):
     """Everything except Ollama needs a key, and a blank one cannot be built."""
     with pytest.raises(UnsupportedProviderError):
-        LLMChattingFactory(settings.model_copy(update={"ANTHROPIC_API_KEY": ""})).create(
-            provider="anthropic"
-        )
+        LLMChattingFactory(settings.model_copy(update={"ANTHROPIC_API_KEY": ""})).create(provider="anthropic")
 
 
 def test_factory_builds_ollama_without_a_key(settings):
@@ -170,9 +176,7 @@ def _endpoint(client) -> str:
 
 def test_factory_builds_nvidia_at_the_configured_endpoint(settings):
     """The URL comes from Settings, not from the provider class."""
-    client = LLMChattingFactory(
-        settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})
-    ).create(provider="nvidia")
+    client = LLMChattingFactory(settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})).create(provider="nvidia")
 
     assert type(client).__name__ == "NvidiaChatProvider"
     assert client.api_key == "nvapi-test"
@@ -213,9 +217,7 @@ def test_nvidia_base_url_can_be_overridden(settings):
 
 def test_factory_rejects_nvidia_with_no_key(settings):
     with pytest.raises(UnsupportedProviderError):
-        LLMChattingFactory(settings.model_copy(update={"NVIDIA_API_KEY": ""})).create(
-            provider="nvidia"
-        )
+        LLMChattingFactory(settings.model_copy(update={"NVIDIA_API_KEY": ""})).create(provider="nvidia")
 
 
 def test_nvidias_endpoint_does_not_leak_into_openai(settings):
@@ -236,9 +238,7 @@ def test_nvidias_endpoint_does_not_leak_into_openai(settings):
 def test_nvidia_errors_name_nvidia_not_openai(settings):
     """`OpenAI generation failed` for a call to NVIDIA sends debugging the
     wrong way; the vendor label is what makes the message honest."""
-    client = LLMChattingFactory(
-        settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})
-    ).create(provider="nvidia")
+    client = LLMChattingFactory(settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})).create(provider="nvidia")
 
     assert client._VENDOR == "NVIDIA"
 
@@ -305,7 +305,7 @@ def test_consecutive_assistant_turns_are_joined():
     ]
 
 
-def test_everything_built_alternates(  ):
+def test_everything_built_alternates():
     """The invariant itself, over the shapes this application actually makes."""
     client = FakeChatClient()
 
@@ -322,8 +322,7 @@ def test_everything_built_alternates(  ):
     ]
 
     for history in histories:
-        roles = [m["role"] for m in client._build_messages("now", history)
-                 if m["role"] != ChatRole.SYSTEM.value]
+        roles = [m["role"] for m in client._build_messages("now", history) if m["role"] != ChatRole.SYSTEM.value]
 
         assert roles[0] == ChatRole.USER.value
         assert roles[-1] == ChatRole.USER.value
@@ -348,7 +347,8 @@ class _Delta:
 class _Chunk:
     def __init__(self, content=None, reasoning=None, usage=None):
         self.choices = (
-            [] if content is None and reasoning is None and usage
+            []
+            if content is None and reasoning is None and usage
             else [type("Choice", (), {"delta": _Delta(content, reasoning)})()]
         )
         self.usage = usage
@@ -364,6 +364,7 @@ class _Stream:
     def __await__(self):
         async def _self():
             return self
+
         return _self().__await__()
 
     async def __aiter__(self):
@@ -404,11 +405,13 @@ async def test_content_deltas_stream_as_content():
 async def test_reasoning_deltas_stream_as_thinking():
     """The scratchpad arrives on its own field, so nothing has to parse tags
     out of the answer text."""
-    client, _ = _openai_client([
-        _Chunk(reasoning="let me think"),
-        _Chunk(reasoning=" a moment"),
-        _Chunk(content="391"),
-    ])
+    client, _ = _openai_client(
+        [
+            _Chunk(reasoning="let me think"),
+            _Chunk(reasoning=" a moment"),
+            _Chunk(content="391"),
+        ]
+    )
 
     pieces = await _collect(client)
 
@@ -446,6 +449,7 @@ async def test_a_mid_stream_failure_is_a_provider_error():
     """Raised once the caller is already consuming — it still has to be the
     type a non-streamed failure produces, or the route's error frame would
     differ by transport."""
+
     class _Boom(_Stream):
         async def __aiter__(self):
             yield _Chunk(content="partial")
