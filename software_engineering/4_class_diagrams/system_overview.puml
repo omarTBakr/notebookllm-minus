@@ -33,6 +33,7 @@ package "application" {
     class ImageIndexService
     class ImageCaptionService
     class "ImageRegionService" as IRS <<module>>
+    class "ChunkLinker" as Linker <<module>>
     class MemoryService
     class StudioService
     class AssetIngestService
@@ -119,6 +120,8 @@ ImageIndexService --> IRS : crops
 ProviderCache --> ImageEmbeddingInterface
 IngestJobs --> ImageCaptionService
 IngestJobs --> IRS : find figures
+IngestJobs --> Linker : link figures to passages
+ChatService ..> Linker : follows the links (rag/links.py)
 ImageCaptionService --> LLMChattingInterface : vision
 
 CeleryApp --> IngestJobs

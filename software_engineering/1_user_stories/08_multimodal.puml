@@ -45,6 +45,15 @@ rectangle "Pictures as sources" {
       get the pictures, up to IMAGE_MAX_PER_ANSWER, each labelled with its citation number.
     * Every other model reads the caption a vision model wrote at ingest.
   ]
+  card US8_7 [
+    **US-8.7  A figure and its explanation travel together**
+    As a //reader//, I want a retrieved passage to bring the figure it refers to, and a retrieved figure
+    to bring the paragraph that explains it, so that an answer about "Figure 3" is written from both.
+    ----
+    * At ingest each figure is linked to the passages that name it ("Figure 3", "الشكل ٣") or sit next to it.
+    * Partners are added after the ranked hits, never in place of one, and capped per answer.
+    * The citation list marks a partner as "↳ with [n]".
+  ]
   card US8_6 [
     **US-8.6  Switch it off**
     As an //operator//, I want MULTIMODAL_ENABLED=false to leave the pipeline exactly as before,

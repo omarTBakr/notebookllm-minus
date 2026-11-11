@@ -55,8 +55,8 @@ different jar. `_style.iuml` holds the shared look.
 | Studio generation | [studio_generation](3_sequence_diagrams/studio_generation.png) |
 | `/memory` | [memory](3_sequence_diagrams/memory.png) |
 | Langfuse tracing and prompt versions | [langfuse_tracing](3_sequence_diagrams/langfuse_tracing.png) |
-| Pictures at ingest: find, caption, chunk, embed | [image_ingest](3_sequence_diagrams/image_ingest.png) |
-| A question with pictures, with or without vision | [image_query_answer](3_sequence_diagrams/image_query_answer.png) |
+| Pictures at ingest: find, caption, chunk, link, embed | [image_ingest](3_sequence_diagrams/image_ingest.png) |
+| A question with pictures: both indexes, linked partners, with or without vision | [image_query_answer](3_sequence_diagrams/image_query_answer.png) |
 
 ## 4. Class diagrams — `4_class_diagrams/`
 
@@ -68,4 +68,4 @@ different jar. `_style.iuml` holds the shared look.
 | Data tier: providers, repositories, models | [data_repositories](4_class_diagrams/data_repositories.png) |
 | Guardrails (LangChain middleware) and Celery jobs | [guardrails_and_tasks](4_class_diagrams/guardrails_and_tasks.png) |
 | Accounts: models, repositories, services, login layer | [accounts](4_class_diagrams/accounts.png) |
-| Pictures: embedders, index, captions, regions, vision gate | [multimodal](4_class_diagrams/multimodal.png) |
+| Pictures: embedders, index, captions, regions, links, vision gate | [multimodal](4_class_diagrams/multimodal.png) |

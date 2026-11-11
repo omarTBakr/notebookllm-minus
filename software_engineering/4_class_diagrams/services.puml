@@ -45,6 +45,13 @@ class NLPService {
   +index_into_vector_db(...)
   +get_index_info(chat_id)
 }
+class ImageIndexService {
+  +index_images(...)
+  +search(project_id, text | image)
+}
+class ImageCaptionService
+class "ChunkLinker" as Linker <<module>>
+class "rag.links" as Links <<module>>
 class IndexService
 class MemoryService {
   +extract_and_store(user_id, text, lang)
@@ -84,6 +91,7 @@ class "generate_structured" as SG <<module>>
 
 BaseService <|-- ChatService
 BaseService <|-- NLPService
+BaseService <|-- ImageIndexService
 BaseService <|-- IndexService
 BaseService <|-- MemoryService
 BaseService <|-- ConversationService
@@ -108,6 +116,9 @@ ArtifactService <|-- MindMapService
 ChatService --> QueryPlanner
 QueryPlanner --> QueryPlan
 ChatService --> NLPService
+ChatService --> ImageIndexService : pictures
+ChatService ..> Links : linked partners
+ProcessService ..> Linker : at assemble
 ChatService --> MemoryService
 QueryPlanner --> SG
 MemoryService --> SG

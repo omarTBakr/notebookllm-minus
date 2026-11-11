@@ -11,6 +11,7 @@ participant "has_vision()" as vision
 participant "ChatService" as chat
 participant "NLPService\n(text index)" as nlp
 participant "ImageIndexService\n(picture index)" as img
+participant "links.expand_links" as links
 participant "EmbeddingGemma 2" as embed
 participant "Reranker" as rerank
 participant "Answer model" as llm
@@ -41,12 +42,16 @@ alt reranker on
 else
   chat -> chat : text top_k, then up to IMAGE_TOP_K pictures
 end
-chat --> ui : meta (citations, kind = image | text)
+chat -> links : link_lookup(hits)
+links -> links : read linked_images / linked_chunks of each hit;\nfetch partners not already among the hits
+links --> chat : partners (score = null, linked_from = hit id),\ncapped by LINK_MAX_*_PER_ANSWER
+chat -> chat : append after the ranked hits
+chat --> ui : meta (citations, kind = image | text, linked_to = n)
 ui -> route : GET .../chunks/{n}/image (thumbnail)
 
 alt model has vision
   chat -> chat : image_lookup: crop cited figures from their assets
-  chat -> llm : prompt ("[Image] caption" per figure)\n+ pictures + "attached, in order: [2]; the user's image"
+  chat -> llm : prompt ("[Image] caption" per figure,\n"## Document 4 (belongs with Document 2)" for a partner)\n+ pictures + "attached, in order: [2]; the user's image"
 else no vision
   chat -> llm : prompt with captions only
 end

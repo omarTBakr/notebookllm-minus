@@ -57,8 +57,18 @@ package "application.services.ingest" {
   }
   class "caption helpers" as CapFns <<module>> {
     +nearby_text(page, bbox)
+    +annotate_nearby(pages)
     +fallback_caption(page, region)
     +caption_picture(client, data, mime, lang)
+  }
+  class "ChunkLinker" as Linker <<module>> {
+    +labels_in(text): {(kind, number)}
+    +score_pair(text_meta, text, image_meta, caption)
+    +link_chunks(chunks, rules): int
+  }
+  class LinkRules <<dataclass>> {
+    +max_text_per_image
+    +max_images_per_text
   }
 }
 
@@ -72,13 +82,18 @@ package "application.services.rag" {
   class ChatService {
     +image_index: ImageIndexService | None
     +vision: bool
-    +answer_stream(..., image, image_caption, image_lookup)
+    +answer_stream(..., image, image_caption, image_lookup, link_lookup)
     -_image_search(...)
+    -_with_partners(hits, link_lookup)
     -_pictures(hits, numbers, image, image_lookup)
+    -_document(parser, number, hit, numbered)
   }
   class "images" as ImgFns <<module>> {
     +load_hit_images(db, hits)
     +load_chunk_image(db, asset, order)
+  }
+  class "links" as LinkFns <<module>> {
+    +expand_links(db, hits, max_images, max_text)
   }
 }
 
@@ -115,6 +130,10 @@ Regions ..> FigureRules
 ChatService --> ImageIndexService
 ChatService --> LLMChattingInterface : images when vision
 ChatService ..> ImgFns : via image_lookup
+ChatService ..> LinkFns : via link_lookup
+Linker ..> LinkRules
+"assemble_chunks_task" ..> Linker : after numbering the image chunks
+LinkFns --> CapFns : labels come from nearby_text
 ImgFns --> Regions
 Msg --> Vision
 Msg --> CapFns : caption the attached picture

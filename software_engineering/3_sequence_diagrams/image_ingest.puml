@@ -1,6 +1,6 @@
 @startuml
 !include ../_style.iuml
-title Pictures at ingest — find, caption, chunk, embed
+title Pictures at ingest — find, caption, chunk, link, embed
 autonumber "<b>0"
 
 participant "parse_batch_task\n(celery-process)" as parse
@@ -45,7 +45,13 @@ end
 post -> db : region.caption
 
 == Assemble ==
-assemble -> db : text chunks, then one image chunk per region\nchunk_content = caption\nmetadata = {kind: image, page, bbox, highlight}
+assemble -> assemble : text chunks, then one image chunk per region\nchunk_content = caption\nmetadata = {kind: image, page, bbox, highlight, nearby_text}
+assemble -> assemble : ChunkLinker.link_chunks\nlabel match ("Figure 3" / "الشكل ٣", any page) ≫ distance on the page ≫ same page
+note right of assemble
+  image chunk:  linked_chunks = [best LINK_MAX_TEXT_PER_IMAGE passages]
+  text chunk:   linked_images = [best LINK_MAX_IMAGES_PER_TEXT figures]
+end note
+assemble -> db : all chunks, links in chunk_metadata
 assemble -> textindex : index chunks (captions too, so text search finds figures)
 textindex -> vec : project_<id>
 textindex -> imgindex : linked, when the asset has pictures
