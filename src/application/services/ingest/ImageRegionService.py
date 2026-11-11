@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pymupdf  # ty: ignore[unresolved-import]
 
+from shared.enums import AssetType
 from shared.utils import get_logger
 from shared.utils.images import prepare
 
@@ -195,3 +196,26 @@ def render_region(
     """
     box = tuple(bbox or ())
     return _render_cached(content_hash, page_index, box, max_side, _Bytes(data, is_pdf, content_hash))
+
+
+def render_asset_region(asset, page_index: int, bbox: list[float] | None, max_side: int = 1024) -> tuple[bytes, str]:
+    """`render_region` for a stored asset: its bytes, its kind and its cache key.
+
+    The one place that knows an uploaded picture *is* its only region while
+    anything else is cut out of a PDF page, and that crops are cached under
+    the asset's content hash (so a re-upload of the same file reuses them).
+    """
+    return render_region(
+        asset.file_bytes,
+        is_pdf=asset.asset_type != AssetType.IMAGE,
+        content_hash=asset.content_hash or asset.asset_id,
+        page_index=page_index,
+        bbox=bbox,
+        max_side=max_side,
+    )
+
+
+def render_chunk(asset, chunk_metadata: dict | None, max_side: int = 1024) -> tuple[bytes, str]:
+    """The picture an image chunk shows, from the page and box its metadata records."""
+    metadata = chunk_metadata or {}
+    return render_asset_region(asset, int(metadata.get("page", 0)), metadata.get("bbox"), max_side)

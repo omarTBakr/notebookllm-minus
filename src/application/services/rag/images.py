@@ -11,27 +11,14 @@ from __future__ import annotations
 from collections import defaultdict
 
 from data.models import AssetModel, ChunkModel
-from shared.enums import AssetType
 from shared.utils import get_logger, get_settings
 
-from ..ingest.ImageRegionService import render_region
+from ..ingest.ImageRegionService import render_chunk
 from .citations import chunks_for_keys, keys_from_hits
 
 logger = get_logger(__name__)
 
 ImageMap = dict[tuple[str, int], tuple[bytes, str]]
-
-
-def _render(asset, chunk, max_side: int) -> tuple[bytes, str]:
-    metadata = chunk.chunk_metadata or {}
-    return render_region(
-        asset.file_bytes,
-        is_pdf=asset.asset_type != AssetType.IMAGE,
-        content_hash=asset.content_hash or asset.asset_id,
-        page_index=int(metadata.get("page", 0)),
-        bbox=metadata.get("bbox"),
-        max_side=max_side,
-    )
 
 
 async def load_hit_images(db, hits: list[dict], max_side: int | None = None) -> ImageMap:
@@ -66,7 +53,7 @@ async def load_hit_images(db, hits: list[dict], max_side: int | None = None) -> 
 
         for order, chunk in chunks:
             try:
-                images[(asset_id, order)] = _render(asset, chunk, max_side)
+                images[(asset_id, order)] = render_chunk(asset, chunk.chunk_metadata, max_side)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Could not render picture %s:%s: %s", asset_id, order, exc)
 
@@ -79,4 +66,4 @@ async def load_chunk_image(db, asset, chunk_order: int, max_side: int | None = N
     chunk = chunks.get(chunk_order)
     if chunk is None or (chunk.chunk_metadata or {}).get("kind") != "image":
         return None
-    return _render(asset, chunk, max_side or get_settings().IMAGE_MAX_SIDE_PX)
+    return render_chunk(asset, chunk.chunk_metadata, max_side or get_settings().IMAGE_MAX_SIDE_PX)

@@ -17,11 +17,11 @@ from collections import defaultdict
 
 from application.providers.embedding.image import ImageEmbeddingInterface
 from data.repositories.interfaces import VectorRepository
-from shared.enums import AssetType, EmbeddingInputType
+from shared.enums import EmbeddingInputType
 from shared.utils.images import InvalidImageError
 
 from ..core.BaseService import BaseService
-from ..ingest.ImageRegionService import render_region
+from ..ingest.ImageRegionService import render_chunk
 from .NLPService import NLPService
 
 #: Pictures sent to the embedder per request.
@@ -113,15 +113,7 @@ class ImageIndexService(BaseService):
         return {"collection": collection, "images_indexed": indexed, "images_skipped": skipped}
 
     def _render(self, asset, chunk) -> bytes:
-        metadata = chunk.chunk_metadata or {}
-        data, _ = render_region(
-            asset.file_bytes,
-            is_pdf=asset.asset_type != AssetType.IMAGE,
-            content_hash=asset.content_hash or asset.asset_id,
-            page_index=int(metadata.get("page", 0)),
-            bbox=metadata.get("bbox"),
-            max_side=self.settings.IMAGE_MAX_SIDE_PX,
-        )
+        data, _ = render_chunk(asset, chunk.chunk_metadata, self.settings.IMAGE_MAX_SIDE_PX)
         return data
 
     # --- reading --------------------------------------------------------------

@@ -114,21 +114,10 @@ async def _correct(pages: list[dict], settings) -> int:
 
 def region_renderer(asset, max_side: int):
     """``render(page, region) -> (bytes, mime)`` over one asset's stored bytes."""
-    from application.services.ingest.ImageRegionService import render_region
-    from shared.enums import AssetType
-
-    is_pdf = asset.asset_type != AssetType.IMAGE
-    content_hash = asset.content_hash or asset.asset_id
+    from application.services.ingest.ImageRegionService import render_asset_region
 
     def render(page: dict, region: dict) -> tuple[bytes, str]:
-        return render_region(
-            asset.file_bytes,
-            is_pdf=is_pdf,
-            content_hash=content_hash,
-            page_index=page["page_index"],
-            bbox=region.get("bbox"),
-            max_side=max_side,
-        )
+        return render_asset_region(asset, page["page_index"], region.get("bbox"), max_side)
 
     return render
 

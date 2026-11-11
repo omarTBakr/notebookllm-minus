@@ -46,6 +46,7 @@ package "application.services.ingest" {
     +page_has_marks(path, index)
     +whole_page_region(w, h)
     +render_region(data, is_pdf, page, bbox, max_side)  ' LRU cached
+    +render_chunk(asset, chunk_metadata, max_side)  ' the asset's bytes, kind and cache key
   }
   class FigureRules <<dataclass>> {
     +min_side_px
