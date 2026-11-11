@@ -60,6 +60,26 @@ def test_every_documented_key_is_a_real_field():
     )
 
 
+# Fields that are not .env knobs: ProviderCache sets them per client (see the
+# comments on each in config.py), so documenting them would invite setting them
+# globally, which is exactly what they must not be.
+INTERNAL = {"OLLAMA_BASE_URL_OVERRIDE", "OLLAMA_NUM_CTX", "CHAT_THINKING_OVERRIDE"}
+
+
+def test_every_setting_is_documented_in_the_example():
+    """The other direction: a field nobody wrote down.
+
+    A setting missing from `.env.example` still works, at its default, which is
+    why nothing notices. Eleven had gone missing this way, among them every
+    knob for what counts as a figure. Adding a field now means adding its line,
+    or naming it in INTERNAL with the reason.
+    """
+    missing = set(Settings.model_fields) - documented_keys(ENV_EXAMPLE) - INTERNAL
+
+    assert not missing, f"{ENV_EXAMPLE.name} does not document {sorted(missing)}"
+    assert INTERNAL <= set(Settings.model_fields), "INTERNAL names a field that no longer exists"
+
+
 def test_the_ollama_host_and_port_are_still_there_specifically():
     """The exact fields the outage traced back to.
 

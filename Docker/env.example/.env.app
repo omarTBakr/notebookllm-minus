@@ -57,6 +57,8 @@ EMBEDDING_BACKEND="nvidia"
 # Host's Ollama, reached from the container (localhost would be the container).
 OLLAMA_HOST="host.docker.internal"
 OLLAMA_PORT=11434
+# A second Ollama over the network; its models join the picker. Unset = local only.
+# OLLAMA_CLOUD_BASE_URL="https://your-host.example"
 
 # Fill in the key for each backend you select; a blank one fails startup.
 NVIDIA_API_KEY=""
@@ -131,7 +133,22 @@ IMAGE_EMBEDDING_SIZE=768
 IMAGE_CAPTION_MODEL_ID="local/gemma3:4b"
 IMAGE_TOP_K=4
 IMAGE_MAX_PER_ANSWER=4
+# Only for IMAGE_EMBEDDING_BACKEND="llamacpp": where that llama-server listens.
+# IMAGE_EMBEDDING_URL="http://embedder:8080"
+# Defaults shown; uncomment to change. What counts as a figure, how large a
+# picture is sent to a model, and the largest picture the composer accepts.
+# IMAGE_MIN_SIDE_PX=96
+# IMAGE_MIN_AREA_RATIO=0.02
+# IMAGE_MAX_REPEAT=3
+# IMAGE_MAX_SIDE_PX=1024
+# IMAGE_MIN_SCORE=0.0
+# IMAGE_EMBEDDING_TIMEOUT_S=60
+# IMAGE_QUERY_MAX_BYTES=5242880
+# Figure <-> passage links: partners remembered per chunk at ingest, and added
+# to one answer.
 LINKS_ENABLED=true
+# LINK_MAX_TEXT_PER_IMAGE=2
+# LINK_MAX_IMAGES_PER_TEXT=2
 LINK_MAX_IMAGES_PER_ANSWER=2
 LINK_MAX_PASSAGES_PER_ANSWER=2
 
