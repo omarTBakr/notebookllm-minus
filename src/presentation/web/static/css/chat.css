@@ -350,3 +350,6 @@
   margin-inline-end: 6px;
   border: 1px solid var(--border);
 }
+
+/* A citation that came along with another (a passage's figure, a figure's text). */
+.sources-block__linked { font-size: 0.75rem; color: var(--text-muted); margin-inline-start: 6px; white-space: nowrap; }

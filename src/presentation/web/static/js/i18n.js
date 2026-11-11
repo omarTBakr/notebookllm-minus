@@ -107,6 +107,7 @@ const STRINGS = {
     imageTooLarge: "The image is larger than 5 MB",
     imageCitation: "Image",
     imageWithMemory: "A picture cannot be saved to memory; remove it first",
+    linkedWith: "with",
     chars: "characters",
     citations: "Sources",
     // Abbreviated because it sits inline in a citation, after the filename.
@@ -330,6 +331,7 @@ const STRINGS = {
     imageTooLarge: "حجم الصورة أكبر من 5 ميغابايت",
     imageCitation: "صورة",
     imageWithMemory: "لا يمكن حفظ صورة في الذاكرة؛ أزلها أولًا",
+    linkedWith: "مع",
     chars: "حرفًا",
     citations: "المصادر",
     page: "ص.",

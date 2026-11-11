@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { t } from "./i18n.js";
-import { citationLabel, citationTitle } from "./citation_label.js";
+import { citationLabel, citationTitle, linkedHint } from "./citation_label.js";
 import { renderInto } from "./markdown.js";
 import { state } from "./state.js";
 import { $ } from "./dom.js";
@@ -194,6 +194,15 @@ function citationsBlock(citations) {
     score.textContent = cite.score ?? "";
 
     item.append(num, source, score);
+
+    // Brought in by a link rather than found by the search: say with what.
+    const hint = linkedHint(cite, t);
+    if (hint) {
+      const linked = document.createElement("span");
+      linked.className = "sources-block__linked";
+      linked.textContent = hint;
+      item.append(linked);
+    }
     list.append(item);
   }
 

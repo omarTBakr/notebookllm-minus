@@ -26,6 +26,14 @@ export function citationLabel(cite, t) {
   return cite.source;
 }
 
+/** Why a citation is there when it was not retrieved on its own: it is the
+ *  partner of citation [n] -- the figure a passage refers to, or the passage
+ *  that explains a figure. Empty for an ordinary citation. */
+export function linkedHint(cite, t) {
+  if (cite.linked_to === null || cite.linked_to === undefined) return "";
+  return `↳ ${t("linkedWith")} [${cite.linked_to}]`;
+}
+
 /** The tooltip on that link: what clicking it will do. */
 export function citationTitle(cite, t) {
   if (cite.time_label) return t("openAtMoment");
