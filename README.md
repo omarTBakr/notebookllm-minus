@@ -147,6 +147,11 @@ startup with the full list rather than on first use. The ones worth knowing abou
 | `OCR_ENABLED` / `OCR_EXTRACTOR` | re-read Arabic pages with `qalam` (default) or Tesseract instead. **Off by default** — it loses the word boxes a highlight needs |
 | `OCR_WORKERS` | pages OCR'd at once. `0` = every CPU the process may use, bounded by memory |
 | `CELERY_WORKER_CONCURRENCY` | parse batches in flight per worker. `0` = one per available CPU (cgroup and affinity aware) |
+| `MULTIMODAL_ENABLED` | pictures become searchable sources. Off leaves the pipeline exactly as it was. Needs `ollama pull embeddinggemma-2:440m-q8_0-text-vision` on an Ollama **0.40 or newer** |
+| `IMAGE_EMBEDDING_BACKEND` / `IMAGE_EMBEDDING_MODEL_ID` / `IMAGE_EMBEDDING_SIZE` | the one multimodal embedder, global rather than per chat: `ollama` (the host daemon) or `llamacpp` (a `llama-server` with an mmproj at `IMAGE_EMBEDDING_URL`). 768 for EmbeddingGemma 2 |
+| `IMAGE_CAPTION_MODEL_ID` | the vision chat model that captions every picture at ingest, qualified like any model id (`local/gemma3:4b`). Empty = the nearest text on the page |
+| `IMAGE_TOP_K` / `IMAGE_MAX_PER_ANSWER` | picture hits kept per query, and how many pictures reach a vision model with one answer |
+| `LINKS_ENABLED` / `LINK_MAX_*` | figure ↔ passage links: how many partners are remembered per chunk at ingest, and how many are added to one answer |
 
 Only the API key for a backend you actually selected has to be filled in, and it is checked
 during startup — a blank key means the app refuses to boot rather than failing on the first
@@ -250,6 +255,8 @@ approximate rather than silently pointing at the wrong sentence.
 - `/memory I prefer short answers` stores a durable fact about the user, extracted on a worker and folded into every later answer
 - **Agentic answering:** every grounded question is planned first. One structured call classifies it (chit-chat, simple, complex), rewrites it to stand alone without the chat history, and lists the retrieval queries. A complex question is researched part by part: each part is retrieved, reranked and answered with its own citations in parallel, then one streamed answer combines the parts with the original question. The UI ticks the parts off as they finish (`AGENTIC_RAG_ENABLED`)
 - **Reranking:** vector search fetches a wider pool (`RERANK_CANDIDATES`), and a multilingual cross-encoder (`BAAI/bge-reranker-v2-m3`, as a quantized GGUF served by llama.cpp's `llama-server` in the `reranker` container, about 1 GB of RAM) keeps the best `top_k`. A failed or slow rerank falls back to vector order
+- **Pictures as sources** (`MULTIMODAL_ENABLED`): figures inside PDFs are found at ingest (icons, bullets and logos that repeat across pages are skipped; a scanned page OCR gives up on is kept as one picture), and PNG/JPEG/WebP files can be added as sources. Every picture is captioned once by a vision model (`IMAGE_CAPTION_MODEL_ID`, with the nearest "Figure 3: …" line as the fallback) and embedded with EmbeddingGemma 2, which puts text and images in one 768-d space, Arabic included, so a question in either language finds the chart it describes. A question can carry a picture too (paperclip, paste or drop). Vision models see the cited figures; any other model reads the captions
+- **Figures travel with their text** (`LINKS_ENABLED`): at ingest each figure is linked to the passages that name it ("Figure 3", "الشكل ٣") or sit next to it on the page, and each passage to its figures. At answer time a retrieved passage brings its figure and a retrieved figure brings the passage that explains it, appended after the ranked hits and capped (`LINK_MAX_*_PER_ANSWER`). The citation list shows a figure brought in this way as "↳ with [n]"
 - **Guardrails:** a guard model checks the question before the answer model sees it (`InputGuardrail.abefore_model`), and checks the answer passage by passage as it streams (`OutputGuardrail.aafter_model`). Both are LangChain `AgentMiddleware`. Each stage has its own Celery queue, worker and model. Checks are micro-batched: a batch goes when `GUARDRAIL_BATCH_SIZE` checks are waiting or `GUARDRAIL_BATCH_MAX_WAIT_S` has passed, whichever comes first
 
 **Studio**
@@ -371,17 +378,18 @@ flowchart LR
         F["fetch_url_task<br/>fetch → attach"]
         P["process_data_task<br/>plan the page batches"]
         A["assemble_chunks_task<br/>order → chunk → store"]
-        PA["parse_batch_task<br/>× N, in parallel"]
+        PA["parse_batch_task<br/>× N, in parallel<br/>+ find figures"]
     end
 
     subgraph correct["postprocess queue"]
-        C["postprocess_batch_task<br/>repair pages with a model"]
+        C["postprocess_batch_task<br/>repair pages with a model<br/>+ caption each figure"]
         S["summarise_chunks_task<br/>one-line summaries for Studio"]
     end
 
     subgraph index["index queue"]
         I["index_project_task<br/>embed → upsert"]
         B["build_vector_index_task"]
+        IM["index_images_task<br/>embed pictures → project_&lt;id&gt;__img"]
     end
 
     DB[("ingest_batches<br/>ingest_runs")]
@@ -393,9 +401,25 @@ flowchart LR
     C -->|"corrected pages"| DB
     C -->|"last one claims the run"| A
     DB -.->|"read in page order"| A
-    A --> I --> B
+    A --> I --> B --> IM
     A --> S
 ```
+
+With `MULTIMODAL_ENABLED` the same four stages also carry the pictures. Parse records *where*
+each figure sits (page, bounding box, the PDF's own image id) and keeps nothing else; a page
+that is still empty after OCR but has something drawn on it becomes one picture. Postprocess
+captions each one with a vision model, handing it the text printed next to the figure as
+context. Assemble turns every figure into an **image chunk** after the text chunks, shaped
+like a text chunk (`page`, a `highlight` in the same coordinate space, the caption as its
+content) so citations, `/locate` and the PDF viewer's highlight box need no new code, and
+then **links** it: a passage that names the figure's label ("Figure 3", "Fig. 3",
+"الشكل ٣", Arabic-Indic digits included) links across pages; on the same page, passages
+whose highlight rectangles sit directly above or below the figure link by distance, and
+anything else on the page links weakly. The best few on each side are written into
+`chunk_metadata` as `linked_images` / `linked_chunks`. The caption is indexed with the text,
+so a plain text search finds a figure by what it says; the pixels are cut back out of the
+stored asset whenever they are needed and embedded into a second collection per notebook,
+`project_<id>__img`, independent of the chat's own text embedder.
 
 The claim is the whole of the coordination: every batch asks whether it was the last, and one
 atomic `UPDATE` answers yes exactly once. See [Background processing](#background-processing)
@@ -430,14 +454,17 @@ sequenceDiagram
     participant V as Vector store
     participant L as Chat model
 
-    U->>R: { text }
+    U->>R: { text, image? }
     R->>R: read history (before storing the question,<br/>or it arrives in context twice)
-    R->>R: store user turn
+    R->>R: caption an attached picture;<br/>store user turn (text + the caption, never the pixels)
     R->>CC: answer_stream(question, history, lang)
     CC->>V: collection has points?
     alt has documents
         V-->>CC: passages + metadata
-        CC->>CC: rag prompt + numbered documents
+        V-->>CC: pictures (project_<id>__img), by text or by the attached picture
+        CC->>CC: rerank passages and captions together
+        CC->>CC: add each hit's linked partner (its figure / its text)
+        CC->>CC: rag prompt + numbered documents<br/>(+ the pictures, for a vision model)
     else no documents
         CC->>CC: plain chat prompt
     end
@@ -450,6 +477,15 @@ sequenceDiagram
     CC-->>U: done
     R->>R: store assistant turn (answer only)
 ```
+
+A picture hit carries its caption as text, so the reranker scores passages and captions on one
+scale and they compete for the same `top_k`; without a reranker the passages keep `top_k` and
+up to `IMAGE_TOP_K` pictures follow. Linked partners come after that, never in place of a
+ranked hit, and are capped per answer. In the prompt a partner's heading says which document
+it belongs with (`## Document 4 (belongs with Document 2)`). Whether the chat's model can look
+at the pictures is read from the catalogue the model picker uses (Ollama's `vision`
+capability, OpenRouter's image input, NVIDIA's vision-named models, Claude and Gemini) and
+cached; a model without vision gets the captions only.
 
 `chat_id` **is** the `project_id`, so a notebook is its own document space and reuses the
 ingestion path unchanged. Vector point ids are `uuid5(asset_id + chunk_order)` — stable
@@ -714,7 +750,7 @@ erDiagram
         string asset_id FK
         int chunk_order "with asset_id, the stable point key"
         text chunk_content
-        jsonb chunk_metadata "page, source; row + sheet for a spreadsheet row"
+        jsonb chunk_metadata "page, source, highlight; row + sheet for a spreadsheet row; kind=image, bbox, nearby_text, linked_chunks for a figure; linked_images for a passage"
         text chunk_summary "one line, for Studio"
     }
     TASK_EXECUTIONS {
@@ -800,17 +836,18 @@ Full interactive reference at `/docs`. The shape of it:
 | `POST` | `/nlp/index/search/{project_id}` | ranked passages with citation metadata |
 | `GET` | `/nlp/index/info/{project_id}` | collection name, size, width |
 | `GET/POST/PATCH/DELETE` | `/chat/users…`, `/chat/users/{id}/sessions`, `/chat/sessions/{id}/chats` | profiles, sessions, notebooks |
-| `POST` | `/chat/chats/{chat_id}/message` | ask a question — streams SSE |
+| `POST` | `/chat/chats/{chat_id}/message` | ask a question — streams SSE. `image` (a data URL, PNG/JPEG/WebP, ≤ `IMAGE_QUERY_MAX_BYTES`) attaches a picture to it |
 | `GET` | `/chat/chats/{chat_id}/messages` | transcript |
 | `POST/GET/PATCH/DELETE` | `/chat/chats/{chat_id}/assets…` | a notebook's documents, content, rename, delete |
 | `POST` | `/chat/chats/{chat_id}/sources/url` | add a link (PDF, article, YouTube, public Google Sheet) — `202` with the fetch task's id |
-| `GET` | `/chat/chats/{chat_id}/assets/{asset_id}/chunks/{n}/locate` | where a citation sits on the page |
+| `GET` | `/chat/chats/{chat_id}/assets/{asset_id}/chunks/{n}/locate` | where a citation sits on the page; `kind`, `linked_images` / `linked_chunks` for a figure or the passages tied to one |
+| `GET` | `/chat/chats/{chat_id}/assets/{asset_id}/chunks/{n}/image` | the picture an image chunk shows, cut out of its source (`size` caps the longest side); 404 for a text chunk |
 | `GET` | `/chat/chats/{chat_id}/indexing` | ingest progress, mid-upload; `next_task_id` when a task hands on to another |
 | `GET` | `/chat/models` · `/chat/models/quick` | the catalogue the picker is built from (full probe · configured hosted models, no network calls) |
 | `POST/GET` | `/chat/chats/{chat_id}/studio/{kind}` | generate a mind map, flashcards or quiz (`202`, or `200` with the id of the run already going) · read the latest set |
 | `GET` | `/chat/chats/{chat_id}/memory?q=` | stored facts closest to *q*, for the composer's memory preview |
 | `POST` | `/chat/chats/{chat_id}/documents` | attach a file to the notebook and queue its ingestion (`202`) |
-| `GET` | `/chat/chats/{chat_id}/assets/{asset_id}/content` | the stored file, for the viewer |
+| `GET` | `/chat/chats/{chat_id}/assets/{asset_id}/content` | the stored file, for the viewer (`image/*` for an uploaded picture) |
 | `PATCH` | `/chat/chats/{chat_id}/models` | point a notebook at different models |
 | `PATCH` | `/chat/chats/{chat_id}/settings` | temperature, output length, chunking, colour |
 
@@ -1090,7 +1127,7 @@ src/
 │   └── middleware/              # request logging
 ├── application/                # tier 2 — the actual work
 │   ├── services/                 # the work, grouped: account · conversation (sessions, chats, messages, sources) · core · ingest · llm · memory · rag · studio
-│   ├── providers/                 # LLM vendor adapters: chatting/, embedding/, provider_cache
+│   ├── providers/                 # LLM vendor adapters: chatting/, embedding/ (+ embedding/image/, the multimodal embedder), reranking/, provider_cache
 │   ├── tasks/                     # Celery task bodies
 │   │   ├── jobs/                    # ingest/ (plan · parse · postprocess · assemble · summarise) · index · studio · memory · maintenance
 │   │   ├── runtime.py               # the resources and timeout handling every job shares
