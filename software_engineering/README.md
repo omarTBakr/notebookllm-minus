@@ -4,6 +4,8 @@ UML for NotebookLLM⁻, written in PlantUML. Every `.puml` has its rendered `.pn
 to it. The diagrams describe the system as it is now, including accounts and per-user isolation,
 agentic answering, reranking, guardrails, Langfuse, and pictures as searchable sources (multimodal retrieval). Update them in the same change as the code they describe.
 
+The written documentation, one page per feature, is in [`docs/`](../docs/README.md).
+
 ## Rendering
 
 ```bash

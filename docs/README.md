@@ -4,6 +4,7 @@ One page per feature that is built, and a placeholder per feature that is planne
 
 Where the detail lives:
 
+- **[`architecture.md`](architecture.md)**: the tiers, the project structure and the API table.
 - **`docs/features/`**: what each feature does, how it works, its settings, API, data, tests and limits.
 - **`docs/roadmap/`**: planned work, one placeholder page each.
 - **[`software_engineering/`](../software_engineering/README.md)**: UML (user stories, use cases, sequence and class diagrams).
