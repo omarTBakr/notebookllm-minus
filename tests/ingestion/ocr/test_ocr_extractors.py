@@ -304,3 +304,40 @@ def _fake_catalogue(monkeypatch, models: dict):
         "urlopen",
         lambda *a, **k: _Response(json.dumps(body).encode()),
     )
+
+
+def test_building_named_extractors_probes_only_those(monkeypatch):
+    """An availability probe can import torch or make an HTTP call. The
+    application asks for one engine on every scanned page and every uploaded
+    picture, and used to pay for all thirteen probes each time."""
+    from application.arabic_extraction import registry
+    from application.arabic_extraction.base import ArabicExtractor
+
+    probed = []
+
+    class Wanted(ArabicExtractor):
+        name = "wanted"
+
+        @classmethod
+        def available(cls):
+            probed.append(cls.name)
+            return True, ""
+
+        def _extract(self, page):
+            return ""
+
+    class Other(Wanted):
+        name = "other"
+
+    monkeypatch.setattr(registry, "ALL_EXTRACTORS", (Wanted, Other))
+
+    built = registry.build(["wanted"])
+
+    assert [type(extractor) for extractor in built] == [Wanted]
+    assert probed == ["wanted"]
+
+    # Asking for everything still asks everything: the benchmark's table needs
+    # every engine's reason.
+    probed.clear()
+    assert [entry.name for entry in registry.survey()] == ["wanted", "other"]
+    assert probed == ["wanted", "other"]

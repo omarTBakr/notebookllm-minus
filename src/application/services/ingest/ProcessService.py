@@ -299,6 +299,26 @@ class ProcessService(BaseService):
 
         return max(1, min(limit, pending))
 
+    @staticmethod
+    def _tesseract_best():
+        """The OCR engine both callers below use, warmed up, or None if it cannot run.
+
+        tesseract-best with Arabic and English together: a scanned page or an
+        uploaded picture is as likely to be the English one. Only this engine
+        is probed (see registry.survey).
+        """
+        from application.arabic_extraction.registry import build
+
+        extractors = build(["tesseract-best"], **{"tesseract-best": {"lang": "ara+eng"}})
+
+        if not extractors:
+            return None
+
+        extractor = extractors[0]
+        extractor.warm_up()
+
+        return extractor
+
     def ocr_unreadable_pages(self, file_path: Path, start: int, end: int) -> dict[int, str]:
         """OCR the pages of ``[start, end)`` that have no usable text layer.
 
@@ -324,7 +344,6 @@ class ProcessService(BaseService):
         from application.arabic_extraction.extractors.qalam_extractor import (
             QalamExtractor,
         )
-        from application.arabic_extraction.registry import build
 
         ok, reason = QalamExtractor.available()
 
@@ -341,18 +360,15 @@ class ProcessService(BaseService):
         if not flagged:
             return {}
 
-        extractors = build(["tesseract-best"], **{"tesseract-best": {"lang": "ara+eng"}})
+        extractor = self._tesseract_best()
 
-        if not extractors:
+        if extractor is None:
             self.logger.warning(
                 "%d page(s) of %s have no usable text layer, but tesseract-best cannot run; " "they stay empty",
                 len(flagged),
                 file_path.name,
             )
             return {}
-
-        extractor = extractors[0]
-        extractor.warm_up()
 
         # Tesseract is built with OpenMP and will otherwise start its own
         # threads per page. Stacked under the pool below that oversubscribes
@@ -407,10 +423,9 @@ class ProcessService(BaseService):
         import pymupdf  # ty: ignore[unresolved-import]
 
         from application.arabic_extraction.base import Page as OcrPage
-        from application.arabic_extraction.registry import build
 
-        extractors = build(["tesseract-best"], **{"tesseract-best": {"lang": "ara+eng"}})
-        if not extractors:
+        extractor = self._tesseract_best()
+        if extractor is None:
             return ""
 
         try:
@@ -423,8 +438,6 @@ class ProcessService(BaseService):
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
             tmp.write(pdf_bytes)
             tmp.flush()
-            extractor = extractors[0]
-            extractor.warm_up()
             page = OcrPage(path=Path(tmp.name), number=0)
             try:
                 result = extractor.run(page)
