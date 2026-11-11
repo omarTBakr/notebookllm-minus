@@ -102,6 +102,21 @@ def nearby_text(page: dict, bbox: list[float], max_chars: int = 300) -> str:
     return candidates[0][4][:max_chars]
 
 
+def annotate_nearby(pages: list[dict]) -> None:
+    """Record the text printed next to every region as ``region["nearby"]``.
+
+    Kept on the region, and later on the image chunk, because it is the most
+    reliable place to read a figure's own label ("Figure 3", "الشكل ٣") from:
+    a model's caption may paraphrase it away, and the linker (ChunkLinker)
+    matches passages to figures by that label.
+    """
+    for page in pages:
+        for region in page.get("images") or []:
+            if "nearby" in region:
+                continue
+            region["nearby"] = "" if region.get("whole_page") else nearby_text(page, region["bbox"])
+
+
 def fallback_caption(page: dict, region: dict) -> str:
     """The caption used when no model wrote one."""
     near = nearby_text(page, region["bbox"]) if not region.get("whole_page") else ""

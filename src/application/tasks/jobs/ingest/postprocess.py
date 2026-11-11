@@ -141,6 +141,7 @@ async def _caption(pages: list[dict], asset_id: str, db, settings) -> int:
     """
     from application.services.ingest.ImageCaptionService import (
         ImageCaptionService,
+        annotate_nearby,
         fallback_caption,
     )
     from data.models import AssetModel
@@ -148,6 +149,8 @@ async def _caption(pages: list[dict], asset_id: str, db, settings) -> int:
     regions = [(page, region) for page in pages for region in page.get("images") or []]
     if not regions:
         return 0
+
+    annotate_nearby(pages)
 
     def fallback_all() -> None:
         for page, region in regions:

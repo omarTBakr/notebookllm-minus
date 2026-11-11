@@ -516,6 +516,17 @@ class Settings(BaseSettings):
     IMAGE_MAX_PER_ANSWER: int = 4
     # Largest image accepted from the chat composer, in bytes.
     IMAGE_QUERY_MAX_BYTES: int = 5 * 1024 * 1024
+    # Figure <-> passage links. At ingest each picture is linked to the text
+    # chunks that refer to it ("Figure 3", "الشكل ٣") or sit next to it on the
+    # page; at answer time a retrieved passage brings its linked picture and a
+    # retrieved picture brings the passage that explains it. The partners are
+    # added after the ranked hits, never in place of one, and capped per
+    # answer by the last two settings.
+    LINKS_ENABLED: bool = True
+    LINK_MAX_TEXT_PER_IMAGE: int = 2
+    LINK_MAX_IMAGES_PER_TEXT: int = 2
+    LINK_MAX_IMAGES_PER_ANSWER: int = 2
+    LINK_MAX_PASSAGES_PER_ANSWER: int = 2
 
     # Which library extracts text from PDFs. Measured on the 274-page Arabic
     # guide (25 MB), whole document, after NFKC normalisation:

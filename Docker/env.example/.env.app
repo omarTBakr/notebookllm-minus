@@ -131,6 +131,9 @@ IMAGE_EMBEDDING_SIZE=768
 IMAGE_CAPTION_MODEL_ID="local/gemma3:4b"
 IMAGE_TOP_K=4
 IMAGE_MAX_PER_ANSWER=4
+LINKS_ENABLED=true
+LINK_MAX_IMAGES_PER_ANSWER=2
+LINK_MAX_PASSAGES_PER_ANSWER=2
 
 # --- Ingestion (parsing and chunking) ------------------------------------------
 # pymupdf: slower (~2.3 s/page) but the only loader that yields citation highlights.

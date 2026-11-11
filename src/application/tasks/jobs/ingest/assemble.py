@@ -116,6 +116,8 @@ def image_chunk_metadata(asset_name: str, pages: list[dict]) -> list[tuple[str, 
                     "r": [region["bbox"]],
                 },
             }
+            if region.get("nearby"):
+                metadata["nearby_text"] = region["nearby"][:300]
             if region.get("xref"):
                 metadata["xref"] = region["xref"]
             if region.get("whole_page"):
@@ -210,6 +212,14 @@ async def assemble_chunks(asset_id: str, db, recorder=None) -> dict:
         )
         for offset, (caption, metadata) in enumerate(images)
     ]
+
+    # Which passages each picture belongs to, and the other way round. In
+    # place on the metadata, before the rows are written, so the links are
+    # part of the chunk from the start (ChunkLinker).
+    if images and SETTINGS.LINKS_ENABLED:
+        from application.services.ingest.ChunkLinker import LinkRules, link_chunks
+
+        link_chunks(chunks, LinkRules.from_settings(SETTINGS))
 
     await stage(TaskStage.STORING.value, run.total_batches, run.total_batches)
 
