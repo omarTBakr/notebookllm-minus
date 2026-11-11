@@ -61,7 +61,7 @@ class MongoProvider(DbProvider):
         if self.client is not None:
             return
         try:
-            self.client = AsyncIOMotorClient(self.settings.MONGO_URI)
+            self.client = AsyncIOMotorClient(self.settings.mongo_uri)
             self.db = self.client[self.settings.MONGO_DB_NAME]
             await self.client.admin.command("ping")
             self.logger.info("Connected to MongoDB (database=%s)", self.settings.MONGO_DB_NAME)
