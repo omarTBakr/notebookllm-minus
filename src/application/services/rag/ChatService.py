@@ -492,18 +492,11 @@ class ChatService(BaseService):
             note = parser.get("rag", "user_image_note", {"caption": image_caption})
             searched = f"{question}\n{note}".strip()
 
-        if self.input_guardrail is not None and searched:
-            update = await self.input_guardrail.abefore_model({"messages": [HumanMessage(content=searched)]})
-            if update is not None:
-                verdict = update.get("guardrail_verdict") or {}
-                yield {
-                    "type": "guardrail",
-                    "stage": "input",
-                    "category": verdict.get("category", "undecided"),
-                    "message": update["messages"][-1].content,
-                }
-                yield {"type": "done"}
-                return
+        refusal = await self._refusal(searched)
+        if refusal is not None:
+            yield refusal
+            yield {"type": "done"}
+            return
 
         memory_hits: list[dict] = []
 
@@ -546,19 +539,7 @@ class ChatService(BaseService):
             return
 
         if grounded:
-            _search_started = perf_counter()
-            queries = plan.sub_queries if plan.intent != "chitchat" else [searched]
-            hits = await self._search_and_rerank(
-                chat_id,
-                queries,
-                plan.standalone_query if plan.intent != "chitchat" else searched,
-                top_k,
-                asset_ids,
-                image_query=image[0] if image else None,
-            )
-            hits = await self._with_partners(hits, link_lookup)
-            RETRIEVAL_SECONDS.observe(perf_counter() - _search_started)
-            RETRIEVAL_HITS.observe(len(hits))
+            hits = await self._retrieve(chat_id, plan, searched, top_k, asset_ids, image, link_lookup)
 
         system_prompt, user_prompt = self.build_prompt(question, hits, memory_hits, lang)
 
@@ -592,6 +573,54 @@ class ChatService(BaseService):
             searched, system_prompt, user_prompt, history, max_tokens, temperature, images=pictures
         ):
             yield event
+
+    async def _refusal(self, searched: str) -> dict | None:
+        """The ``guardrail`` event for a question the input guard flags, or None to go on."""
+        if self.input_guardrail is None or not searched:
+            return None
+
+        update = await self.input_guardrail.abefore_model({"messages": [HumanMessage(content=searched)]})
+        if update is None:
+            return None
+
+        verdict = update.get("guardrail_verdict") or {}
+        return {
+            "type": "guardrail",
+            "stage": "input",
+            "category": verdict.get("category", "undecided"),
+            "message": update["messages"][-1].content,
+        }
+
+    async def _retrieve(
+        self,
+        chat_id: str,
+        plan: QueryPlan,
+        searched: str,
+        top_k: int,
+        asset_ids: list[str] | None,
+        image: tuple[bytes, str] | None,
+        link_lookup,
+    ) -> list[dict]:
+        """The hits for a one-pass answer: search, rerank, then linked partners. Timed."""
+        started = perf_counter()
+
+        # A chitchat plan only reaches here with a picture attached, and then
+        # its rewritten queries are small talk: search on what was asked.
+        planned = plan.intent != "chitchat"
+        hits = await self._search_and_rerank(
+            chat_id,
+            plan.sub_queries if planned else [searched],
+            plan.standalone_query if planned else searched,
+            top_k,
+            asset_ids,
+            image_query=image[0] if image else None,
+        )
+        hits = await self._with_partners(hits, link_lookup)
+
+        RETRIEVAL_SECONDS.observe(perf_counter() - started)
+        RETRIEVAL_HITS.observe(len(hits))
+
+        return hits
 
     async def _pictures(
         self,
