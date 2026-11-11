@@ -32,6 +32,7 @@ PUBLIC = "93.184.216.34"
 def test_google_sheet_urls_are_parsed(url, expected):
     assert google_sheet_reference(url) == expected
 
+
 ARTICLE = (
     "<html><head><title>How rivers carve canyons</title></head><body>"
     "<nav>Home | News | Sport | Weather</nav>"
@@ -410,8 +411,7 @@ def test_every_chunk_gets_the_stretch_of_video_it_quotes():
     page = transcript_page(json.dumps({"segments": segments}).encode())
 
     documents, layout, scales, timelines = _documents("talk", [page])
-    controller = ProcessService(chunk_size=300, chunk_overlap=0)
-    controller._pdf_pages, controller._text_scale, controller._timelines = layout, scales, timelines
+    controller = ProcessService(chunk_size=300, chunk_overlap=0).with_layout(layout, scales, timelines)
     controller.text.sanitize(documents)
 
     chunks = controller.split_file(documents)

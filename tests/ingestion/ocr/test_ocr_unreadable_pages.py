@@ -281,9 +281,7 @@ def test_a_chunk_of_an_ocred_page_carries_the_whole_page_highlight(monkeypatch):
     parse._fill_unreadable_pages(Path("x.pdf"), 0, 1, [page])
 
     documents, layout, scales, _ = _documents("book.pdf", [page])
-    controller = ProcessService()
-    controller._pdf_pages = layout
-    controller._text_scale = scales
+    controller = ProcessService().with_layout(layout, scales)
 
     chunks = controller.split_file(documents, extension=".pdf")
 

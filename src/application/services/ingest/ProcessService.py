@@ -66,6 +66,19 @@ class ProcessService(BaseService):
         # split_file give every chunk the stretch of video it came from.
         self._timelines: dict = {}
 
+    def with_layout(self, pages: dict, scales: dict | None = None, timelines: dict | None = None) -> "ProcessService":
+        """Give `split_file` the page geometry it computes highlights from.
+
+        For a caller that extracted the pages somewhere else -- batched ingest
+        parses them on other workers and reassembles them -- and so never went
+        through `process_file`, which is what fills these in otherwise.
+        """
+        self._pdf_pages = pages
+        self._text_scale = scales or {}
+        self._timelines = timelines or {}
+
+        return self
+
     def _pdf_loader(self, file_path: Path):
         """The PDF extractor named by PDF_LOADER.
 

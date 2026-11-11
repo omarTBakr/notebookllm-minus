@@ -15,6 +15,7 @@ from shared.utils import (
     EMBEDDING,
     NVIDIA,
     can,
+    family_of,
     is_safety_model,
     looks_like_embedding,
     parameters_of,
@@ -97,7 +98,7 @@ class NvidiaModelService(ModelService):
                     # Hosted: there is no local footprint to report, and the
                     # API publishes neither family nor parameter count.
                     "size_gb": None,
-                    "family": (tag.split("/")[0] if "/" in tag else None),
+                    "family": family_of(tag),
                     "parameters": parameters_of(tag),
                     "capabilities": None,
                 }

@@ -168,13 +168,11 @@ async def assemble_chunks(asset_id: str, db, recorder=None) -> dict:
 
     documents, layout, scales, timelines = _documents(asset_name, pages)
 
-    # split_file reads both off the instance -- the same contract the
+    # split_file reads these off the instance -- the same contract the
     # single-process path uses, where _process_pdf_with_layout fills them in.
-    # Setting them here is what keeps the highlight machinery working across
-    # the queue hop.
-    controller._pdf_pages = layout
-    controller._text_scale = scales
-    controller._timelines = timelines
+    # Handing them over here is what keeps the highlight machinery working
+    # across the queue hop.
+    controller.with_layout(layout, scales, timelines)
 
     # Normally done by process_file, which a batched pymupdf PDF does not go
     # through. The stores reject text the extractor can emit, so it has to
