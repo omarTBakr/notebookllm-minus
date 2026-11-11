@@ -22,14 +22,6 @@ def multimodal(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "MULTIMODAL_ENABLED", True)
     monkeypatch.setattr(settings, "ALLOWED_TYPES", [*settings.ALLOWED_TYPES, *IMAGE_TYPES])
-
-    # The ingest stages read the Settings celery_app bound when it was first
-    # imported. conftest rebuilds get_settings() for every test, so from the
-    # second test on that is a different object, and the switch has to be
-    # flipped on it too or the parse stage never looks for figures.
-    import celery_app
-
-    monkeypatch.setattr(celery_app.SETTINGS, "MULTIMODAL_ENABLED", True)
     return settings
 
 
