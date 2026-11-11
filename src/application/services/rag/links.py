@@ -12,14 +12,7 @@ of one; a database hiccup here costs the extras and nothing more.
 
 from __future__ import annotations
 
-from collections import defaultdict
-
-from data.models import ChunkModel
-from shared.utils import get_logger
-
-from .citations import keys_from_hits
-
-logger = get_logger(__name__)
+from .citations import chunks_for_keys, keys_from_hits
 
 
 def _hit_from_chunk(chunk, source_hit: dict) -> dict:
@@ -50,23 +43,10 @@ async def expand_links(db, hits: list[dict], max_images: int = 2, max_text: int 
     if not keys:
         return []
 
-    present = {(a, o) for a, o in keys}
-    by_asset: dict[str, list[int]] = defaultdict(list)
-    for asset_id, order in keys:
-        by_asset[asset_id].append(order)
-
-    chunk_model = ChunkModel(db)
+    present = set(keys)
 
     # 1. The hits' own rows, for their link fields.
-    rows: dict[tuple[str, int], object] = {}
-    for asset_id, orders in by_asset.items():
-        try:
-            found = await chunk_model.get_chunks_by_orders(asset_id, orders)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not read links for asset %r: %s", asset_id, exc)
-            continue
-        for order, chunk in found.items():
-            rows[(asset_id, order)] = chunk
+    rows = await chunks_for_keys(db, keys, what="read links")
 
     # 2. Which partners to fetch, in hit order, deduplicated.
     wanted_images: list[tuple[str, int, dict]] = []
@@ -92,20 +72,10 @@ async def expand_links(db, hits: list[dict], max_images: int = 2, max_text: int 
     if not wanted:
         return []
 
-    # 3. Fetch the partners, grouped by asset again.
-    fetch: dict[str, list[int]] = defaultdict(list)
-    for asset_id, order, _ in wanted:
-        fetch[asset_id].append(order)
-
-    partners: dict[tuple[str, int], object] = {}
-    for asset_id, orders in fetch.items():
-        try:
-            found = await chunk_model.get_chunks_by_orders(asset_id, orders)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not load linked chunks for asset %r: %s", asset_id, exc)
-            continue
-        for order, chunk in found.items():
-            partners[(asset_id, order)] = chunk
+    # 3. Fetch the partners.
+    partners = await chunks_for_keys(
+        db, [(asset_id, order) for asset_id, order, _ in wanted], what="load linked chunks"
+    )
 
     out = []
     for asset_id, order, source_hit in wanted:

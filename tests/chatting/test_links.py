@@ -84,9 +84,10 @@ async def test_expand_links_survives_a_broken_store(fake_db, monkeypatch):
         async def get_chunks_by_orders(self, *args, **kwargs):
             raise RuntimeError("db down")
 
-    # ChunkModel is a factory function in data.models, so the name links.py
-    # bound at import is what to replace, not an attribute on a class.
-    monkeypatch.setattr("application.services.rag.links.ChunkModel", Broken)
+    # ChunkModel is a factory function in data.models, so the name bound at
+    # import by the module that reads chunks (citations.chunks_for_keys) is
+    # what to replace, not an attribute on a class.
+    monkeypatch.setattr("application.services.rag.citations.ChunkModel", Broken)
 
     assert await expand_links(fake_db, [hit("0")]) == []
 

@@ -15,7 +15,7 @@ from shared.enums import AssetType
 from shared.utils import get_logger, get_settings
 
 from ..ingest.ImageRegionService import render_region
-from .citations import keys_from_hits
+from .citations import chunks_for_keys, keys_from_hits
 
 logger = get_logger(__name__)
 
@@ -42,26 +42,29 @@ async def load_hit_images(db, hits: list[dict], max_side: int | None = None) -> 
     """
     max_side = max_side or get_settings().IMAGE_MAX_SIDE_PX
 
-    by_asset: dict[str, list[int]] = defaultdict(list)
-    for asset_id, order in keys_from_hits(hits):
-        by_asset[asset_id].append(order)
+    rows = await chunks_for_keys(db, keys_from_hits(hits), what="load pictures")
 
-    chunks_model, assets_model = ChunkModel(db), AssetModel(db)
+    # Only the image chunks need their asset's bytes, so a text-only answer
+    # reads no asset at all.
+    by_asset: dict[str, list[tuple[int, object]]] = defaultdict(list)
+    for (asset_id, order), chunk in rows.items():
+        if (chunk.chunk_metadata or {}).get("kind") == "image":
+            by_asset[asset_id].append((order, chunk))
+
+    assets_model = AssetModel(db)
     images: ImageMap = {}
 
-    for asset_id, orders in by_asset.items():
+    for asset_id, chunks in by_asset.items():
         try:
             asset = await assets_model.get_asset(asset_id)
-            if asset is None or not asset.file_bytes:
-                continue
-            chunks = await chunks_model.get_chunks_by_orders(asset_id, orders)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not load pictures for asset %r: %s", asset_id, exc)
             continue
 
-        for order, chunk in chunks.items():
-            if (chunk.chunk_metadata or {}).get("kind") != "image":
-                continue
+        if asset is None or not asset.file_bytes:
+            continue
+
+        for order, chunk in chunks:
             try:
                 images[(asset_id, order)] = _render(asset, chunk, max_side)
             except Exception as exc:  # noqa: BLE001
