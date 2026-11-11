@@ -186,3 +186,8 @@ user_image_label = "the image the user attached to their question"
 # Shown in the search query and the history in place of a picture the user
 # attached: later turns and the retriever see this caption, not the pixels.
 user_image_note = "[Attached image: {caption}]"
+
+# Appended to a document's heading when it was not retrieved on its own but
+# brought in as the partner of another: the figure a passage refers to, or
+# the passage that explains a figure.
+linked_document_note = "(belongs with Document {num})"

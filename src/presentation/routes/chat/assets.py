@@ -282,6 +282,10 @@ async def locate_chunk(chat_id: str, asset_id: str, chunk_order: int, http_reque
             # "image" for a figure or an uploaded picture; its pixels are at
             # .../chunks/{chunk_order}/image.
             "kind": metadata.get("kind") or "text",
+            # Partners recorded at ingest (ChunkLinker): for a passage the
+            # figures it refers to or sits by, for a figure the passages.
+            "linked_images": metadata.get("linked_images") or [],
+            "linked_chunks": metadata.get("linked_chunks") or [],
         },
     )
 

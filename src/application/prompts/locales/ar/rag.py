@@ -145,3 +145,5 @@ images_attached_prompt = "الصور المرفقة بهذه الرسالة، ب
 user_image_label = "الصورة التي أرفقها المستخدم بسؤاله"
 
 user_image_note = "[صورة مرفقة: {caption}]"
+
+linked_document_note = "(مرتبط بالمستند {num})"

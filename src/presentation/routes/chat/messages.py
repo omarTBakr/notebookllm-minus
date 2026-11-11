@@ -168,6 +168,7 @@ async def send_message(chat_id: str, request: MessageRequest, http_request: Requ
                 image=picture,
                 image_caption=picture_caption,
                 image_lookup=service.image_lookup() if settings.MULTIMODAL_ENABLED else None,
+                link_lookup=(service.link_lookup() if settings.MULTIMODAL_ENABLED and settings.LINKS_ENABLED else None),
             ):
                 if event["type"] == "meta":
                     citations = event["citations"]

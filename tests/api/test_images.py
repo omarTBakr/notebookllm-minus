@@ -22,6 +22,14 @@ def multimodal(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "MULTIMODAL_ENABLED", True)
     monkeypatch.setattr(settings, "ALLOWED_TYPES", [*settings.ALLOWED_TYPES, *IMAGE_TYPES])
+
+    # The ingest stages read the Settings celery_app bound when it was first
+    # imported. conftest rebuilds get_settings() for every test, so from the
+    # second test on that is a different object, and the switch has to be
+    # flipped on it too or the parse stage never looks for figures.
+    import celery_app
+
+    monkeypatch.setattr(celery_app.SETTINGS, "MULTIMODAL_ENABLED", True)
     return settings
 
 
@@ -146,3 +154,43 @@ async def test_a_picture_question_streams_and_stores_a_text_note(client, seed, f
     # No caption model under test, so the note has a placeholder caption; the
     # pixels themselves are never stored.
     assert stored[-1].content.startswith("[Attached image:")
+
+
+# --- figure <-> passage links -------------------------------------------------------------------
+
+
+def figure_pdf() -> bytes:
+    """Page 1: a chart above 'Figure 1: ...'; page 2: a paragraph that cites it."""
+    import pymupdf
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=800)
+    page.insert_image(pymupdf.Rect(100, 150, 500, 450), stream=png(800, 600))
+    page.insert_text((100, 480), "Figure 1: Revenue by quarter, in millions of dollars.", fontsize=11)
+    page.insert_text((100, 520), "The company reports its revenue every quarter.", fontsize=11)
+    page = doc.new_page(width=600, height=800)
+    page.insert_text((100, 100), "As Figure 1 shows, the fourth quarter was the strongest of the year.", fontsize=11)
+    return doc.tobytes()
+
+
+async def test_a_pdf_figure_is_linked_to_the_text_that_cites_it(ingest, client, seed, fake_db, multimodal):
+    response = await ingest("c1", {"file": ("report.pdf", figure_pdf(), "application/pdf")})
+
+    assert response.status_code in (200, 201, 202), response.text
+    asset = next(a for a in fake_db.assets().items.values() if a.name == "report.pdf")
+    chunks = sorted((c for c in fake_db.chunks().items if c.asset_id == asset.asset_id), key=lambda c: c.chunk_order)
+
+    figures = [c for c in chunks if (c.chunk_metadata or {}).get("kind") == "image"]
+    assert len(figures) == 1
+    figure = figures[0]
+    assert figure.chunk_metadata["nearby_text"].startswith("Figure 1")
+
+    citing = [c for c in chunks if "As Figure 1 shows" in c.chunk_content]
+    assert citing, "the page-2 passage was not chunked"
+    assert figure.chunk_order in citing[0].chunk_metadata["linked_images"]
+    assert citing[0].chunk_order in figure.chunk_metadata["linked_chunks"]
+
+    body = (await client.get(f"/chat/chats/c1/assets/{asset.asset_id}/chunks/{figure.chunk_order}/locate")).json()
+    assert body["kind"] == "image"
+    assert citing[0].chunk_order in body["linked_chunks"]
+    assert body["linked_images"] == []

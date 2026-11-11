@@ -102,6 +102,18 @@ class MessageService(BaseService):
 
         return lambda hits: load_hit_images(self.db, hits)
 
+    def link_lookup(self):
+        """The callable `ChatService.answer_stream` uses to bring a hit's linked partners."""
+        from ..rag.links import expand_links
+
+        settings = self.settings
+        return lambda hits: expand_links(
+            self.db,
+            hits,
+            max_images=settings.LINK_MAX_IMAGES_PER_ANSWER,
+            max_text=settings.LINK_MAX_PASSAGES_PER_ANSWER,
+        )
+
     async def add_user_message(self, chat_id: str, text: str) -> None:
         await self.messages.create_message(
             Message(message_id=str(uuid.uuid4()), chat_id=chat_id, role=ChatRole.USER, content=text)

@@ -141,19 +141,9 @@ class ChatService(BaseService):
         parts = []
 
         if hits:
-            parts.extend(
-                parser.get(
-                    "rag",
-                    "document_prompt",
-                    {
-                        # 1-based so it lines up with the [1] the model is told to cite.
-                        "num": number,
-                        "source": (hit.get("metadata") or {}).get("source") or "unknown",
-                        "content": self._content(parser, hit),
-                    },
-                )
-                for number, hit in zip(numbers or range(1, len(hits) + 1), hits)
-            )
+            # 1-based so it lines up with the [1] the model is told to cite.
+            numbered = list(zip(numbers or range(1, len(hits) + 1), hits))
+            parts.extend(self._document(parser, number, hit, numbered) for number, hit in numbered)
 
         if memory_hits:
             facts = "\n".join(
@@ -186,6 +176,52 @@ class ChatService(BaseService):
             return parser.get("rag", "image_content_prompt", {"caption": text})
         return text
 
+    def _document(self, parser: TemplateParser, number: int, hit: dict, numbered: list) -> str:
+        """One numbered document block for the prompt.
+
+        A partner brought in by the links (see rag/links.py) says which
+        document it belongs with, on its heading line, so the model reads a
+        figure next to the passage that refers to it rather than as an
+        unrelated source.
+        """
+        block = parser.get(
+            "rag",
+            "document_prompt",
+            {
+                "num": number,
+                "source": (hit.get("metadata") or {}).get("source") or "unknown",
+                "content": self._content(parser, hit),
+            },
+        )
+        origin = hit.get("linked_from")
+        if origin:
+            for other_number, other in numbered:
+                if other.get("id") == origin and other is not hit:
+                    note = parser.get("rag", "linked_document_note", {"num": other_number})
+                    heading, newline, rest = block.partition("\n")
+                    block = f"{heading} {note}{newline}{rest}"
+                    break
+        return block
+
+    async def _with_partners(self, hits: list[dict], link_lookup) -> list[dict]:
+        """*hits* plus the chunks linked to them: a passage's figure, a figure's text.
+
+        Appended after the ranked hits, never in place of one, so a partner
+        can add to an answer but cannot push out a better passage. The
+        lookup caps how many come (LINK_MAX_*_PER_ANSWER). Any failure keeps
+        the hits as they were.
+        """
+        if not hits or link_lookup is None or not self.settings.LINKS_ENABLED:
+            return hits
+        try:
+            partners = await link_lookup(hits)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Could not follow chunk links; answering from the hits alone: %s", exc)
+            return hits
+        if partners:
+            self.logger.debug("Added %d linked chunk(s) to %d hit(s)", len(partners), len(hits))
+        return list(hits) + list(partners)
+
     @staticmethod
     def to_citations(
         hits: list[dict],
@@ -214,6 +250,7 @@ class ChatService(BaseService):
         citations = []
         names = names or {}
         pages = pages or {}
+        number_of = {hit.get("id"): number for number, hit in enumerate(hits, start=1) if hit.get("id")}
 
         for number, hit in enumerate(hits, start=1):
             metadata = hit.get("metadata") or {}
@@ -256,6 +293,10 @@ class ChatService(BaseService):
                     # A figure or an uploaded picture: the UI shows a thumbnail
                     # (the chunk's image endpoint) and opens the page at it.
                     "kind": "image" if metadata.get("kind") == "image" else "text",
+                    # Set when this was not retrieved on its own but brought in
+                    # as the partner of citation [n]: the figure a passage
+                    # refers to, or the passage that explains a figure.
+                    "linked_to": number_of.get(hit.get("linked_from")) if hit.get("linked_from") else None,
                 }
             )
 
@@ -397,6 +438,7 @@ class ChatService(BaseService):
         image: tuple[bytes, str] | None = None,
         image_caption: str | None = None,
         image_lookup: Callable[[list[dict]], Awaitable[dict]] | None = None,
+        link_lookup: Callable[[list[dict]], Awaitable[list[dict]]] | None = None,
     ) -> AsyncIterator[dict]:
         """Yield the answer as a sequence of events.
 
@@ -407,7 +449,9 @@ class ChatService(BaseService):
         attached to the answer. *image_lookup* takes the hits and returns
         ``{(asset_id, chunk_order): (bytes, mime)}`` for the image hits, so
         a vision model can see the figures it cites; like page_lookup it is
-        opaque so this class never opens a database.
+        opaque so this class never opens a database. *link_lookup* takes the
+        hits and returns their linked partner chunks (rag/links.py), which
+        are appended after them.
 
         ``meta`` first (so the UI can show sources before any text arrives),
         then ``thinking`` and ``delta`` pieces as they come, then ``done``.
@@ -496,6 +540,7 @@ class ChatService(BaseService):
                 memory_hits=memory_hits,
                 image=image,
                 image_lookup=image_lookup,
+                link_lookup=link_lookup,
             ):
                 yield event
             return
@@ -511,6 +556,7 @@ class ChatService(BaseService):
                 asset_ids,
                 image_query=image[0] if image else None,
             )
+            hits = await self._with_partners(hits, link_lookup)
             RETRIEVAL_SECONDS.observe(perf_counter() - _search_started)
             RETRIEVAL_HITS.observe(len(hits))
 
@@ -721,6 +767,7 @@ class ChatService(BaseService):
         memory_hits: list[dict],
         image: tuple[bytes, str] | None = None,
         image_lookup: Callable[[list[dict]], Awaitable[dict]] | None = None,
+        link_lookup: Callable[[list[dict]], Awaitable[list[dict]]] | None = None,
     ) -> AsyncIterator[dict]:
         """Answer each part on its own, then write one answer from the parts.
 
@@ -750,6 +797,9 @@ class ChatService(BaseService):
                 for query in queries
             )
         )
+        # Each part brings its own partners, so a sub-answer sees the figure
+        # its passages refer to.
+        parts = list(await asyncio.gather(*(self._with_partners(part, link_lookup) for part in parts)))
         RETRIEVAL_SECONDS.observe(perf_counter() - _search_started)
 
         union, numbers = self.number_globally(parts)
@@ -870,18 +920,8 @@ class ChatService(BaseService):
 
         with tracing.observation("subanswer", as_type="chain", input={"query": query, "passages": len(hits)}) as span:
             system_prompt = parser.get("rag", "system_prompt")
-            documents = "\n\n".join(
-                parser.get(
-                    "rag",
-                    "document_prompt",
-                    {
-                        "num": number,
-                        "source": (hit.get("metadata") or {}).get("source") or "unknown",
-                        "content": self._content(parser, hit),
-                    },
-                )
-                for number, hit in zip(numbers, hits)
-            )
+            numbered = list(zip(numbers, hits))
+            documents = "\n\n".join(self._document(parser, number, hit, numbered) for number, hit in numbered)
             prompt, prompt_ref = parser.get_with_ref("rag", "subanswer_prompt", {"question": query})
 
             pictures, labels = await self._pictures(parser, hits, numbers, image, image_lookup)
