@@ -14,7 +14,6 @@ Implement `personal_user_info()` for MongoDB so `/memory` works on both backends
 
 - [ ] A Mongo repository and its place in the backend contract test
 - [ ] Listing and forgetting facts from the UI, on both backends
-- [ ] Tests for `/memory`, which has none
 
 ## Design
 

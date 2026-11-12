@@ -114,6 +114,7 @@ behind `--profile langfuse`. More in [deployment](docs/features/15_deployment.md
 | Pictures as sources | Figures and uploaded pictures are captioned, embedded and cited; figures travel with their text | [14](docs/features/14_multimodal_retrieval.md) |
 | Deployment | Docker Compose; `main` deploys when the suite is green | [15](docs/features/15_deployment.md) |
 | Tests and code quality | A suite that needs no network, model or database; Black and Ruff on commit | [16](docs/features/16_tests_and_code_quality.md) |
+| Evaluation and load | Ragas scores the running system's answers; Locust loads it with concurrent users | [17](docs/features/17_evaluation_and_load_testing.md) |
 
 **Not yet:** web-search grounding, private Google Sheets, and the audio, slides, video and report
 tiles in Studio. Each has a placeholder in [docs/roadmap](docs/roadmap/README.md).
@@ -159,4 +160,11 @@ node --test tests/frontend/*.test.mjs   # the UI's pure modules
 git config core.hooksPath .githooks     # Black and Ruff on commit, once per checkout
 ```
 
-More in [tests and code quality](docs/features/16_tests_and_code_quality.md).
+More in [tests and code quality](docs/features/16_tests_and_code_quality.md). Against a running stack:
+
+```bash
+uv run --project evals python evals/ragas_eval.py                                        # answer quality
+uv run --project evals locust -f evals/locustfile.py --host http://localhost:8081      # load
+```
+
+More in [evaluation and load testing](docs/features/17_evaluation_and_load_testing.md).

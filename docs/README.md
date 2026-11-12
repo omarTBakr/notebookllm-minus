@@ -10,6 +10,7 @@ Where the detail lives:
 - **[`software_engineering/`](../software_engineering/README.md)**: UML (user stories, use cases, sequence and class diagrams).
 - **`src/.env.example`**: every setting, with the values it accepts. A test fails if one is missing.
 - **[`Docker/README.md`](../Docker/README.md)**: the compose layout.
+- **[`evals/README.md`](../evals/README.md)**: running the Ragas evaluation and the Locust load test.
 
 ## Features
 
@@ -31,6 +32,7 @@ Where the detail lives:
 | 14 | Multimodal retrieval: pictures as sources | [14_multimodal_retrieval](features/14_multimodal_retrieval.md) | [ingest](../software_engineering/3_sequence_diagrams/image_ingest.png), [answer](../software_engineering/3_sequence_diagrams/image_query_answer.png) |
 | 15 | Deployment | [15_deployment](features/15_deployment.md) | |
 | 16 | Tests and code quality | [16_tests_and_code_quality](features/16_tests_and_code_quality.md) | |
+| 17 | Evaluation (Ragas) and load testing (Locust) | [17_evaluation_and_load_testing](features/17_evaluation_and_load_testing.md) | [evaluation and load](../software_engineering/3_sequence_diagrams/evaluation_and_load.png) |
 
 Every feature page has the same sections: **What it does**, **How it works**, **Settings**,
 **API**, **Data**, **Tests**, **Diagrams**, **Known limits**. A section is left out when it would

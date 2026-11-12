@@ -19,7 +19,7 @@ Each was looked at and deferred because it changes behaviour or was not worth th
 - [ ] `UserRepository.iter_users` has no caller since `UserService.list_users` went
 - [ ] `__all__` lists that re-export names nothing imports
 - [ ] The timer-based guardrail test is flaky under disk load; give it a fake clock or a wider bound
-- [ ] `/memory` has no tests
+- [ ] Answers reach the client in one piece: time to first token equals time to the whole answer in the Ragas and Locust runs of 2026-11-12. Find out whether the output guardrail, nginx or the chat backend is holding the stream
 
 ## Design
 

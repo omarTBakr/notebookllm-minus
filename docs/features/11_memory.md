@@ -40,8 +40,9 @@ thinking off.
 
 ## Tests
 
-**None yet.** `/memory` has no tests of its own; `tests/support/db.py` only carries the fake
-repository. Listed in [cleanup follow-ups](../roadmap/cleanup_followups.md).
+`tests/chatting/test_memory.py`: recognising the command, extraction and storage, re-saving a
+key, the required `facts` field, search, and the route (the queued task's argument order, the
+acknowledgement, a repeat joining the run in flight).
 
 ## Diagrams
 
