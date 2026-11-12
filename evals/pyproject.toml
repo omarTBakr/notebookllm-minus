@@ -1,0 +1,32 @@
+[project]
+name = "notebookllm-minus-evals"
+version = "0.1.0"
+description = "End-to-end answer evaluation (Ragas) and load tests (Locust) run against a live NotebookLLM-minus stack."
+requires-python = ">=3.12"
+dependencies = [
+    # Answer and retrieval quality, judged by an LLM. See ragas_eval.py.
+    "ragas>=0.4,<1.0",   # ragas_eval.py uses the metric classes 1.0 removes; see build_metrics
+    # ragas 0.4 imports langchain_community.chat_models.vertexai at import time,
+    # a module langchain-community 0.4 removed. Held below 0.4 until ragas drops
+    # the import; this is why these tools have an environment of their own and
+    # do not share the application's (which is on langchain 1.x).
+    "langchain-community>=0.3,<0.4",
+    # The judge and its embedder: a local Ollama, or any OpenAI-compatible API.
+    "langchain-ollama>=0.3",
+    "langchain-openai>=0.3",
+    # Load: concurrent simulated users. See locustfile.py.
+    "locust>=2.32",
+    # The plain client both tools share (notebook_client.py).
+    "httpx>=0.27",
+]
+
+# Not a package: these are scripts run with `uv run --project evals ...`.
+[tool.uv]
+package = false
+# Same reason as src/pyproject.toml: accept the uv-managed Python that lives on
+# this drive instead of rebuilding the venv on one off it.
+python-preference = "managed"
+
+[tool.black]
+target-version = ["py312"]
+line-length = 120
