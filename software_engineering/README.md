@@ -59,6 +59,7 @@ different jar. `_style.iuml` holds the shared look.
 | Langfuse tracing and prompt versions | [langfuse_tracing](3_sequence_diagrams/langfuse_tracing.png) |
 | Pictures at ingest: find, caption, chunk, link, embed | [image_ingest](3_sequence_diagrams/image_ingest.png) |
 | A question with pictures: both indexes, linked partners, with or without vision | [image_query_answer](3_sequence_diagrams/image_query_answer.png) |
+| Evaluation and load: Ragas scores the deployed system, Locust loads it | [evaluation_and_load](3_sequence_diagrams/evaluation_and_load.png) |
 
 ## 4. Class diagrams — `4_class_diagrams/`
 
