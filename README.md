@@ -26,7 +26,8 @@ are discovered from what is actually installed and reachable, never pinned in co
 
 **[Documentation](docs/README.md)**: one page per feature · **[Diagrams](software_engineering/README.md)** ·
 [Demo](#demo) · [Quickstart](#quickstart) · [Features](#features) · [Configuration](#configuration) ·
-[Architecture](#architecture) · [Development](#development)
+[Architecture](#architecture) · [Evaluation and load testing](#evaluation-and-load-testing) ·
+[Development](#development)
 
 ## Demo
 
@@ -152,6 +153,45 @@ names a vendor, which is what makes every backend swappable from `.env`.
 - [How a document is ingested](docs/features/03_ingestion_pipeline.md) ·
   [how a question is answered](docs/features/08_agentic_rag.md)
 
+## Evaluation and load testing
+
+Two tools test the **running system** from the outside, over HTTP. They live in
+[`evals/`](evals/README.md) with an environment of their own. Full write-up:
+[evaluation and load testing](docs/features/17_evaluation_and_load_testing.md).
+
+```bash
+cp evals/.env.example evals/.env && uv sync --project evals
+uv run --project evals python evals/ragas_eval.py                                    # answer quality
+uv run --project evals locust -f evals/locustfile.py --host http://localhost:8081    # load
+```
+
+**Answer quality with [Ragas](docs/features/17_evaluation_and_load_testing.md#answer-quality-ragas).**
+It uploads a dataset, asks each question through the same streaming endpoint the browser uses,
+and has a judge model score the answers and the passages they cite. First baseline, 2026-11-12,
+on the sample dataset (12 questions, all answered and scored; judge `llama3.1:8b` on local Ollama):
+
+| Metric | Asks | Mean |
+| --- | --- | --- |
+| Faithfulness | is every claim supported by the cited passages? | 0.944 |
+| Answer relevancy | does the answer address the question? | 0.903 |
+| Context precision | are useful passages ranked above useless ones? | 0.968 |
+| Context recall | do the passages hold what the reference answer needs? | 0.931 |
+| Factual correctness | same facts as the reference answer? | 0.832 |
+
+**Load with [Locust](docs/features/17_evaluation_and_load_testing.md#load-locust).** Simulated
+signed-in users browse, search, ask and upload; tasks are tagged so cheap and expensive paths can
+be loaded apart. First runs on the local compose stack:
+
+| Run | Requests | Failures | Median | 95th percentile |
+| --- | --- | --- | --- | --- |
+| Browse and search, 8 users, 45 s | 203 | 0 | 9 ms | 59 ms |
+| Full streamed answers, 2 users, 75 s | 7 | 0 | 13 s | 22 s |
+
+A small sample on one machine: it shows the loop works and gives a number to compare the next
+run against, not a benchmark. The
+[measurements section](docs/features/17_evaluation_and_load_testing.md#first-measurements) has
+the detail, including one open finding: answers currently reach the client in one piece.
+
 ## Development
 
 ```bash
@@ -160,11 +200,4 @@ node --test tests/frontend/*.test.mjs   # the UI's pure modules
 git config core.hooksPath .githooks     # Black and Ruff on commit, once per checkout
 ```
 
-More in [tests and code quality](docs/features/16_tests_and_code_quality.md). Against a running stack:
-
-```bash
-uv run --project evals python evals/ragas_eval.py                                        # answer quality
-uv run --project evals locust -f evals/locustfile.py --host http://localhost:8081      # load
-```
-
-More in [evaluation and load testing](docs/features/17_evaluation_and_load_testing.md).
+More in [tests and code quality](docs/features/16_tests_and_code_quality.md).
