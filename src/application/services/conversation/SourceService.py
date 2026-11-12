@@ -146,6 +146,23 @@ class SourceService(BaseService):
 
         return asset, chunk
 
+    async def chunk_image(self, chat_id: str, asset_id: str, chunk_order: int, size: int):
+        """``(asset, bytes, mime)`` for an image chunk the caller owns.
+
+        Ownership goes through `locate`, as for a chunk's text. Raises
+        NotFoundError for a chunk that is not an image, the same answer as a
+        chunk that does not exist.
+        """
+        from shared.exceptions import NotFoundError
+
+        from ..rag.images import load_chunk_image
+
+        asset, _ = await self.locate(chat_id, asset_id, chunk_order)
+        picture = await load_chunk_image(self.db, asset, chunk_order, size)
+        if picture is None:
+            raise NotFoundError("That chunk is not an image")
+        return asset, picture[0], picture[1]
+
     async def delete(self, chat_id: str, asset_id: str) -> dict:
         """Remove a source and everything derived from it.
 
@@ -171,6 +188,15 @@ class SourceService(BaseService):
         if await db.vectors().collection_exists(collection):
             vectors_removed = await db.vectors().delete_by_metadata(
                 collection_name=collection, key="asset_id", value=asset_id
+            )
+
+        # The asset's pictures live in the notebook's image collection.
+        from application.services.rag.ImageIndexService import ImageIndexService
+
+        image_collection = ImageIndexService.collection_name(chat_id)
+        if await db.vectors().collection_exists(image_collection):
+            vectors_removed += await db.vectors().delete_by_metadata(
+                collection_name=image_collection, key="asset_id", value=asset_id
             )
 
         # --- chunks ---

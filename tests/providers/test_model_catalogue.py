@@ -27,17 +27,20 @@ from shared.utils import (
 # --- the predicate ------------------------------------------------------------
 
 
-@pytest.mark.parametrize("capabilities, chat, embed", [
-    (["embedding"], False, True),
-    (["completion", "tools"], True, False),
-    (["completion", "embedding"], True, True),
-    # Unknown: every model can be asked to generate, and guessing that
-    # something embeds is the error that costs a rebuilt index.
-    (None, True, False),
-    # An empty list is "the server said nothing", not "it can do nothing" —
-    # treating it as the latter drops the model from both lists silently.
-    ([], True, False),
-])
+@pytest.mark.parametrize(
+    "capabilities, chat, embed",
+    [
+        (["embedding"], False, True),
+        (["completion", "tools"], True, False),
+        (["completion", "embedding"], True, True),
+        # Unknown: every model can be asked to generate, and guessing that
+        # something embeds is the error that costs a rebuilt index.
+        (None, True, False),
+        # An empty list is "the server said nothing", not "it can do nothing" —
+        # treating it as the latter drops the model from both lists silently.
+        ([], True, False),
+    ],
+)
 def test_can(capabilities, chat, embed):
     model = {"capabilities": capabilities}
 
@@ -191,9 +194,7 @@ def nvidia(monkeypatch, settings):
         # The module does `import httpx` and calls httpx.AsyncClient(...), so
         # patching the attribute on httpx itself is what it will pick up.
         monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **kw: client)
-        monkeypatch.setattr(
-            NvidiaModelService, "_host_url", lambda self, source: "https://nvidia.invalid/v1"
-        )
+        monkeypatch.setattr(NvidiaModelService, "_host_url", lambda self, source: "https://nvidia.invalid/v1")
         controller = NvidiaModelService()
         controller._access_cache.clear()
         return controller, client
@@ -205,22 +206,25 @@ def _nv(tag):
     return {"id": f"nvidia/{tag}", "tag": tag, "source": "nvidia", "capabilities": None}
 
 
-@pytest.mark.parametrize("statuses, kept, why", [
-    # Entitlement passes (400 = "your body is wrong", reachable) and the real
-    # request is accepted.
-    ((400, 200), True, "callable and accepts our request"),
-    # Not this account's model — the free pass alone settles it.
-    ((404, 200), False, "not entitled"),
-    # Entitled, but rejects the shape we send: several NIM schemas forbid
-    # unknown fields outright. This is the failure that reached a user as
-    # "extra_forbidden ... max_completion_tokens" *after* choosing the model.
-    ((400, 400), False, "rejects our request shape"),
-    # Entitled, but not a chat model at all.
-    ((400, 500), False, "not a chat model"),
-    # Never answers — too slow to hold a conversation.
-    ((400, "timeout"), False, "times out on a real request"),
-    (("timeout", 200), False, "times out on entitlement"),
-])
+@pytest.mark.parametrize(
+    "statuses, kept, why",
+    [
+        # Entitlement passes (400 = "your body is wrong", reachable) and the real
+        # request is accepted.
+        ((400, 200), True, "callable and accepts our request"),
+        # Not this account's model — the free pass alone settles it.
+        ((404, 200), False, "not entitled"),
+        # Entitled, but rejects the shape we send: several NIM schemas forbid
+        # unknown fields outright. This is the failure that reached a user as
+        # "extra_forbidden ... max_completion_tokens" *after* choosing the model.
+        ((400, 400), False, "rejects our request shape"),
+        # Entitled, but not a chat model at all.
+        ((400, 500), False, "not a chat model"),
+        # Never answers — too slow to hold a conversation.
+        ((400, "timeout"), False, "times out on a real request"),
+        (("timeout", 200), False, "times out on entitlement"),
+    ],
+)
 async def test_only_models_that_actually_answer_are_offered(nvidia, statuses, kept, why):
     controller, _ = nvidia({"meta/x": statuses})
 
@@ -264,16 +268,18 @@ async def test_the_probe_sends_the_field_the_provider_sends(nvidia, monkeypatch)
 
 
 async def test_only_working_models_survive(nvidia):
-    controller, _ = nvidia({
-        "meta/ok": (400, 200),
-        "vendor/nope": (404, 404),
-        "vendor/wrong-shape": (400, 400),
-        "vendor/hangs": (400, "timeout"),
-    })
+    controller, _ = nvidia(
+        {
+            "meta/ok": (400, 200),
+            "vendor/nope": (404, 404),
+            "vendor/wrong-shape": (400, 400),
+            "vendor/hangs": (400, "timeout"),
+        }
+    )
 
-    usable = await controller._only_callable([
-        _nv("meta/ok"), _nv("vendor/nope"), _nv("vendor/wrong-shape"), _nv("vendor/hangs")
-    ])
+    usable = await controller._only_callable(
+        [_nv("meta/ok"), _nv("vendor/nope"), _nv("vendor/wrong-shape"), _nv("vendor/hangs")]
+    )
 
     assert [m["tag"] for m in usable] == ["meta/ok"]
 
@@ -310,7 +316,7 @@ async def test_forget_probes_clears_the_access_cache(nvidia):
     ModelService.forget_probes()
     await controller._only_callable([_nv("meta/ok")])
 
-    assert len(client.asked) == 4      # both stages, twice
+    assert len(client.asked) == 4  # both stages, twice
 
 
 # --- NVIDIA: which endpoint decides ------------------------------------------
@@ -334,9 +340,7 @@ async def test_an_embedding_nim_is_classified_by_embedding_not_chat(nvidia, monk
     assert client.asked == []
 
 
-async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(
-    nvidia, monkeypatch
-):
+async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(nvidia, monkeypatch):
     """The name picks which endpoint to try first; the endpoint answers."""
     controller, client = nvidia({"vendor/embed-but-chats": (400, 200)})
 
@@ -348,7 +352,7 @@ async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(
     usable = await controller._only_usable([_nv("vendor/embed-but-chats")])
 
     assert [m["tag"] for m in usable] == ["vendor/embed-but-chats"]
-    assert usable[0]["capabilities"] is None      # chat, by elimination
+    assert usable[0]["capabilities"] is None  # chat, by elimination
     assert [tag for tag, _ in client.asked] == ["vendor/embed-but-chats"] * 2
 
 
@@ -359,21 +363,24 @@ async def test_a_model_named_embed_that_cannot_falls_back_to_the_chat_probe(
 # reading out of the name.
 
 
-@pytest.mark.parametrize("tag, parameters", [
-    ("meta/llama-3.2-11b-vision-instruct", "11B"),
-    ("openai/gpt-oss-120b", "120B"),
-    ("nvidia/riva-translate-4b-instruct-v2", "4B"),
-    # A mixture-of-experts tag names its total before its active count; the
-    # total is the number worth showing.
-    ("nvidia/nemotron-3-super-120b-a12b", "120B"),
-    ("google/diffusiongemma-26b-a4b-it", "26B"),
-    # The version is not a size: "llama-3.2" and "1.5" must not be read as one.
-    ("nvidia/ising-calibration-1.5-31b", "31B"),
-    # Nothing advertised — reported as unknown rather than guessed.
-    ("minimaxai/minimax-m3", None),
-    ("nvidia/nemotron-parse", None),
-    ("poolside/laguna-xs-2.1", None),
-])
+@pytest.mark.parametrize(
+    "tag, parameters",
+    [
+        ("meta/llama-3.2-11b-vision-instruct", "11B"),
+        ("openai/gpt-oss-120b", "120B"),
+        ("nvidia/riva-translate-4b-instruct-v2", "4B"),
+        # A mixture-of-experts tag names its total before its active count; the
+        # total is the number worth showing.
+        ("nvidia/nemotron-3-super-120b-a12b", "120B"),
+        ("google/diffusiongemma-26b-a4b-it", "26B"),
+        # The version is not a size: "llama-3.2" and "1.5" must not be read as one.
+        ("nvidia/ising-calibration-1.5-31b", "31B"),
+        # Nothing advertised — reported as unknown rather than guessed.
+        ("minimaxai/minimax-m3", None),
+        ("nvidia/nemotron-parse", None),
+        ("poolside/laguna-xs-2.1", None),
+    ],
+)
 def test_parameters_are_read_from_the_tag(tag, parameters):
     assert parameters_of(tag) == parameters
 
@@ -435,14 +442,16 @@ def configured(monkeypatch):
     ModelService._probes_in_flight.clear()
 
 
-@pytest.mark.parametrize("message, reason", [
-    ("Your credit balance is too low to access the Anthropic API.", "No API credit"),
-    ("This model models/gemini-2.5-flash is no longer available to new users.",
-     "Retired by the vendor"),
-    ("anthropic-workspace-id is required when authenticating", "Workspace id required"),
-    ("API key not valid. Please pass a valid API key.", "API key rejected"),
-    ("You exceeded your current quota, please check your plan", "Quota exceeded"),
-])
+@pytest.mark.parametrize(
+    "message, reason",
+    [
+        ("Your credit balance is too low to access the Anthropic API.", "No API credit"),
+        ("This model models/gemini-2.5-flash is no longer available to new users.", "Retired by the vendor"),
+        ("anthropic-workspace-id is required when authenticating", "Workspace id required"),
+        ("API key not valid. Please pass a valid API key.", "API key rejected"),
+        ("You exceeded your current quota, please check your plan", "Quota exceeded"),
+    ],
+)
 def test_a_refusal_is_reduced_to_a_phrase_that_fits_a_row(message, reason):
     """The vendor sentences are long and their wording changes; the picker has
     room for a few words."""
@@ -462,8 +471,7 @@ def test_running_out_of_budget_counts_as_reaching_the_model():
     a thinking model a budget too small to answer with is the *fast* path —
     about a second, against thirty for one big enough to produce text."""
     truncated = Exception(
-        "Google returned no text (model='gemini-3.6-flash', "
-        "finish_reason=<FinishReason.MAX_TOKENS: 'MAX_TOKENS'>)"
+        "Google returned no text (model='gemini-3.6-flash', " "finish_reason=<FinishReason.MAX_TOKENS: 'MAX_TOKENS'>)"
     )
 
     assert reached_generation(truncated)
@@ -502,9 +510,7 @@ async def test_the_catalogue_does_not_wait_for_the_probe(configured):
     controller, install = configured
     install(_FakeChat(delay=30))
 
-    catalogue = await asyncio.wait_for(
-        controller.catalogue(probe_embeddings=False), timeout=1
-    )
+    catalogue = await asyncio.wait_for(controller.catalogue(probe_embeddings=False), timeout=1)
 
     listed = [m for m in catalogue["chat"] if m["source"] == "anthropic"][0]
 

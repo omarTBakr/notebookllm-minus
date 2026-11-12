@@ -30,6 +30,10 @@ package "application" {
     class ChatService
     class QueryPlanner <<module>>
     class NLPService
+    class ImageIndexService
+    class ImageCaptionService
+    class "ImageRegionService" as IRS <<module>>
+    class "ChunkLinker" as Linker <<module>>
     class MemoryService
     class StudioService
     class AssetIngestService
@@ -48,6 +52,7 @@ package "application" {
     interface LLMChattingInterface
     interface LLMEmbeddingInterface
     interface RerankerInterface
+    interface ImageEmbeddingInterface
   }
   package "tasks" {
     class "ingest jobs\n(fetch, process, parse,\npostprocess, assemble, summarise)" as IngestJobs
@@ -108,6 +113,16 @@ ProviderCache --> LLMEmbeddingInterface
 ProviderCache --> RerankerInterface
 NLPService --> LLMEmbeddingInterface
 NLPService --> VectorRepository
+ChatService --> ImageIndexService : pictures
+ImageIndexService --> ImageEmbeddingInterface
+ImageIndexService --> VectorRepository
+ImageIndexService --> IRS : crops
+ProviderCache --> ImageEmbeddingInterface
+IngestJobs --> ImageCaptionService
+IngestJobs --> IRS : find figures
+IngestJobs --> Linker : link figures to passages
+ChatService ..> Linker : follows the links (rag/links.py)
+ImageCaptionService --> LLMChattingInterface : vision
 
 CeleryApp --> IngestJobs
 CeleryApp --> IndexJobs

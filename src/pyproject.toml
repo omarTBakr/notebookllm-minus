@@ -13,7 +13,7 @@ dependencies = [
     # the word-box path splits inside words and the raw path fuses them. OCR of
     # the rendered page beats both, measured (see src/application/arabic_extraction/benchmark/reports/FINDINGS.md).
     # pytesseract is a thin wrapper; the engine and its ara model are installed
-    # in the image, not here. qalam is OCR_EXTRACTOR's default -- Rust
+    # in the image, not here. qalam picks the pages that need it -- Rust
     # bindings published on PyPI, no build toolchain or external model needed.
     "pytesseract>=0.3.13",
     "qalam>=0.1.1",
@@ -87,6 +87,9 @@ dependencies = [
     "openai>=1.60.0",
     "pdfplumber>=0.11.10",
     "pymupdf>=1.28.2",
+    # Decodes, checks and scales images (figures, uploads, composer
+    # attachments) before they are embedded or shown to a model.
+    "pillow>=12.3.0",
     # celery[redis] rather than bare celery: the result backend is a redis://
     # URL, and without the extra Celery raises ModuleNotFoundError the moment
     # it resolves the backend — so every worker fails on its first result and

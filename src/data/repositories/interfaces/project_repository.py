@@ -19,10 +19,6 @@ class ProjectRepository(ABC):
         pass
 
     @abstractmethod
-    async def list_projects(self) -> list[Project]:
-        pass
-
-    @abstractmethod
     async def rename(self, project_id: str, name: str) -> None:
         pass
 

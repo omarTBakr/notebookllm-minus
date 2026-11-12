@@ -96,9 +96,7 @@ async def _run(fake_db, client, start=0, end=10):
     from shared.utils import get_settings
 
     providers = FakeProviders(client)
-    done = await summarise.summarise_range(
-        "c1", "a1", start, end, fake_db, providers, get_settings()
-    )
+    done = await summarise.summarise_range("c1", "a1", start, end, fake_db, providers, get_settings())
     return done, providers
 
 
@@ -147,18 +145,14 @@ async def test_a_failing_model_fails_nothing(fake_db, document, caplog):
     assert any("Studio will retry" in record.message for record in caplog.records)
 
 
-async def test_a_skipped_chunk_stays_unsummarised_not_mislabelled(
-    fake_db, document
-):
+async def test_a_skipped_chunk_stays_unsummarised_not_mislabelled(fake_db, document):
     """The model answered 6 of 10: the other 4 get nothing, not a neighbour's."""
     chunks = await document()
 
     done, _ = await _run(fake_db, FakeClient(returned=6))
 
     assert done == 6
-    assert [bool(chunks[order].summary) for order in range(10)] == [True] * 6 + [
-        False
-    ] * 4
+    assert [bool(chunks[order].summary) for order in range(10)] == [True] * 6 + [False] * 4
 
 
 # --- publishing ------------------------------------------------------------------
@@ -233,9 +227,7 @@ def test_assembling_a_document_publishes_its_summaries_after_indexing(monkeypatc
     monkeypatch.setattr(
         summarise,
         "publish_summaries",
-        lambda project_id, asset_id, count: order.append(
-            ("summaries", project_id, asset_id, count)
-        ),
+        lambda project_id, asset_id, count: order.append(("summaries", project_id, asset_id, count)),
     )
 
     assemble.assemble_chunks_task("a1")

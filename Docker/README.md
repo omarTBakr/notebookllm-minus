@@ -48,7 +48,6 @@ Then:
 ```
 Docker/
 ├── docker-compose.yml            the whole stack
-├── docker-composeV1.yml          the earlier mongo-only version, kept for reference
 ├── services/                     each service's checked-in config, one directory apiece
 │   ├── nginx/proxy.conf          reverse proxy config
 │   ├── prometheus/prometheus.yml scrape targets

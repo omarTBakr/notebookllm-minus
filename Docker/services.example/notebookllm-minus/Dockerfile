@@ -98,8 +98,8 @@ RUN apt-get update \
 
 # Where the better Arabic model landed. Set here rather than left to the env
 # file: the extractor's availability check looks for this path, and without it
-# OCR_ENABLED=true silently degrades to "cannot run" and keeps the broken text
-# layer — a feature that looks enabled and does nothing.
+# OCR_UNREADABLE_PAGES silently degrades to "cannot run" and leaves scanned
+# pages empty — a feature that looks enabled and does nothing.
 ENV TESSDATA_BEST=/usr/share/tessdata-best
 
 # The application is a set of plain modules under /app, found until now only

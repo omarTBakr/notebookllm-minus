@@ -28,3 +28,11 @@ test("tooltips say what the click does", () => {
   assert.equal(citationTitle({ page_number: 2 }, t), "page!");
   assert.equal(citationTitle({}, t), "src!");
 });
+
+test("a linked citation says which citation it came with", async () => {
+  const { linkedHint } = await import("../../src/presentation/web/static/js/citation_label.js");
+  const tt = (key) => ({ linkedWith: "with" })[key];
+  assert.equal(linkedHint({ linked_to: 2 }, tt), "↳ with [2]");
+  assert.equal(linkedHint({ linked_to: null }, tt), "");
+  assert.equal(linkedHint({}, tt), "");
+});

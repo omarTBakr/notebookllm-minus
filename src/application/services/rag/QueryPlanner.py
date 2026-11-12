@@ -29,6 +29,7 @@ a reasoning model asked for JSON leaves ``content`` empty and puts everything
 in ``reasoning_content``, which fails validation on every retry.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -113,6 +114,120 @@ def format_history(history: list[dict] | None) -> str:
     return "\n".join(lines) if lines else "(none)"
 
 
+# --- chit-chat fast path ----------------------------------------------------------
+# Words that, on their own, carry no request for information. An 8B planner
+# kept labelling "Hi there, thanks for the help!" as a question to retrieve
+# for, so a message made only of these (and punctuation) skips the model call
+# altogether. Anything else, including a greeting followed by a real question,
+# still goes to the planner.
+_SMALL_TALK_WORDS = {
+    # en
+    "hi",
+    "hello",
+    "hey",
+    "hiya",
+    "yo",
+    "good",
+    "morning",
+    "afternoon",
+    "evening",
+    "night",
+    "thanks",
+    "thank",
+    "you",
+    "thx",
+    "ty",
+    "much",
+    "so",
+    "very",
+    "a",
+    "lot",
+    "lots",
+    "for",
+    "the",
+    "help",
+    "your",
+    "great",
+    "nice",
+    "awesome",
+    "perfect",
+    "cool",
+    "ok",
+    "okay",
+    "got",
+    "it",
+    "sure",
+    "bye",
+    "goodbye",
+    "see",
+    "later",
+    "cheers",
+    "there",
+    "all",
+    "that",
+    "was",
+    "helpful",
+    "job",
+    "work",
+    "sorry",
+    "welcome",
+    "appreciate",
+    "it's",
+    # ar
+    "مرحبا",
+    "مرحبًا",
+    "اهلا",
+    "أهلا",
+    "أهلًا",
+    "السلام",
+    "عليكم",
+    "وعليكم",
+    "صباح",
+    "مساء",
+    "الخير",
+    "النور",
+    "شكرا",
+    "شكرًا",
+    "جزيلا",
+    "جزيلًا",
+    "جزاك",
+    "الله",
+    "خيرا",
+    "خيرًا",
+    "تمام",
+    "حسنا",
+    "حسنًا",
+    "ممتاز",
+    "رائع",
+    "فهمت",
+    "مع",
+    "السلامة",
+    "وداعا",
+    "وداعًا",
+    "عفوا",
+    "عفوًا",
+    "لك",
+    "كثيرا",
+    "كثيرًا",
+    "على",
+    "المساعدة",
+    "أشكرك",
+}
+_WORD = re.compile(r"[^\W\d_]+(?:'[a-z]+)?", re.UNICODE)
+# Arabic short vowels, tanween and shadda are combining marks: "شكرًا" would
+# otherwise split into two "words". Matching ignores them.
+_ARABIC_MARKS = re.compile(r"[\u064B-\u065F\u0670]")
+
+
+def is_small_talk(message: str) -> bool:
+    """A short message that asks for nothing: greetings, thanks, goodbyes."""
+    text = _ARABIC_MARKS.sub("", (message or "").strip().lower())
+    if not text or "?" in text or "؟" in text:
+        return False
+    words = _WORD.findall(text)
+    return 0 < len(words) <= 8 and all(word in _SMALL_TALK_WORDS for word in words)
+
+
 def normalise(raw: QueryPlanSchema, question: str, max_sub_queries: int) -> QueryPlan:
     """Turn the model's answer into a plan the answer path can trust.
 
@@ -120,6 +235,9 @@ def normalise(raw: QueryPlanSchema, question: str, max_sub_queries: int) -> Quer
       *max_sub_queries*;
     * ``complex`` with a single sub-query left is just ``simple``: there is
       nothing to combine;
+    * ``simple`` with two or more distinct sub-queries is ``complex``: the
+      prompt (v2) asks for exactly one query for a simple question, so several
+      means the model found separate parts and only mislabelled them;
     * ``chitchat`` keeps no sub-queries, since nothing will be retrieved.
     """
     seen: set[str] = set()
@@ -139,7 +257,7 @@ def normalise(raw: QueryPlanSchema, question: str, max_sub_queries: int) -> Quer
     if not queries:
         queries = [standalone]
 
-    intent: Intent = "complex" if raw.intent == "complex" and len(queries) > 1 else "simple"
+    intent: Intent = "complex" if len(queries) > 1 else "simple"
 
     return QueryPlan(intent=intent, standalone_query=standalone, sub_queries=queries)
 
@@ -157,6 +275,11 @@ async def plan_query(
     application did before it planned at all.
     """
     settings = get_settings()
+
+    if is_small_talk(question):
+        logger.info("Planned question (intent=chitchat, fast path, no model call)")
+        return QueryPlan(intent="chitchat", standalone_query=question, sub_queries=[])
+
     parser = TemplateParser(lang=lang, default_lang=settings.DEFAULT_LANG)
     prompt, prompt_ref = parser.get_with_ref(
         "rag",

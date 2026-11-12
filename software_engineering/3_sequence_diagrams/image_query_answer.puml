@@ -1,0 +1,61 @@
+@startuml
+!include ../_style.iuml
+title A question with pictures — search both indexes, answer with or without vision
+autonumber "<b>0"
+
+actor Reader as user
+participant "Browser\n(attachment.js, chat.js)" as ui
+participant "POST /chat/chats/{id}/message" as route
+participant "Vision chat model\n(captions)" as captioner
+participant "has_vision()" as vision
+participant "ChatService" as chat
+participant "NLPService\n(text index)" as nlp
+participant "ImageIndexService\n(picture index)" as img
+participant "links.expand_links" as links
+participant "EmbeddingGemma 2" as embed
+participant "Reranker" as rerank
+participant "Answer model" as llm
+
+user -> ui : question (+ optional picture: paperclip, paste or drop)
+ui -> ui : type ∈ png/jpeg/webp, ≤ 5 MB
+ui -> route : {text, image: data URL}
+route -> route : sniff + decode + scale the bytes (400 if not an image)
+opt picture attached
+  route -> captioner : caption it
+  route -> route : store "question [Attached image: caption]"\n(the pixels are not kept)
+end
+route -> vision : does the chat's model accept images? (cached)
+route -> chat : answer_stream(question, image, image_caption, image_lookup)
+
+chat -> chat : guard + plan on question + caption
+par per sub-query
+  chat -> nlp : text search
+  chat -> img : search(text=sub-query)
+  img -> embed : embed text into the picture space
+else attached picture
+  chat -> img : search(image=picture)
+  img -> embed : embed the picture
+end
+chat -> chat : merge by id (a figure found twice stays an image)
+alt reranker on
+  chat -> rerank : passages + captions, one scale
+else
+  chat -> chat : text top_k, then up to IMAGE_TOP_K pictures
+end
+chat -> links : link_lookup(hits)
+links -> links : read linked_images / linked_chunks of each hit;\nfetch partners not already among the hits
+links --> chat : partners (score = null, linked_from = hit id),\ncapped by LINK_MAX_*_PER_ANSWER
+chat -> chat : append after the ranked hits
+chat --> ui : meta (citations, kind = image | text, linked_to = n)
+ui -> route : GET .../chunks/{n}/image (thumbnail)
+
+alt model has vision
+  chat -> chat : image_lookup: crop cited figures from their assets
+  chat -> llm : prompt ("[Image] caption" per figure,\n"## Document 4 (belongs with Document 2)" for a partner)\n+ pictures + "attached, in order: [2]; the user's image"
+else no vision
+  chat -> llm : prompt with captions only
+end
+llm --> ui : streamed answer, citing [n]
+user -> ui : click an image citation
+ui -> ui : open the PDF page with the figure outlined\n(or the uploaded picture itself)
+@enduml

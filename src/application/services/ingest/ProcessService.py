@@ -4,11 +4,10 @@ Loading only. What happens to the text afterwards — sanitising it, cutting it
 into chunks — belongs to TextProcessingService, which this delegates to.
 """
 
-import asyncio
 import os
 import tempfile
 from bisect import bisect_right
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from langchain_community.document_loaders import (  # ty: ignore[unresolved-import]
@@ -57,15 +56,28 @@ class ProcessService(BaseService):
         # never leaks between documents.
         self._pdf_pages: dict = {}
         # page index -> len(word-box text) / len(replacement text), for pages
-        # whose text was replaced after extraction. Two things write it now --
-        # the OCR re-read below, and the gemma4 correction pass that runs as its
-        # own Celery stage -- so it is named for what it means rather than for
-        # whichever one produced it. Empty when the text is the PDF's own.
+        # whose text was replaced after extraction (the correction pass that
+        # runs as its own Celery stage; see assemble.py). Named for what it
+        # means rather than for what produced it. Empty when the text is the
+        # PDF's own.
         self._text_scale: dict = {}
         # page index -> [[char_offset, start_s, end_s], ...] for a page that is
         # a video transcript (see UrlSourceService.transcript_page). Lets
         # split_file give every chunk the stretch of video it came from.
         self._timelines: dict = {}
+
+    def with_layout(self, pages: dict, scales: dict | None = None, timelines: dict | None = None) -> "ProcessService":
+        """Give `split_file` the page geometry it computes highlights from.
+
+        For a caller that extracted the pages somewhere else -- batched ingest
+        parses them on other workers and reassembles them -- and so never went
+        through `process_file`, which is what fills these in otherwise.
+        """
+        self._pdf_pages = pages
+        self._text_scale = scales or {}
+        self._timelines = timelines or {}
+
+        return self
 
     def _pdf_loader(self, file_path: Path):
         """The PDF extractor named by PDF_LOADER.
@@ -125,7 +137,7 @@ class ProcessService(BaseService):
         else:
             raise UnsupportedFileTypeError(f"Unsupported file type: {extension}")
 
-    def _process_pdf_with_layout(self, file_path: Path, on_progress=None) -> list[Document]:
+    def _process_pdf_with_layout(self, file_path: Path) -> list[Document]:
         """PDF extraction via PdfLayoutService, when PDF_LOADER=pymupdf.
 
         Bypasses get_loader/langchain's PyMuPDFLoader entirely: that loader
@@ -148,11 +160,9 @@ class ProcessService(BaseService):
         self._pdf_pages = {page.page_index: page for page in pages}
         self._text_scale = {}
 
-        text_by_page = self._reread_unusable_arabic(file_path, pages, on_progress)
-
         return [
             Document(
-                page_content=text_by_page.get(page.page_index, page.text),
+                page_content=page.text,
                 metadata={
                     "source": file_path.name,
                     "page": page.page_index,
@@ -163,11 +173,11 @@ class ProcessService(BaseService):
             for page in pages
         ]
 
-    def process_file(self, file_path: Path, on_progress=None) -> list[Document]:
+    def process_file(self, file_path: Path) -> list[Document]:
         extension = file_path.suffix.lower()
 
         if extension == FileExtension.PDF and self.settings.PDF_LOADER == PdfLoader.PYMUPDF:
-            docs = self._process_pdf_with_layout(file_path, on_progress)
+            docs = self._process_pdf_with_layout(file_path)
         else:
             # get_loader raises UnsupportedFileTypeError (a 400) — let it
             # through rather than reporting an unreadable format as a server
@@ -188,7 +198,7 @@ class ProcessService(BaseService):
         self.logger.info("Extracted %d document(s) from %s", len(docs), file_path.name)
         return docs
 
-    def process_bytes(self, file_bytes: bytes, filename: str, on_progress=None) -> list[Document]:
+    def process_bytes(self, file_bytes: bytes, filename: str) -> list[Document]:
         """Load a document from raw bytes without leaving a permanent file on disk.
 
         Writes *file_bytes* to a named temp file (preserving the original
@@ -201,7 +211,7 @@ class ProcessService(BaseService):
             tmp_path = Path(tmp.name)
 
         try:
-            docs = self.process_file(tmp_path, on_progress)
+            docs = self.process_file(tmp_path)
         finally:
             tmp_path.unlink(missing_ok=True)
 
@@ -254,7 +264,7 @@ class ProcessService(BaseService):
         An explicit OCR_WORKERS is still capped by memory: the setting says how
         much parallelism is wanted, not how much the box can survive.
         """
-        configured = getattr(self.settings, "OCR_WORKERS", 0)
+        configured = self.settings.OCR_WORKERS
         available = available_memory_mb()
         affordable = max(1, int(available * 0.5 // self.OCR_PAGE_MB)) if available is not None else None
 
@@ -302,19 +312,37 @@ class ProcessService(BaseService):
 
         return max(1, min(limit, pending))
 
+    @staticmethod
+    def _tesseract_best():
+        """The OCR engine both callers below use, warmed up, or None if it cannot run.
+
+        tesseract-best with Arabic and English together: a scanned page or an
+        uploaded picture is as likely to be the English one. Only this engine
+        is probed (see registry.survey).
+        """
+        from application.arabic_extraction.registry import build
+
+        extractors = build(["tesseract-best"], **{"tesseract-best": {"lang": "ara+eng"}})
+
+        if not extractors:
+            return None
+
+        extractor = extractors[0]
+        extractor.warm_up()
+
+        return extractor
+
     def ocr_unreadable_pages(self, file_path: Path, start: int, end: int) -> dict[int, str]:
         """OCR the pages of ``[start, end)`` that have no usable text layer.
 
         Returns OCR text keyed by page index; pages absent from it keep what
         the PDF gave. Off unless OCR_UNREADABLE_PAGES is set.
 
-        Not the same job as `_reread_unusable_arabic`. That one repairs pages
-        whose text is *there* but badly spaced, and only on the single-process
-        path. This one is for pages that come out empty or as glyph garbage --
-        a scanned page, a title page drawn as a picture -- which nothing else
-        in the pipeline reads: `profile()` skips any page under OCR_MIN_CHARS,
-        so a page with no text at all was silently indexed as nothing.
-        On ذخائر_لبنان.pdf that was 6 of 222 pages.
+        This is for pages that come out empty or as glyph garbage -- a scanned
+        page, a title page drawn as a picture -- which nothing else in the
+        pipeline reads, so a page with no text at all was silently indexed as
+        nothing. On ذخائر_لبنان.pdf that was 6 of 222 pages. Pages whose text
+        is *there* but badly spaced are the correction pass's job, not this.
 
         qalam decides which pages, since it is the one extractor that says so
         per page; tesseract-best reads them with Arabic and English together,
@@ -322,14 +350,13 @@ class ProcessService(BaseService):
         unavailable is a warning, not a failure: the ingest continues with the
         text layer as it would have before this existed.
         """
-        if not getattr(self.settings, "OCR_UNREADABLE_PAGES", False):
+        if not self.settings.OCR_UNREADABLE_PAGES:
             return {}
 
         from application.arabic_extraction.base import Page as OcrPage
         from application.arabic_extraction.extractors.qalam_extractor import (
             QalamExtractor,
         )
-        from application.arabic_extraction.registry import build
 
         ok, reason = QalamExtractor.available()
 
@@ -346,9 +373,9 @@ class ProcessService(BaseService):
         if not flagged:
             return {}
 
-        extractors = build(["tesseract-best"], **{"tesseract-best": {"lang": "ara+eng"}})
+        extractor = self._tesseract_best()
 
-        if not extractors:
+        if extractor is None:
             self.logger.warning(
                 "%d page(s) of %s have no usable text layer, but tesseract-best cannot run; " "they stay empty",
                 len(flagged),
@@ -356,11 +383,9 @@ class ProcessService(BaseService):
             )
             return {}
 
-        extractor = extractors[0]
-        extractor.warm_up()
-
-        # See _reread_unusable_arabic: tesseract's own threads under this pool
-        # oversubscribe every core.
+        # Tesseract is built with OpenMP and will otherwise start its own
+        # threads per page. Stacked under the pool below that oversubscribes
+        # every core several times over and runs slower than either alone.
         os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
         def read(index):
@@ -396,6 +421,45 @@ class ProcessService(BaseService):
         )
 
         return replacements
+
+    def ocr_image_bytes(self, data: bytes) -> str:
+        """Text tesseract can read off an uploaded picture, or "".
+
+        The picture is wrapped in a one-page PDF so it goes through the same
+        OCR page reader, at the same settings, as a scanned document page.
+        Output that does not read as text (a photograph, a chart with a few
+        stray labels) is dropped: the picture is still searchable as an
+        image, and garbage text would only pollute the text index.
+        """
+        import tempfile
+
+        import pymupdf  # ty: ignore[unresolved-import]
+
+        from application.arabic_extraction.base import Page as OcrPage
+
+        extractor = self._tesseract_best()
+        if extractor is None:
+            return ""
+
+        try:
+            with pymupdf.open(stream=data) as image_doc:
+                pdf_bytes = image_doc.convert_to_pdf()
+        except Exception as exc:  # noqa: BLE001 - an unreadable picture just has no text
+            self.logger.warning("Could not prepare an uploaded image for OCR: %s", exc)
+            return ""
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp.flush()
+            page = OcrPage(path=Path(tmp.name), number=0)
+            try:
+                result = extractor.run(page)
+            finally:
+                page.close()
+
+        if not result.ok or not self._reads_as_text(result.text):
+            return ""
+        return result.text
 
     @staticmethod
     def _word_ratio(text: str) -> tuple[int, float]:
@@ -445,140 +509,6 @@ class ProcessService(BaseService):
         words, ratio = cls._word_ratio(text)
 
         return words >= 2 and ratio >= 0.5
-
-    def _reread_unusable_arabic(self, file_path: Path, pages, on_progress=None) -> dict[int, str]:
-        """OCR the pages whose Arabic text layer cannot be searched.
-
-        Returns replacement text keyed by page index; pages absent from it keep
-        what the PDF gave. Nothing happens at all unless OCR_ENABLED is set.
-
-        Two things make this narrower than "OCR the document":
-
-        *Only Arabic, and only when broken.* `profile()` costs microseconds and
-        answers both questions. A healthy text layer is the characters the
-        author typed — re-reading it with OCR trades those for a guess at the
-        pixels, which is strictly worse as well as seconds slower.
-
-        *An OCR'd page keeps an approximate highlight.* The rectangles a
-        citation draws come from `highlight_metadata`, which maps character
-        offsets onto the word boxes this page's text was built from. Replacing
-        the text means those offsets index a different string — but the boxes
-        remain the only positional information in existence, since OCR returns
-        none, and both strings read the same page in the same order. So the
-        page is kept and the length ratio recorded here; `split_file` scales
-        offsets through it, and the highlight is marked `approx`. Chunks are a
-        fixed size and cover a good fraction of a page, so landing in the right
-        region is what this needs to do.
-        """
-        if not self.settings.OCR_ENABLED:
-            return {}
-
-        from application.arabic_extraction.base import Page as OcrPage
-        from application.arabic_extraction.language import profile
-        from application.arabic_extraction.registry import build
-
-        candidates = [
-            page
-            for page in pages
-            if (details := profile(page.text)).is_arabic
-            and not details.is_usable
-            and details.characters >= self.settings.OCR_MIN_CHARS
-        ]
-
-        if not candidates:
-            return {}
-
-        extractors = build([self.settings.OCR_EXTRACTOR])
-
-        if not extractors:
-            from application.arabic_extraction.registry import survey
-
-            reason = {entry.name: entry.reason for entry in survey()}.get(
-                self.settings.OCR_EXTRACTOR, "unknown extractor"
-            )
-            # A warning, not an error: the text layer is poor, not absent, and
-            # failing the whole upload over a missing OCR engine would be a
-            # worse outcome than indexing what the PDF already gave us.
-            self.logger.warning(
-                "OCR_ENABLED but %r cannot run (%s); keeping the text layer for " "%d unusable page(s) of %s",
-                self.settings.OCR_EXTRACTOR,
-                reason,
-                len(candidates),
-                file_path.name,
-            )
-            return {}
-
-        extractor = extractors[0]
-        extractor.warm_up()
-
-        # Tesseract is built with OpenMP and will otherwise start its own
-        # threads per page. Stacked under the pool below that oversubscribes
-        # every core several times over and runs slower than either alone.
-        # One page per thread, one thread per page: page level parallelism
-        # scales far better than tesseract's internal threading, and this is
-        # the documented way to turn the latter off.
-        os.environ.setdefault("OMP_THREAD_LIMIT", "1")
-
-        workers = self._ocr_workers(len(candidates))
-
-        replacements: dict[int, str] = {}
-
-        def read(page):
-            return page, extractor.run(OcrPage(path=file_path, number=page.page_index))
-
-        # Threads are safe here: `run` keeps no state on the extractor, and
-        # each Page opens its own pymupdf handle. The per-call telemetry it
-        # returns is not — `process_time` and RSS are process-wide — but none
-        # of it is read on this path. The benchmark, which does read it, stays
-        # serial for exactly that reason.
-        done = 0
-        results = []
-
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            # as_completed rather than map: map yields in submission order, so
-            # progress would advance in lockstep with the slowest page ahead of
-            # it rather than as pages actually finish. On a 214-page book that
-            # is the difference between a bar that moves and one that sits at
-            # zero for minutes -- which is what a user reads as "hung".
-            futures = [pool.submit(read, page) for page in candidates]
-
-            for future in as_completed(futures):
-                results.append(future.result())
-                done += 1
-
-                if on_progress is not None:
-                    on_progress(done, len(candidates))
-
-        for page, result in results:
-            if not result.ok:
-                self.logger.warning(
-                    "OCR failed on page %d of %s: %s",
-                    page.page_index + 1,
-                    file_path.name,
-                    result.error or "empty output",
-                )
-                continue
-
-            replacements[page.page_index] = result.text
-
-            # Keep the page and record how the two strings differ in length.
-            # The boxes still describe where things are on the paper — OCR
-            # produces no coordinates at all — and both strings read the page
-            # in the same order, so split_file can map an offset from one into
-            # the other. See highlight_metadata: the result is marked approximate.
-            if result.text:
-                self._text_scale[page.page_index] = len(page.text) / len(result.text)
-
-        if replacements:
-            self.logger.info(
-                "Re-read %d of %d page(s) of %s with %s (unusable Arabic text layer)",
-                len(replacements),
-                len(pages),
-                file_path.name,
-                extractor.name,
-            )
-
-        return replacements
 
     def split_file(self, docs: list[Document], extension: str | None = None) -> list[Document]:
         """Chunk the extracted text. Delegates; see TextProcessingService.
@@ -645,25 +575,3 @@ class ProcessService(BaseService):
                 continue
 
             chunk.page_content = continuation_prefix(metadata, limit) + chunk.page_content
-
-    async def process_and_split(self, file_bytes: bytes, filename: str, on_progress=None) -> list[Document]:
-        """Extract and split, off the event loop.
-
-        Both halves are synchronous CPU work — pypdf parsing every page, then
-        the splitter walking the whole text — and neither yields. Called
-        straight from an `async def` route they run *on* the event loop, which
-        is what stopped the server answering anything at all while a large PDF
-        was ingesting: one 200-page upload froze every other request behind it.
-
-        One thread hop covers both steps rather than one each, so the loop is
-        released once and the intermediate document list never crosses back.
-        """
-        extension = Path(filename).suffix.lower()
-
-        def work() -> list[Document]:
-            return self.split_file(
-                self.process_bytes(file_bytes, filename, on_progress),
-                extension=extension,
-            )
-
-        return await asyncio.to_thread(work)

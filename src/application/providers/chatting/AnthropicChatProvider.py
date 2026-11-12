@@ -29,7 +29,7 @@ class AnthropicChatProvider(LLMChattingInterface):
         # Unlike the other three, max_tokens is required here, not optional.
         request = {
             "model": self.model_id,
-            "messages": messages,
+            "messages": self._anthropic_messages(messages),
             "max_tokens": max_tokens,
             "temperature": temperature,
         }

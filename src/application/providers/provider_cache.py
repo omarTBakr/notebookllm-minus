@@ -44,6 +44,7 @@ class ProviderCache:
         self._chatting: dict[tuple[str, int | None, bool | None], LLMChattingInterface] = {}
         self._embedding: dict[tuple[str, int], LLMEmbeddingInterface] = {}
         self._reranker: RerankerInterface | None = None
+        self._image_embedding = None
 
     def _for_source(self, source: str, backend_field: str, **overrides) -> Settings:
         """A copy of Settings describing *source* rather than .env's default.
@@ -156,6 +157,30 @@ class ProviderCache:
 
         return self._reranker
 
+    # --- multimodal embedding ----------------------------------------------------
+
+    def image_embedding(self):
+        """The one multimodal embedder (IMAGE_EMBEDDING_*), or None when off.
+
+        Global rather than per chat, like the reranker: every notebook's image
+        collection is built with it, whatever text embedder the chat chose.
+        """
+        if not self.settings.MULTIMODAL_ENABLED:
+            return None
+
+        if self._image_embedding is None:
+            from .embedding.image import ImageEmbeddingFactory
+
+            self._image_embedding = ImageEmbeddingFactory(self.settings).create()
+            logger.info(
+                "Opened image embedder %s (%s, %d dims)",
+                type(self._image_embedding).__name__,
+                self._image_embedding.model_id,
+                self._image_embedding.embedding_size,
+            )
+
+        return self._image_embedding
+
     # --- shutdown -------------------------------------------------------------
 
     async def aclose_all(self) -> None:
@@ -169,6 +194,13 @@ class ProviderCache:
                 await client.aclose()
             except Exception as exc:
                 logger.warning("Could not close %s cleanly: %s", label, exc)
+
+        if self._image_embedding is not None:
+            try:
+                await self._image_embedding.aclose()
+            except Exception as exc:
+                logger.warning("Could not close the image embedder cleanly: %s", exc)
+            self._image_embedding = None
 
         if self._reranker is not None:
             try:

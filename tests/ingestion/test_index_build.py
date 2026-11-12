@@ -19,10 +19,13 @@ from tests.support.llm import FakeEmbeddingClient
 
 def _controller(embedding_size=8):
     vectors = FakeVectorRepository()
-    return NLPService(
-        embedding_client=FakeEmbeddingClient(embedding_size=embedding_size),
-        vectordb_client=vectors,
-    ), vectors
+    return (
+        NLPService(
+            embedding_client=FakeEmbeddingClient(embedding_size=embedding_size),
+            vectordb_client=vectors,
+        ),
+        vectors,
+    )
 
 
 class _Chunks:

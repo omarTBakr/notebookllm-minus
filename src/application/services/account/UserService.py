@@ -44,9 +44,6 @@ class UserService(BaseService):
         self.logger.debug("Created user %r (%s)", user.user_id, user.label)
         return user
 
-    async def list_users(self) -> list[User]:
-        return [u async for u in self.users.iter_users()]
-
     async def get(self, user_id: str) -> User:
         return await self.users.get_user(user_id)
 
@@ -99,6 +96,13 @@ class UserService(BaseService):
             collection = self.nlp_for_chat(chat).collection_name(chat_id)
             if await db.vectors().collection_exists(collection):
                 if await db.vectors().delete_collection(collection):
+                    removed["collections"] += 1
+
+            from application.services.rag.ImageIndexService import ImageIndexService
+
+            image_collection = ImageIndexService.collection_name(chat_id)
+            if await db.vectors().collection_exists(image_collection):
+                if await db.vectors().delete_collection(image_collection):
                     removed["collections"] += 1
 
             # --- chunks and assets, via the project the chat's documents sit in ---

@@ -175,14 +175,6 @@ class MongoProjectRepository(ProjectRepository, BaseModel):
 
         self.logger.debug("Cleared chunks_ids for project %r", project_id)
 
-    async def list_projects(self) -> list[Project]:
-        """Every project, newest first."""
-        try:
-            cursor = self.collection.find({})
-            return [Project(**document) async for document in cursor.sort("created_at", -1)]
-        except PyMongoError as exc:
-            raise DbError("Could not list projects") from exc
-
     async def rename(self, project_id: str, name: str) -> None:
         """Change a project's display name."""
         await self.patch_one(

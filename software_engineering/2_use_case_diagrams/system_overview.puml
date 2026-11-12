@@ -10,12 +10,15 @@ actor "Guard models" as guard <<system>>
 actor "Reranker (llama.cpp)" as tei <<system>>
 actor "Web sources\n(YouTube, sites, Sheets)" as web <<system>>
 actor "Langfuse" as langfuse <<system>>
+actor "Multimodal embedder\n(EmbeddingGemma 2)" as mm <<system>>
 
 rectangle "NotebookLLM⁻" {
   usecase "Sign up / sign in" as UC_auth
   usecase "Manage my account" as UC_profile
   usecase "Create / rename a notebook" as UC_notebook
   usecase "Upload a document" as UC_upload
+  usecase "Upload a picture" as UC_upload_img
+  usecase "Ask with a picture" as UC_ask_img
   usecase "Add a link source" as UC_link
   usecase "Select active sources" as UC_select
   usecase "Ask a question" as UC_ask
@@ -33,6 +36,8 @@ reader --> UC_auth
 reader --> UC_profile
 reader --> UC_notebook
 reader --> UC_upload
+reader --> UC_upload_img
+reader --> UC_ask_img
 reader --> UC_link
 reader --> UC_select
 reader --> UC_ask
@@ -50,6 +55,10 @@ UC_ask --> llm
 UC_ask --> guard
 UC_ask --> tei
 UC_upload --> llm
+UC_upload --> mm
+UC_upload_img --> mm
+UC_ask_img --> mm
+UC_ask --> mm
 UC_link --> web
 UC_studio --> llm
 UC_memory --> llm

@@ -6,19 +6,22 @@ its own SDK wants. That translation is the whole point of this layer: swapping
 Anthropic for Cohere should be an ``.env`` edit, not a rewrite.
 """
 
+import base64
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from time import perf_counter
 
 from shared.enums import ChatRole
-from shared.utils import get_logger, tracing
+from shared.utils import get_logger, get_settings, tracing
 from shared.utils.metrics import (
+    GENERATION_COST,
     GENERATION_REQUESTS,
     GENERATION_SECONDS,
     GENERATION_TOKENS,
     GENERATION_TTFT_SECONDS,
 )
+from shared.utils.model_pricing import backend_of, cost_details
 
 
 class LLMChattingInterface(ABC):
@@ -64,8 +67,13 @@ class LLMChattingInterface(ABC):
         max_tokens: int | None = None,
         temperature: float | None = None,
         json_schema: dict | None = None,
+        images: list[tuple[bytes, str]] | None = None,
     ) -> str:
         """Answer *prompt*, optionally continuing *chat_history*.
+
+        *images* are ``(bytes, mime)`` pairs attached to the new user turn,
+        for a model with vision. Callers check the capability first; a
+        provider that cannot send images drops them (see ``_without_images``).
 
         *json_schema* asks the vendor to constrain the answer to that JSON
         Schema. It is honoured only by providers with ``ENFORCES_SCHEMA`` and is
@@ -80,7 +88,7 @@ class LLMChattingInterface(ABC):
         each provider means all five log the same fields in the same shape, and
         a provider cannot forget to.
         """
-        messages = self._build_messages(prompt, chat_history)
+        messages = self._build_messages(prompt, chat_history, images)
 
         resolved_max_tokens = max_tokens or self.default_max_tokens
 
@@ -107,7 +115,7 @@ class LLMChattingInterface(ABC):
         generation = tracing.start_generation(
             "llm.generate",
             model=self.model_id,
-            input=messages,
+            input=self._for_trace(messages),
             model_parameters={
                 "max_tokens": resolved_max_tokens,
                 "temperature": resolved_temperature,
@@ -176,6 +184,7 @@ class LLMChattingInterface(ABC):
         chat_history: list[dict] | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        images: list[tuple[bytes, str]] | None = None,
     ) -> AsyncIterator[dict]:
         """Answer *prompt*, yielding the text in pieces as it arrives.
 
@@ -194,7 +203,7 @@ class LLMChattingInterface(ABC):
         providers (OpenAI, NVIDIA, OpenRouter) stream; Anthropic, Google and
         Cohere do not.
         """
-        messages = self._build_messages(prompt, chat_history)
+        messages = self._build_messages(prompt, chat_history, images)
 
         resolved_max_tokens = max_tokens or self.default_max_tokens
 
@@ -221,7 +230,7 @@ class LLMChattingInterface(ABC):
         generation = tracing.start_generation(
             "llm.stream",
             model=self.model_id,
-            input=messages,
+            input=self._for_trace(messages),
             model_parameters={
                 "max_tokens": resolved_max_tokens,
                 "temperature": resolved_temperature,
@@ -333,7 +342,12 @@ class LLMChattingInterface(ABC):
         # The log line below is DEBUG, so at the default LOG_LEVEL=INFO this
         # data never left the process. The counters are unconditional.
         provider = type(self).__name__
-        tracing.record_usage(input_tokens, output_tokens)
+        cost = cost_details(
+            backend_of(provider), self.model_id, input_tokens, output_tokens, get_settings().MODEL_PRICES
+        )
+        tracing.record_usage(input_tokens, output_tokens, cost)
+        if cost is not None:
+            GENERATION_COST.labels(provider, self.model_id).inc(cost["total"])
         if input_tokens is not None:
             GENERATION_TOKENS.labels(provider, self.model_id, "input").inc(input_tokens)
         if output_tokens is not None:
@@ -354,15 +368,29 @@ class LLMChattingInterface(ABC):
         )
 
     @staticmethod
-    def construct_message(role: ChatRole | str, content: str) -> dict:
-        """Build one provider-neutral history entry."""
-        return {"role": ChatRole(role).value, "content": content}
+    def construct_message(role: ChatRole | str, content: str, images: list[tuple[bytes, str]] | None = None) -> dict:
+        """Build one provider-neutral history entry.
 
-    def _build_messages(self, prompt: str, chat_history: list[dict] | None) -> list[dict]:
+        ``content`` stays a plain string even when there are pictures, so
+        everything that joins, splits or measures messages keeps working.
+        Pictures ride beside it as ``images: [{"mime", "data"}]`` with the
+        data base64-encoded, and each provider translates that list into its
+        own wire shape (``_ollama_messages``, ``_openai_messages``, ...).
+        """
+        message = {"role": ChatRole(role).value, "content": content}
+        if images:
+            message["images"] = [
+                {"mime": mime, "data": base64.b64encode(data).decode("ascii")} for data, mime in images
+            ]
+        return message
+
+    def _build_messages(
+        self, prompt: str, chat_history: list[dict] | None, images: list[tuple[bytes, str]] | None = None
+    ) -> list[dict]:
         """History plus the new user turn, in neutral form and strictly alternating."""
         messages = list(chat_history or [])
 
-        messages.append(self.construct_message(ChatRole.USER, prompt))
+        messages.append(self.construct_message(ChatRole.USER, prompt, images))
 
         return self._alternate(messages)
 
@@ -404,14 +432,79 @@ class LLMChattingInterface(ABC):
 
         for turn in turns:
             if merged and merged[-1]["role"] == turn["role"]:
-                merged[-1] = {
+                joined = {
                     **merged[-1],
                     "content": f"{merged[-1]['content']}\n\n{turn['content']}",
                 }
+                pictures = list(merged[-1].get("images") or []) + list(turn.get("images") or [])
+                if pictures:
+                    joined["images"] = pictures
+                merged[-1] = joined
             else:
                 merged.append(dict(turn))
 
         return system + merged
+
+    # --- pictures, per wire format -------------------------------------------
+
+    @staticmethod
+    def _for_trace(messages: list[dict]) -> list[dict]:
+        """*messages* with each picture replaced by a short marker.
+
+        A trace that carried the base64 of every figure would be megabytes
+        per generation and put the user's documents in Langfuse twice.
+        """
+        if not any(m.get("images") for m in messages):
+            return messages
+        return [
+            (
+                {**m, "images": [f"<{p['mime']}, {len(p['data']) * 3 // 4} bytes>" for p in m["images"]]}
+                if m.get("images")
+                else m
+            )
+            for m in messages
+        ]
+
+    @staticmethod
+    def _without_images(messages: list[dict]) -> list[dict]:
+        """For a backend with no image input: the same turns, pictures dropped."""
+        return [{k: v for k, v in m.items() if k != "images"} for m in messages]
+
+    @staticmethod
+    def _ollama_messages(messages: list[dict]) -> list[dict]:
+        """Ollama takes a message-level ``images`` list of base64 strings."""
+        return [({**m, "images": [p["data"] for p in m["images"]]} if m.get("images") else m) for m in messages]
+
+    @staticmethod
+    def _openai_messages(messages: list[dict]) -> list[dict]:
+        """OpenAI-style content parts: the text, then one data-URL image per picture."""
+        out = []
+        for m in messages:
+            if not m.get("images"):
+                out.append(m)
+                continue
+            parts: list[dict] = [{"type": "text", "text": m["content"]}]
+            parts += [
+                {"type": "image_url", "image_url": {"url": f"data:{p['mime']};base64,{p['data']}"}} for p in m["images"]
+            ]
+            out.append({"role": m["role"], "content": parts})
+        return out
+
+    @staticmethod
+    def _anthropic_messages(messages: list[dict]) -> list[dict]:
+        """Anthropic content blocks: pictures first, then the text that refers to them."""
+        out = []
+        for m in messages:
+            if not m.get("images"):
+                out.append(m)
+                continue
+            blocks: list[dict] = [
+                {"type": "image", "source": {"type": "base64", "media_type": p["mime"], "data": p["data"]}}
+                for p in m["images"]
+            ]
+            blocks.append({"type": "text", "text": m["content"]})
+            out.append({"role": m["role"], "content": blocks})
+        return out
 
     @staticmethod
     def _split_system(messages: list[dict]) -> tuple[str | None, list[dict]]:

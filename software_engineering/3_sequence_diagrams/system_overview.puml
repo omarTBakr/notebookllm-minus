@@ -13,6 +13,7 @@ participant "Guardrail workers\ninput / output" as guard
 database "Postgres + pgvector\n(or Mongo + Qdrant)" as db
 database "Redis\n(results)" as redis
 participant "Reranker\n(llama.cpp, bge-reranker-v2-m3 GGUF)" as tei
+participant "EmbeddingGemma 2\n(Ollama, text + pictures)" as mm
 participant "LLM providers\n(Ollama, NVIDIA, ...)" as llm
 participant "Langfuse" as lf
 
@@ -39,13 +40,16 @@ api --> ui : 202 + task id
 mq -> ingest : plan → parse batches → correct → assemble
 ingest -> llm : repair split / fused words
 ingest -> db : pages, chunks
-ingest -> llm : embed chunks
+ingest -> llm : caption each figure (vision model)
+ingest -> llm : embed chunks (captions included)
 ingest -> db : vectors + HNSW index
+ingest -> mm : embed each figure / uploaded picture
+ingest -> db : project_<id>__img vectors
 ui -> api : GET /chats/{id}/indexing (poll)
 api --> ui : indexed
 
 == Ask a question ==
-user -> ui : question
+user -> ui : question (optionally with a picture)
 ui -> nginx : POST /chat/chats/{id}/message (SSE)
 nginx -> api
 api -> lf : open trace "chat.answer"
@@ -59,14 +63,16 @@ alt question flagged
 else safe
   api -> llm : plan (intent, standalone, sub-queries)
   api -> db : vector search per query (wide pool)
-  api -> tei : rerank candidates
+  api -> mm : embed query into the picture space
+  api -> db : picture search (project_<id>__img)
+  api -> tei : rerank passages + captions together
   api --> ui : meta (citations)
   opt complex question
     api -> llm : sub-answer per part (parallel)
     api --> ui : step events (parts ticked off)
   end
   loop streamed answer
-    api -> llm : stream tokens
+    api -> llm : stream tokens (+ cited pictures if the model has vision)
     api -> mq : guardrail_output_task (per passage)
     mq -> guard : micro-batch
     guard -> redis : verdict

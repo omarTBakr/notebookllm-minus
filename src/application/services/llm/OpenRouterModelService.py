@@ -16,6 +16,7 @@ from shared.utils import (
     COMPLETION,
     EMBEDDING,
     OPENROUTER,
+    family_of,
     is_safety_model,
     parameters_of,
     qualify,
@@ -76,7 +77,7 @@ class OpenRouterModelService(ModelService):
             "source": self.source,
             # Hosted: no local footprint to report.
             "size_gb": None,
-            "family": tag.split("/")[0] if "/" in tag else None,
+            "family": family_of(tag),
             "parameters": parameters_of(tag),
             "capabilities": capabilities,
             "name": entry.get("name"),

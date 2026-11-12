@@ -222,6 +222,9 @@ class NLPService(BaseService):
                 "asset_id": chunk.asset_id,
                 "chunk_order": chunk.chunk_order,
                 "source": (chunk.chunk_metadata or {}).get("source"),
+                # An image chunk's caption is indexed here too, so a text
+                # search finds the figure; the tag keeps it recognisable.
+                **({"kind": "image"} if (chunk.chunk_metadata or {}).get("kind") == "image" else {}),
             }
             for chunk in batch
         ]

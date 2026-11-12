@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { t } from "./i18n.js";
-import { citationLabel, citationTitle } from "./citation_label.js";
+import { citationLabel, citationTitle, linkedHint } from "./citation_label.js";
 import { renderInto } from "./markdown.js";
 import { state } from "./state.js";
 import { $ } from "./dom.js";
@@ -178,11 +178,31 @@ function citationsBlock(citations) {
 
     source.textContent = label;
 
+    // A figure or an uploaded picture: a small thumbnail in front of the
+    // label, so the reader can see what was cited before opening it.
+    if (cite.kind === "image" && canOpen && state.notebook?.chat_id) {
+      const thumb = document.createElement("img");
+      thumb.className = "sources-block__thumb";
+      thumb.loading = "lazy";
+      thumb.alt = t("imageCitation");
+      thumb.src = api.chunkImageUrl(state.notebook.chat_id, cite.asset_id, cite.chunk_order);
+      source.prepend(thumb);
+    }
+
     const score = document.createElement("span");
     score.className = "sources-block__score";
     score.textContent = cite.score ?? "";
 
     item.append(num, source, score);
+
+    // Brought in by a link rather than found by the search: say with what.
+    const hint = linkedHint(cite, t);
+    if (hint) {
+      const linked = document.createElement("span");
+      linked.className = "sources-block__linked";
+      linked.textContent = hint;
+      item.append(linked);
+    }
     list.append(item);
   }
 
@@ -415,9 +435,18 @@ function stoppedNote() {
  * under "Got it, I'll let you know..." would be actively misleading, so both
  * are skipped for it.
  */
-export async function ask(chatId, text, { onDone, isCommand = false } = {}) {
+export async function ask(chatId, text, { onDone, isCommand = false, image = null } = {}) {
   const question = bubble("user");
   question.body.textContent = text;
+  if (image) {
+    // Shown in the bubble for this session only: the server keeps a caption
+    // of the picture, not the picture, so a reload shows that note instead.
+    const picture = document.createElement("img");
+    picture.className = "msg__image";
+    picture.src = image.dataUrl;
+    picture.alt = image.name;
+    question.body.prepend(picture);
+  }
 
   const answer = bubble("assistant");
   answer.body.classList.add("md", "is-streaming");
@@ -443,6 +472,7 @@ export async function ask(chatId, text, { onDone, isCommand = false } = {}) {
   try {
     for await (const event of api.streamMessage(chatId, text, {
       signal: inFlight.signal,
+      image: image?.dataUrl,
     })) {
       if (event.type === "step") {
         // Only complex questions send these: the plan, each part as it is

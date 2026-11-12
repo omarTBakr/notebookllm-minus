@@ -17,9 +17,7 @@ async def test_history_404s_for_an_unknown_chat(client, seed):
 
 async def test_history_returns_stored_turns_in_order(client, seed, fake_db):
     for role, text in [(ChatRole.USER, "q"), (ChatRole.ASSISTANT, "a")]:
-        await fake_db.messages().create_message(
-            Message(message_id=f"m-{text}", chat_id="c1", role=role, content=text)
-        )
+        await fake_db.messages().create_message(Message(message_id=f"m-{text}", chat_id="c1", role=role, content=text))
 
     body = (await client.get("/chat/chats/c1/messages")).json()
 
@@ -32,9 +30,11 @@ async def test_citations_are_re_resolved_against_current_asset_names(client, see
     that no longer exists anywhere."""
     await fake_db.messages().create_message(
         Message(
-            message_id="m1", chat_id="c1", role=ChatRole.ASSISTANT, content="a",
-            citations=[{"num": 1, "asset_id": "a1", "source": "note1.txt",
-                        "chunk_order": 0, "score": 0.9}],
+            message_id="m1",
+            chat_id="c1",
+            role=ChatRole.ASSISTANT,
+            content="a",
+            citations=[{"num": 1, "asset_id": "a1", "source": "note1.txt", "chunk_order": 0, "score": 0.9}],
         )
     )
     fake_db.assets().items["a1"].name = "Groceries"
@@ -47,9 +47,11 @@ async def test_citations_are_re_resolved_against_current_asset_names(client, see
 async def test_a_citation_for_a_deleted_asset_keeps_its_stored_name(client, seed, fake_db):
     await fake_db.messages().create_message(
         Message(
-            message_id="m1", chat_id="c1", role=ChatRole.ASSISTANT, content="a",
-            citations=[{"num": 1, "asset_id": "gone", "source": "deleted.txt",
-                        "chunk_order": 0, "score": 0.9}],
+            message_id="m1",
+            chat_id="c1",
+            role=ChatRole.ASSISTANT,
+            content="a",
+            citations=[{"num": 1, "asset_id": "gone", "source": "deleted.txt", "chunk_order": 0, "score": 0.9}],
         )
     )
 
@@ -103,7 +105,10 @@ def _chunk(order, page, asset_id="a1"):
 async def _stored(fake_db, citation):
     await fake_db.messages().create_message(
         Message(
-            message_id="m1", chat_id="c1", role=ChatRole.ASSISTANT, content="a",
+            message_id="m1",
+            chat_id="c1",
+            role=ChatRole.ASSISTANT,
+            content="a",
             citations=[citation],
         )
     )
@@ -116,8 +121,7 @@ async def test_an_old_citation_gets_its_page_filled_in(client, seed, fake_db):
     chunk they name still knows which page it came from.
     """
     fake_db.chunks().items.append(_chunk(order=0, page=10))
-    await _stored(fake_db, {"num": 1, "asset_id": "a1", "source": "note1.txt",
-                            "chunk_order": 0, "score": 0.9})
+    await _stored(fake_db, {"num": 1, "asset_id": "a1", "source": "note1.txt", "chunk_order": 0, "score": 0.9})
 
     body = (await client.get("/chat/chats/c1/messages")).json()
 
@@ -132,9 +136,18 @@ async def test_a_stored_page_is_never_overwritten(client, seed, fake_db):
     answer never read.
     """
     fake_db.chunks().items.append(_chunk(order=0, page=99))
-    await _stored(fake_db, {"num": 1, "asset_id": "a1", "source": "note1.txt",
-                            "chunk_order": 0, "score": 0.9,
-                            "page_number": 7, "page_label": "7"})
+    await _stored(
+        fake_db,
+        {
+            "num": 1,
+            "asset_id": "a1",
+            "source": "note1.txt",
+            "chunk_order": 0,
+            "score": 0.9,
+            "page_number": 7,
+            "page_label": "7",
+        },
+    )
 
     body = (await client.get("/chat/chats/c1/messages")).json()
 
@@ -142,8 +155,7 @@ async def test_a_stored_page_is_never_overwritten(client, seed, fake_db):
 
 
 async def test_a_citation_with_no_matching_chunk_replays_without_a_page(client, seed, fake_db):
-    await _stored(fake_db, {"num": 1, "asset_id": "gone", "source": "deleted.txt",
-                            "chunk_order": 3, "score": 0.9})
+    await _stored(fake_db, {"num": 1, "asset_id": "gone", "source": "deleted.txt", "chunk_order": 3, "score": 0.9})
 
     body = (await client.get("/chat/chats/c1/messages")).json()
 

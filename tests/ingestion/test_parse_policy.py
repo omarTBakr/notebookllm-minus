@@ -10,7 +10,16 @@ from shared.enums import AssetType
 
 @pytest.mark.parametrize(
     "asset_type",
-    [AssetType.TEXT, AssetType.MARKDOWN, AssetType.CSV, AssetType.XLSX, AssetType.HTML, AssetType.JSON, AssetType.XML, AssetType.YOUTUBE],
+    [
+        AssetType.TEXT,
+        AssetType.MARKDOWN,
+        AssetType.CSV,
+        AssetType.XLSX,
+        AssetType.HTML,
+        AssetType.JSON,
+        AssetType.XML,
+        AssetType.YOUTUBE,
+    ],
 )
 def test_text_native_assets_skip_correction(asset_type):
     asset = SimpleNamespace(asset_type=asset_type, source_url="")

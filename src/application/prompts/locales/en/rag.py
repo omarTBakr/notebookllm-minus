@@ -45,43 +45,62 @@ document_prompt = "\n".join(
 )
 
 # Drives QueryPlanner.plan_query, the first step of every grounded answer.
+#
+# Version 2 (Langfuse: en/rag.plan_prompt v2). v1 sent greetings and thanks to
+# retrieval and invented sub-queries the user never asked for (seen in the
+# live end-to-end run with llama3.1:8b). v2 defines chitchat by "asks for no
+# information", gives one example per decision (deliberately off-topic), and
+# forbids extra or repeated parts.
 # Three jobs in one call: classify the intent, rewrite the question so it
 # stands alone without the chat history, and give the retrieval queries.
 # Told explicitly not to invent a split: a model asked for "queries" tends to
 # pad a simple question into near-duplicates, which costs a sub-answer each.
 plan_prompt = "\n".join(
     [
-        "You plan how to answer a question in a chat backed by the user's own documents.",
+        "You plan how to answer a message in a chat backed by the user's own documents.",
+        "You do not answer it. You only classify it and write search queries.",
         "",
         "Recent conversation (oldest first):",
         "{history}",
         "",
-        "New question:",
+        "New message:",
         "{question}",
         "",
-        "Decide three things.",
+        "Step 1 - intent. Choose exactly one:",
         "",
-        "1. intent -- exactly one of:",
-        '   - "chitchat": a greeting, thanks, small talk, or a question about you, the',
-        "     assistant. Nothing needs to be looked up in the documents.",
-        '   - "simple": it asks for one thing, even if that thing is detailed.',
-        '   - "complex": it asks for several distinct things, or needs separate facts',
-        "     found and then combined (a comparison, a before-and-after, a list of",
-        "     unrelated items).",
-        "   Most questions are simple. When unsure between simple and complex, choose",
-        "   simple. When unsure whether the documents are needed, they are: never pick",
-        "   chitchat for a question about a topic.",
+        '- "chitchat": the message asks for no information at all. Greetings',
+        "  (hi, hello, good morning), thanks (thanks, thank you, great job), goodbyes,",
+        "  apologies, reactions (ok, cool, got it), or questions about you, the",
+        "  assistant (who are you, what can you do). A message that greets or thanks",
+        "  AND also asks something is not chitchat: classify the question in it.",
+        '- "simple": it asks for one piece of information, however long the answer',
+        "  may be. Explanations, summaries and definitions are simple.",
+        '- "complex": it asks for two or more DIFFERENT things that need separate',
+        "  lookups, joined by and, also, as well as, or a comparison (A versus B).",
         "",
-        "2. standalone_query -- the new question rewritten so it is fully understood",
-        "   without the conversation: replace pronouns and references like 'it', 'they'",
-        "   or 'the second one' with what they refer to. Keep the user's language.",
+        "Examples (the topics are illustrations only, never reuse them):",
+        '  "Hello!" -> chitchat',
+        '  "Thanks, that was helpful" -> chitchat',
+        '  "What can you do?" -> chitchat',
+        '  "Thanks! And when did the bakery open?" -> simple',
+        '  "Explain how the irrigation system works" -> simple',
+        '  "How old is the clock tower, and who painted the mural?" -> complex',
+        '  "Compare the winter and summer timetables" -> complex',
         "",
-        "3. sub_queries -- short search queries that will retrieve the passages needed:",
-        "   - simple: one query, a rephrasing likely to retrieve better than the",
-        "     question's own wording.",
-        "   - complex: one self-contained query per part, at most {max_sub_queries}.",
-        "     Do not invent parts the question does not ask for.",
-        "   - chitchat: just repeat the standalone question.",
+        "When unsure between chitchat and simple, choose simple. When unsure between",
+        "simple and complex, choose simple.",
+        "",
+        "Step 2 - standalone_query: rewrite the new message so it is fully understood",
+        "without the conversation. Replace pronouns and references (it, they, that",
+        "one, the second) with what they refer to. Keep the user's language and",
+        "meaning; add nothing they did not ask.",
+        "",
+        "Step 3 - sub_queries: short search queries, in the user's language.",
+        "- chitchat: exactly one, the standalone message itself.",
+        "- simple: exactly one, worded to find the passage that answers it.",
+        "- complex: one per part the message actually asks for, at most",
+        "  {max_sub_queries}. Never add a part the user did not ask about, and never",
+        "  repeat a part in different words.",
     ]
 )
 
@@ -151,3 +170,24 @@ footer_prompt = "\n".join(
         "Response:",
     ]
 )
+
+# An image hit, in place of a passage's text. The caption is what a model
+# without vision reads; a vision model also gets the picture itself, and
+# images_attached_prompt says which document each attached picture is.
+image_content_prompt = "[Image] {caption}"
+
+# Appended when pictures are attached to the request, so the model can tell
+# them apart and cite each by its document number.
+images_attached_prompt = "The images attached to this message are, in order: {labels}."
+
+# The label for a picture the user attached to their own question.
+user_image_label = "the image the user attached to their question"
+
+# Shown in the search query and the history in place of a picture the user
+# attached: later turns and the retriever see this caption, not the pixels.
+user_image_note = "[Attached image: {caption}]"
+
+# Appended to a document's heading when it was not retrieved on its own but
+# brought in as the partner of another: the figure a passage refers to, or
+# the passage that explains a figure.
+linked_document_note = "(belongs with Document {num})"

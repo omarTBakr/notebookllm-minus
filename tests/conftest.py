@@ -57,6 +57,10 @@ _ENV = {
     # The tests that exercise correction itself hand it a fake client and turn
     # this back on for their own settings copy.
     "POSTPROCESS_ENABLED": "false",
+    # Off by default for the same reason; the image tests switch it on for
+    # themselves. No caption model: captions fall back to nearby text.
+    "MULTIMODAL_ENABLED": "false",
+    "IMAGE_CAPTION_MODEL_ID": "",
     # Keep the logging config from installing a rotating file handler that
     # would fight caplog and write into the repo.
     "LOG_TO_FILE": "false",
@@ -79,6 +83,46 @@ def _reset_settings_cache():
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+class _CurrentSettings:
+    """Stands in for a module-level ``SETTINGS``: always the test's own Settings."""
+
+    def __getattr__(self, name):
+        return getattr(get_settings(), name)
+
+    def __setattr__(self, name, value):
+        setattr(get_settings(), name, value)
+
+    def __delattr__(self, name):
+        delattr(get_settings(), name)
+
+
+@pytest.fixture(autouse=True)
+def _module_settings_follow_the_test(monkeypatch):
+    """Make every module-level ``SETTINGS`` read the Settings this test sees.
+
+    `celery_app`, `main` and a few others bind ``SETTINGS = get_settings()``
+    at import, and the task modules import that name. The cache reset above
+    gives each test a new object, so from the second test on those modules
+    held a different one from `get_settings()`: a test that switched
+    MULTIMODAL_ENABLED on passed alone and failed after any other test,
+    because the parse stage was still reading the first test's object.
+
+    Every such binding already imported is pointed at a proxy for the length
+    of the test. A module imported for the first time *during* a test binds
+    the current object, which is right for that test, and is proxied from the
+    next one on.
+    """
+    import sys
+
+    from shared.utils.config import Settings
+
+    proxy = _CurrentSettings()
+
+    for module in list(sys.modules.values()):
+        if isinstance(getattr(module, "__dict__", {}).get("SETTINGS"), Settings):
+            monkeypatch.setattr(module, "SETTINGS", proxy)
 
 
 @pytest.fixture(autouse=True)

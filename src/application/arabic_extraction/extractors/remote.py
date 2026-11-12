@@ -38,27 +38,16 @@ class QariRemoteExtractor(ArabicExtractor):
 
     @staticmethod
     def _config() -> tuple[str, str, int]:
-        """URL, secret and timeout, from the environment or the app's settings.
+        """URL, secret and timeout, from the environment.
 
-        Environment first, so this package still runs standalone, and because
-        the URL is not a constant: a free ngrok tunnel gets a new hostname
-        every time the notebook restarts. Anything that hard-codes it will be
-        wrong by tomorrow.
+        The environment and not Settings: this extractor is a benchmark
+        candidate, not part of the application, and the URL is not a constant
+        -- a free ngrok tunnel gets a new hostname every time the notebook
+        restarts.
         """
         url = os.environ.get("QARI_REMOTE_URL", "")
         secret = os.environ.get("QARI_REMOTE_SECRET", "")
         timeout = os.environ.get("QARI_REMOTE_TIMEOUT", "")
-
-        if not url:
-            try:
-                from shared.utils import get_settings
-
-                settings = get_settings()
-                url = getattr(settings, "QARI_REMOTE_URL", "") or ""
-                secret = getattr(settings, "QARI_REMOTE_SECRET", "") or ""
-                timeout = str(getattr(settings, "QARI_REMOTE_TIMEOUT", "") or "")
-            except Exception:  # noqa: BLE001 - standalone use is expected
-                pass
 
         return (
             url.rstrip("/"),

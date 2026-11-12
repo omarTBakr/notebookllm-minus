@@ -2,7 +2,9 @@
 
 UML for NotebookLLM⁻, written in PlantUML. Every `.puml` has its rendered `.png` committed next
 to it. The diagrams describe the system as it is now, including accounts and per-user isolation,
-agentic answering, reranking, guardrails and Langfuse. Update them in the same change as the code they describe.
+agentic answering, reranking, guardrails, Langfuse, and pictures as searchable sources (multimodal retrieval). Update them in the same change as the code they describe.
+
+The written documentation, one page per feature, is in [`docs/`](../docs/README.md).
 
 ## Rendering
 
@@ -27,6 +29,7 @@ different jar. `_style.iuml` holds the shared look.
 | Memory and Studio | [05_memory_and_studio](1_user_stories/05_memory_and_studio.png) |
 | Settings, observability, prompt versions | [06_settings_and_operations](1_user_stories/06_settings_and_operations.png) |
 | Accounts and privacy | [07_accounts_and_privacy](1_user_stories/07_accounts_and_privacy.png) |
+| Pictures as sources (multimodal) | [08_multimodal](1_user_stories/08_multimodal.png) |
 
 ## 2. Use case diagrams — `2_use_case_diagrams/`
 
@@ -38,6 +41,7 @@ different jar. `_style.iuml` holds the shared look.
 | Studio and memory | [studio_and_memory](2_use_case_diagrams/studio_and_memory.png) |
 | Operations and observability | [operations](2_use_case_diagrams/operations.png) |
 | Accounts and privacy | [accounts](2_use_case_diagrams/accounts.png) |
+| Pictures (multimodal retrieval) | [multimodal](2_use_case_diagrams/multimodal.png) |
 
 ## 3. Sequence diagrams — `3_sequence_diagrams/`
 
@@ -53,6 +57,9 @@ different jar. `_style.iuml` holds the shared look.
 | Studio generation | [studio_generation](3_sequence_diagrams/studio_generation.png) |
 | `/memory` | [memory](3_sequence_diagrams/memory.png) |
 | Langfuse tracing and prompt versions | [langfuse_tracing](3_sequence_diagrams/langfuse_tracing.png) |
+| Pictures at ingest: find, caption, chunk, link, embed | [image_ingest](3_sequence_diagrams/image_ingest.png) |
+| A question with pictures: both indexes, linked partners, with or without vision | [image_query_answer](3_sequence_diagrams/image_query_answer.png) |
+| Evaluation and load: Ragas scores the deployed system, Locust loads it | [evaluation_and_load](3_sequence_diagrams/evaluation_and_load.png) |
 
 ## 4. Class diagrams — `4_class_diagrams/`
 
@@ -64,3 +71,4 @@ different jar. `_style.iuml` holds the shared look.
 | Data tier: providers, repositories, models | [data_repositories](4_class_diagrams/data_repositories.png) |
 | Guardrails (LangChain middleware) and Celery jobs | [guardrails_and_tasks](4_class_diagrams/guardrails_and_tasks.png) |
 | Accounts: models, repositories, services, login layer | [accounts](4_class_diagrams/accounts.png) |
+| Pictures: embedders, index, captions, regions, links, vision gate | [multimodal](4_class_diagrams/multimodal.png) |

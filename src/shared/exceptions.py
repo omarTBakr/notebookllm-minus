@@ -178,12 +178,6 @@ class LinkSourceError(InvalidInputError):
     who pasted the link, since it is shown to them as it stands."""
 
 
-class FileDbError(NotebookLLMError):
-    """Writing the upload to disk failed."""
-
-    status_code = 500
-
-
 class ExtractionError(ProcessingError):
     """A loader could not read the file's text."""
 

@@ -31,10 +31,15 @@
       <div class="composer__chip" id="memory-suggest" hidden>
         <button type="button" class="composer__chip-item" id="memory-suggest-item">memory</button>
       </div>
+      {# A picture attached to the next question (static/js/attachment.js):
+         its thumbnail and a remove button, shown only while one is pending. #}
+      <div class="attachment" id="attachment-tray" hidden></div>
       <textarea id="question" rows="1" data-i18n-placeholder="startTyping" disabled></textarea>
       <span class="composer__count" id="composer-count">0</span>
       {# title set from static/js/memory.js — data-i18n only retitles
          [data-i18n]/[data-i18n-placeholder], nothing else. #}
+      <button class="icon-btn" id="btn-attach" type="button" data-i18n-title="attachImage" data-i18n-aria-label="attachImage"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-image"/></svg></button>
+      <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp" hidden>
       <button class="icon-btn" id="btn-memory-search" type="button" aria-label="memory"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-note"/></svg></button>
       <button class="composer__send" id="btn-send" type="button" disabled aria-label="send"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-send"/></svg></button>
       {# Results of the memory-search button above: the facts closest to the

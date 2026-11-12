@@ -87,6 +87,11 @@ export const api = {
   // Where a chunk sits in its source, and the rectangles to highlight if any
   // were captured at ingest. Fetched on a citation click, not carried on the
   // citation itself — see routes/chat/_pages.py.
+  // The picture an image chunk shows, cut out of its source, for a citation
+  // thumbnail. size caps the longest side.
+  chunkImageUrl: (chatId, assetId, chunkOrder, size = 160) =>
+    `/chat/chats/${chatId}/assets/${assetId}/chunks/${chunkOrder}/image?size=${size}`,
+
   locateChunk: (chatId, assetId, chunkOrder) =>
     request(`/chat/chats/${chatId}/assets/${assetId}/chunks/${chunkOrder}/locate`),
 
@@ -156,7 +161,7 @@ export const api = {
 
   // Streams the answer. fetch rather than EventSource because the question
   // belongs in a POST body and EventSource can only issue GETs.
-  async *streamMessage(chatId, text, { signal } = {}) {
+  async *streamMessage(chatId, text, { signal, image } = {}) {
     // signal is what actually closes the connection when the reader presses
     // Stop. Breaking out of the for-await would end this generator but leave
     // the reader — and the socket — open, so the model would keep generating
@@ -164,7 +169,8 @@ export const api = {
     const response = await fetch(`/chat/chats/${chatId}/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      // image: a data URL from the composer (attachment.js), or absent.
+      body: JSON.stringify(image ? { text, image } : { text }),
       signal,
     });
 

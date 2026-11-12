@@ -65,7 +65,48 @@ def memory_service(request: Request, chat=None) -> MemoryService:
     )
 
 
-def chat_service(request: Request, chat=None) -> ChatService:
+def image_index_service(request: Request):
+    """The notebook image index, or None when MULTIMODAL_ENABLED is off."""
+    embedder = request.app.providers.image_embedding()
+    if embedder is None:
+        return None
+
+    from application.services.rag.ImageIndexService import ImageIndexService
+
+    return ImageIndexService(embedding_client=embedder, vectordb_client=request.app.db.vectors())
+
+
+def caption_client(request: Request):
+    """The vision model that captions pictures, or None when none is configured."""
+    from shared.utils import get_settings
+
+    settings = get_settings()
+    if not settings.MULTIMODAL_ENABLED or not settings.IMAGE_CAPTION_MODEL_ID:
+        return None
+    return request.app.providers.chatting(settings.IMAGE_CAPTION_MODEL_ID, thinking=False)
+
+
+async def describe_picture(request: Request, data: bytes, mime: str, lang: str) -> str | None:
+    """A caption for a picture attached to a question, or None with no caption model."""
+    from application.services.ingest.ImageCaptionService import caption_picture
+
+    captioner = caption_client(request)
+    if captioner is None:
+        return None
+    return await caption_picture(captioner, data, mime, lang)
+
+
+async def model_has_vision(chat) -> bool:
+    """Whether the chat's answer model can be shown pictures. False while multimodal is off."""
+    from application.services.llm.vision import has_vision
+    from shared.utils import get_settings
+
+    if not get_settings().MULTIMODAL_ENABLED:
+        return False
+    return await has_vision(getattr(chat, "generation_model", None))
+
+
+def chat_service(request: Request, chat=None, vision: bool = False) -> ChatService:
     """Answering stack, using the chat's own models when it names them.
 
     Falls back to the .env defaults per field, so a chat that only overrides
@@ -99,6 +140,8 @@ def chat_service(request: Request, chat=None) -> ChatService:
         memory_controller=memory_controller,
         planner_client=request.app.providers.chatting(getattr(chat, "generation_model", None), thinking=False),
         reranker=request.app.providers.reranker(),
+        image_index=image_index_service(request),
+        vision=vision,
         **guardrails(request, chat),
     )
 

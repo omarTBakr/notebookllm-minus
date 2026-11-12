@@ -1,6 +1,11 @@
 // Bootstrap: load the logo, wire the panels together, open a notebook.
 
 import {
+  bindAttachment,
+  clear as clearAttachment,
+  current as currentAttachment,
+} from "./attachment.js";
+import {
   ask,
   bindAnswerActions,
   bindCitationClick,
@@ -154,7 +159,8 @@ async function send() {
   }
 
   const draft = box.value.trim();
-  if (!draft) return;
+  const image = currentAttachment();
+  if (!draft && !image) return;
 
   if (!state.notebook) {
     toast(t("noNotebookYet"));
@@ -169,6 +175,10 @@ async function send() {
   const activeMemory = isMemoryActive();
   const memoryText = activeMemory ? draft : isMemoryCommand(draft);
   const text = activeMemory ? composeMemoryText(draft) : draft;
+  if (image && memoryText !== null) {
+    toast(t("imageWithMemory"));
+    return;
+  }
 
   // A `/memory` message gets a confirmation instead of going straight out —
   // the one place this composer asks before sending. Declining leaves the
@@ -176,6 +186,7 @@ async function send() {
   if (memoryText !== null && !(await confirmMemorySave(memoryText))) return;
 
   box.value = "";
+  clearAttachment();
   autoGrow(box);
   // memory.js's own "input" listener reacts to this; harmless once
   // resetMemoryMode below has already run, kept for any other listener.
@@ -193,6 +204,7 @@ async function send() {
   const chatId = state.notebook.chat_id;
 
   await ask(chatId, text, {
+    image,
     isCommand: memoryText !== null,
     onDone: async () => {
       // Back to an arrow before the three awaits below, or the button would
@@ -216,6 +228,7 @@ function bindComposer() {
   $("btn-send").addEventListener("click", send);
   bindMemorySuggestion();
   bindMemoryButton();
+  bindAttachment({ onChange: () => paintSendButton(false) });
 
   const box = $("question");
   box.addEventListener("input", () => autoGrow(box));

@@ -1,6 +1,6 @@
 from typing import AsyncIterator
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -49,17 +49,3 @@ class PostgresPersonalUserInfoRepository(PostgresBaseRepository, PersonalUserInf
                     yield self._record_to_model(row, PersonalUserInfo)
         except SQLAlchemyError as exc:
             raise DbError(f"Failed to list personal_user_information for {user_id!r}: {exc}") from exc
-
-    async def delete_fact(self, user_id: str, key: str) -> bool:
-        try:
-            async with self.session_factory.begin() as db:
-                result = await db.execute(
-                    delete(PersonalUserInfoRow).where(
-                        PersonalUserInfoRow.user_id == user_id,
-                        PersonalUserInfoRow.key == key,
-                    )
-                )
-        except SQLAlchemyError as exc:
-            raise DbError(f"Failed to delete personal_user_information {user_id!r}/{key!r}: {exc}") from exc
-
-        return result.rowcount > 0

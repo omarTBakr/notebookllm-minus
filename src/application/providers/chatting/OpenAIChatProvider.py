@@ -86,7 +86,7 @@ class OpenAIChatProvider(LLMChattingInterface):
 
         request = {
             "model": self.model_id,
-            "messages": messages,
+            "messages": self._openai_messages(messages),
             "temperature": temperature,
             self._MAX_TOKENS_FIELD: max_tokens,
             **self._extra_body(),
@@ -159,7 +159,7 @@ class OpenAIChatProvider(LLMChattingInterface):
         try:
             stream = await self.client.chat.completions.create(
                 model=self.model_id,
-                messages=messages,
+                messages=self._openai_messages(messages),
                 temperature=temperature,
                 stream=True,
                 **{self._MAX_TOKENS_FIELD: max_tokens},

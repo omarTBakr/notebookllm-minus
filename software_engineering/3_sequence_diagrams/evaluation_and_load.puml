@@ -1,0 +1,46 @@
+@startuml
+!include ../_style.iuml
+title Evaluation and load — Ragas scores the deployed system, Locust loads it
+autonumber "<b>0"
+
+actor "Developer" as dev
+participant "ragas_eval.py\n(evals/)" as eval
+participant "NotebookClient\n(plain HTTP)" as client
+participant "Running stack\n(nginx → API → workers)" as app
+participant "Judge model\n(Ollama or OpenAI-compatible)" as judge
+collections "evals/reports/" as out
+participant "locustfile.py\nN × NotebookUser" as locust
+
+== answer quality (Ragas) ==
+dev -> eval : uv run --project evals python evals/ragas_eval.py
+eval -> client : sign_in (sign up on first use)
+client -> app : POST /auth/login
+eval -> client : create_notebook, upload documents/
+client -> app : POST /chat/users/{id}/chats\nPOST /chat/chats/{id}/documents (202)
+loop until indexed
+  client -> app : GET /chat/chats/{id}/indexing\nGET /chat/chats/{id} (grounded?)
+end
+loop each line of questions.jsonl
+  client -> app : POST /chat/chats/{id}/message (SSE)
+  app --> client : meta {citations} · delta … · done
+  client -> app : GET …/chunks/{n}/locate (the cited passage's text)
+end
+loop each metric
+  eval -> judge : question, answer, passages, reference
+  judge --> eval : score
+end
+eval -> out : ragas_<time>.json (per question + means)
+eval --> dev : exit 1 if a mean is under --min
+
+== load (Locust) ==
+dev -> locust : uv run --project evals locust -f evals/locustfile.py --tags …
+locust -> app : POST /auth/login (each user, once)
+loop for the run time, per user
+  locust -> app : browse: notebook, assets, messages, indexing
+  locust -> app : search: POST /nlp/index/search/{id}
+  locust -> app : ask: POST /chat/chats/{id}/message (SSE)\nfirst token and complete timed apart
+  locust -> app : ingest: POST /chat/chats/{id}/documents
+end
+locust -> out : load_stats.csv, load.html
+locust --> dev : requests/s, percentiles, failures
+@enduml

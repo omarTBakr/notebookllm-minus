@@ -219,9 +219,6 @@ class AuthService(BaseService):
         ended = await self.logout_everywhere(user.user_id, keep_token=keep_token)
         self.logger.info("Changed password for %r; ended %d other session(s)", user.user_id, ended)
 
-    async def sweep_expired(self) -> int:
-        return await self.sessions.delete_expired(datetime.now(timezone.utc))
-
     # --- helpers --------------------------------------------------------------------
 
     async def _start_session(self, user: User) -> SignedIn:

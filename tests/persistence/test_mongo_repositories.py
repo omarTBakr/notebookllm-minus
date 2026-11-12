@@ -42,8 +42,7 @@ def assets(db):
 
 
 def an_asset(**kw):
-    fields = {"asset_id": "a1", "asset_type": AssetType.TEXT, "project_id": "p1",
-              "name": "note1.txt"}
+    fields = {"asset_id": "a1", "asset_type": AssetType.TEXT, "project_id": "p1", "name": "note1.txt"}
     return Asset(**{**fields, **kw})
 
 
@@ -109,8 +108,7 @@ async def test_rename_sets_the_field_and_touches_updated_at(users):
 
     await users.rename("u1", "Renamed")
 
-    _, _, update, _ = [c for c in users.collection.calls
-                       if c[0] == "find_one_and_update"][0]
+    _, _, update, _ = [c for c in users.collection.calls if c[0] == "find_one_and_update"][0]
     assert update["$set"]["label"] == "Renamed"
     assert "updated_at" in update["$set"]
 

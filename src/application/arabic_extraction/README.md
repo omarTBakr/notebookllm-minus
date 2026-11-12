@@ -44,54 +44,48 @@ numbers that set it are in the module.
 
 ## In the application
 
-`qalam` is wired in as the default. `ProcessController._reread_unusable_arabic`
-runs on the PDF layout path (`PDF_LOADER=pymupdf`), after `extract_pages` and
-before the Documents are built, and replaces the text of the pages it
-re-reads. Four settings in `src/shared/utils/config.py`:
+Two things in the ingestion path use this package, both in the parse stage
+(`application/tasks/jobs/ingest/parse.py`):
+
+- **Pages with no usable text layer** (`OCR_UNREADABLE_PAGES`, on by default).
+  `ProcessService.ocr_unreadable_pages` asks `qalam` which pages of a batch
+  need OCR -- a scan, a title page drawn as a picture, glyphs that decode to
+  nothing -- and reads those with `tesseract-best` (Arabic and English
+  together). Output that does not read as text is dropped, so a cover
+  photograph stays empty rather than indexing as noise.
+- **Uploaded pictures.** `ProcessService.ocr_image_bytes` reads the text off
+  a PNG/JPEG/WebP source with the same engine.
 
 | setting | default | what it decides |
 | --- | --- | --- |
-| `OCR_ENABLED` | `False` | nothing happens at all unless this is set |
-| `OCR_EXTRACTOR` | `qalam` | which engine the registry is asked to build |
-| `TESSDATA_BEST` | `/usr/share/tessdata-best` | where `ara.traineddata` from `tessdata_best` lives — only read if `OCR_EXTRACTOR` is set to `tesseract-best` |
-| `OCR_MIN_CHARS` | `80` | how much text a page needs before its spacing is judged |
+| `OCR_UNREADABLE_PAGES` | `True` | OCR the pages qalam flags; off leaves them empty |
+| `TESSDATA_BEST` | `/usr/share/tessdata-best` | where `ara.traineddata` from `tessdata_best` lives |
+| `OCR_WORKERS` | `0` | pages read at once; `0` sizes it from the CPUs and memory available |
+| `QALAM_WORD_GAP` | `0.15` | qalam's word-break threshold (patched build only) |
 
-**`qalam` 0.1.1 has a known bug, accepted as a deliberate risk, not an
-oversight.** On some documents it returns 200-300x too much text for a page
-(a repeating header/footer), paired with a false `confidence: 1.0` and no
-guard against it here yet — see
-`benchmark/reports/qalam/report/report.md` for the full census (99.6% of one
-test document's pages affected) before relying on this in a new deployment.
-`OCR_EXTRACTOR=tesseract-best` is the fallback if that bug is hit in
-practice.
+**A missing engine is a warning, not a failure.** If `qalam` or
+`tesseract-best` cannot run -- no `tesseract` binary, no `ara.traineddata`
+under `TESSDATA_BEST` -- the reason is logged and the pages keep what the PDF
+gave. Failing an upload over a missing OCR binary is worse than indexing
+imperfect text.
 
-**Off by default, and per page.** `profile()` decides for each page, and all
-three answers must agree: the page is Arabic, its text layer is unusable
-(fragmented or run-together), and it has at least `OCR_MIN_CHARS` characters —
-below which a plate or a chapter heading would be re-read on a ratio computed
-over nothing. Everything else keeps the text layer, which is not a compromise:
-a healthy text layer is the characters the author typed, and OCR trades those
-for a guess at the pixels.
+**Badly spaced Arabic is not re-read with OCR any more.** Pages whose text is
+there but fragmented or run together are repaired by the model correction pass
+(`TextCorrectionService`), which keeps the word boxes a citation highlight is
+drawn from. The per-page OCR re-read that used to do this
+(`OCR_ENABLED` / `OCR_EXTRACTOR` / `OCR_MIN_CHARS`) was removed because batched
+ingest never reached it; `docs/roadmap/arabic_reread_in_batched_ingest.md`
+records what it did. `profile()` in `language.py`, which made its per-page
+decision, is still used by the benchmark.
 
-**A re-read page keeps an approximate citation highlight.** Highlights come
-from `highlight_metadata`, which maps character offsets onto the word boxes
-*that page's text was built from*. Replacing the text makes those offsets
-address a different string — but OCR returns no coordinates at all, so those
-boxes stay the only positional information in existence, and both strings read
-the same page in the same order. The page is kept, the length ratio between the
-two renderings is recorded, `split_file` scales offsets through it, and the
-result is marked `"approx": 1` so a reader can tell a close highlight from an
-exact one. Measured on a 222-page book: 378 of 378 chunks highlighted.
+**`qalam` 0.1.1 has a known bug.** On some documents it returns 200-300x too
+much text for a page (a repeating header/footer), paired with a false
+`confidence: 1.0` -- see `benchmark/reports/qalam/report/report.md`. The
+application only asks qalam *which pages need OCR*, not for their text, so the
+bug does not reach stored chunks.
 
-**A missing engine is a warning, not a failure.** If `OCR_ENABLED` is set but
-the extractor cannot run — no `tesseract` binary, `TESSDATA_BEST` unset, no
-`ara.traineddata` under it — the registry's `available()` reason is logged and
-the text layer is kept. Failing an upload over a missing OCR binary is worse
-than indexing imperfect text. A per-page OCR failure behaves the same way: that
-page keeps its original text, and its highlight with it.
-
-Budget **2.3–2.7 s per re-read page** on CPU (2.29 s pinned to two cores), and
-only for pages that fail the profile. See `benchmark/reports/FINDINGS.md`.
+Budget **2.3-2.7 s per OCR'd page** on CPU (2.29 s pinned to two cores). See
+`benchmark/reports/FINDINGS.md`.
 
 ## The extractors
 
@@ -105,9 +99,9 @@ rather than "it was never installed".
 | `pymupdf-raw` | text layer | free, and the baseline OCR must beat |
 | `pymupdf-words` | text layer | what `PdfLayoutController` does, for citation boxes |
 | `pdfplumber` | text layer | third opinion; reverses RTL |
-| `qalam` | text layer | Rust, no OCR, logical reading order. **The production engine** — but see the known-bug caveat below |
+| `qalam` | text layer | Rust, no OCR, logical reading order. In production it picks the pages that need OCR — see the known-bug caveat above |
 | `tesseract` | classical | CPU, ~1.4 MB model, the distro `ara` pack |
-| `tesseract-best` | classical | CPU, 12.6 MB `tessdata_best` — a different model, not a speed setting. The previous production engine |
+| `tesseract-best` | classical | CPU, 12.6 MB `tessdata_best` — a different model, not a speed setting. **The production OCR engine** |
 | `easyocr` | classical | PyTorch, ~500 MB |
 | `paddleocr` | classical | dedicated Arabic recognition model |
 | `surya` | classical | transformer, GPU-oriented |
@@ -116,7 +110,7 @@ rather than "it was never installed".
 
 Every engine import is **lazy**, inside the method that needs it. That is what
 lets one package hold both the benchmark and the production path: the image
-carries `qalam` (a base dependency, since it is the default `OCR_EXTRACTOR`),
+carries `qalam` (a base dependency: it picks the pages that need OCR),
 `tesseract`, its `ara` model and `pytesseract` (a wrapper around the binary),
 and importing this package never pulls in torch, paddle or transformers
 unless an engine that needs them is actually built. The heavy
@@ -157,13 +151,6 @@ retrieval works.**
 | `benchmark/runner.py` | runs the suites |
 | `benchmark/merge.py` | folds the per-engine runs back into one report |
 | `benchmark/report.py` | plots, tables and snapshots |
-| `pipeline.py` | the same decision — text layer, or OCR — as a standalone object for callers outside the app |
-
-The application does not go through `pipeline.py`: it needs a decision *per
-page* and it has to drop the re-read pages from `_pdf_pages`, so
-`ProcessController._reread_unusable_arabic` applies the same rule directly over
-`profile()` and `registry.build()`. `ArabicOcrPipeline` remains the one-page
-form of it for anything calling this package on its own.
 
 Results land in `benchmark/results/`, reports in `benchmark/reports/`. Page images and raw
 transcripts are gitignored — they are renderings of copyrighted books, and a

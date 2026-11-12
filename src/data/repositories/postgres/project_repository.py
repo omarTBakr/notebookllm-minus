@@ -85,14 +85,6 @@ class PostgresProjectRepository(PostgresBaseRepository, ProjectRepository):
 
         return self._record_to_model(row, Project)
 
-    async def list_projects(self) -> list[Project]:
-        try:
-            async with self.session_factory() as db:
-                rows = (await db.scalars(select(ProjectRow).order_by(ProjectRow.created_at.desc()))).all()
-                return self._records_to_models(list(rows), Project)
-        except SQLAlchemyError as exc:
-            raise DbError(f"Failed to list projects: {exc}") from exc
-
     async def rename(self, project_id: str, name: str) -> None:
         try:
             async with self.session_factory.begin() as db:

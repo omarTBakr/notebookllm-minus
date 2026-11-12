@@ -56,7 +56,9 @@ def _cases(tiers):
     return [(tier, path) for tier in tiers for path in _files(tier)]
 
 
-@pytest.mark.parametrize(("tier", "path"), _cases(TIERS), ids=lambda v: str(v.relative_to(SRC)) if isinstance(v, Path) else v)
+@pytest.mark.parametrize(
+    ("tier", "path"), _cases(TIERS), ids=lambda v: str(v.relative_to(SRC)) if isinstance(v, Path) else v
+)
 def test_a_tier_only_imports_downward(tier, path):
     offending = sorted(
         module
@@ -66,13 +68,17 @@ def test_a_tier_only_imports_downward(tier, path):
     assert not offending, f"{path.relative_to(SRC)} ({tier}) imports upward: {offending}"
 
 
-@pytest.mark.parametrize(("tier", "path"), _cases(NO_WEB_FRAMEWORK), ids=lambda v: str(v.relative_to(SRC)) if isinstance(v, Path) else v)
+@pytest.mark.parametrize(
+    ("tier", "path"), _cases(NO_WEB_FRAMEWORK), ids=lambda v: str(v.relative_to(SRC)) if isinstance(v, Path) else v
+)
 def test_only_presentation_knows_the_web_framework(tier, path):
     offending = sorted(m for m in _imports(path) if m.split(".")[0] in WEB_FRAMEWORK)
     assert not offending, f"{path.relative_to(SRC)} imports {offending}"
 
 
-@pytest.mark.parametrize("path", [p for p in _files("presentation") if "web" not in p.parts], ids=lambda p: str(p.relative_to(SRC)))
+@pytest.mark.parametrize(
+    "path", [p for p in _files("presentation") if "web" not in p.parts], ids=lambda p: str(p.relative_to(SRC))
+)
 def test_routes_do_not_touch_the_data_tier(path):
     offending = sorted(m for m in _imports(path) if m.split(".")[0] in ROUTES_MAY_NOT_IMPORT)
     assert not offending, f"{path.relative_to(SRC)} imports {offending}; go through a service"
@@ -91,4 +97,6 @@ APP_WIRING = ("app.db", "app.providers", "app.embedding_client", "app.generation
 def test_only_dependencies_reads_the_apps_wiring(path):
     source = path.read_text()
     offending = [needle for needle in APP_WIRING if needle in source]
-    assert not offending, f"{path.relative_to(SRC)} reads {offending}; build the service in presentation/dependencies.py"
+    assert (
+        not offending
+    ), f"{path.relative_to(SRC)} reads {offending}; build the service in presentation/dependencies.py"

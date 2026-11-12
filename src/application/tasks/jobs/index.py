@@ -193,6 +193,45 @@ def build_vector_index_task(self, project_id: str) -> dict:
     )
 
 
+async def _run_index_images(project_id: str, asset_id: str | None) -> dict:
+    from application.services.rag.ImageIndexService import ImageIndexService
+    from data.models import AssetModel
+
+    async with job_resources(providers=True) as job:
+        embedder = job.providers.image_embedding()
+        if embedder is None:
+            return {"project_id": project_id, "images_indexed": 0, "skipped": "MULTIMODAL_ENABLED is off"}
+
+        project = await ProjectModel(job.db).get_project(project_id)
+        service = ImageIndexService(embedding_client=embedder, vectordb_client=job.db.vectors())
+        return await service.index_images(
+            chunk_model=ChunkModel(job.db),
+            asset_model=AssetModel(job.db),
+            project_object_id=project.id,
+            project_id=project_id,
+            asset_id=asset_id,
+        )
+
+
+@celery_app.task(
+    bind=True,
+    name=f"{SETTINGS.CELERY_PROJECT_NAME}.index_images_task",
+    # The index queue, for the reason build_vector_index_task gives.
+    queue=SETTINGS.CELERY_QUEUE_INDEX,
+)
+def index_images_task(self, project_id: str, asset_id: str | None = None) -> dict:
+    """Embed a project's (or one asset's) pictures into its image collection.
+
+    After the text index, never before: a document is answerable from its
+    text the moment that finishes, and its pictures join a few seconds
+    later. A failure here leaves the text index untouched.
+    """
+    return run_job(
+        lambda: _run_index_images(project_id, asset_id),
+        what=f"Indexing the pictures of {project_id!r}",
+    )
+
+
 def get_index_task(task_id: str) -> dict:
     """Return the current state and result metadata for an indexing task."""
     return task_status(task_id)

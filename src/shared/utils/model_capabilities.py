@@ -73,6 +73,15 @@ def parameters_of(tag: str) -> str | None:
     return f"{match.group(1)}B".upper() if match else None
 
 
+def family_of(tag: str) -> str | None:
+    """The publisher a hosted tag is filed under: ``meta`` for ``meta/llama-3.2``.
+
+    None for a tag with no publisher segment. Hosted catalogues publish no
+    family field, so the first path segment is the nearest thing to one.
+    """
+    return tag.split("/")[0] if "/" in tag else None
+
+
 def looks_like_embedding(tag: str) -> bool:
     """Whether *tag* is worth spending an embed probe on.
 

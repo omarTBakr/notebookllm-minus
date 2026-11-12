@@ -1,0 +1,62 @@
+@startuml
+!include ../_style.iuml
+title Pictures at ingest — find, caption, chunk, link, embed
+autonumber "<b>0"
+
+participant "parse_batch_task\n(celery-process)" as parse
+participant "ImageRegionService" as regions
+participant "postprocess_batch_task\n(celery-postprocess)" as post
+participant "ImageCaptionService" as captions
+participant "Vision chat model\n(IMAGE_CAPTION_MODEL_ID)" as vision
+participant "assemble_chunks_task" as assemble
+participant "index_project_task →\nbuild_vector_index_task" as textindex
+participant "index_images_task\n(celery-index)" as imgindex
+participant "EmbeddingGemma 2\n(Ollama /api/embed)" as embed
+database "chunks / ingest_batches" as db
+database "project_<id>  (text)\nproject_<id>__img  (pictures)" as vec
+
+== Parse (per batch of pages) ==
+parse -> parse : words + boxes (PyMuPDF), OCR for unreadable pages
+parse -> regions : find_figures(pages)
+regions -> regions : get_image_info: bbox + xref per picture
+note right of regions
+  dropped: < IMAGE_MIN_SIDE_PX, < IMAGE_MIN_AREA_RATIO of the page,
+  an xref on > IMAGE_MAX_REPEAT pages (logos), duplicates
+end note
+opt page still empty after OCR but has marks
+  regions --> parse : one region covering the page
+end
+note over parse
+  An uploaded PNG/JPEG/WebP is one page with one region
+  covering it, plus any text tesseract reads off it.
+end note
+parse -> db : page dicts + images: [{bbox, xref}]
+
+== Correct, then caption ==
+post -> post : text correction (unchanged)
+post -> captions : caption(pages)
+loop each region (2 at a time)
+  captions -> regions : render_region (crop from the stored asset, 150 dpi, ≤ 1024 px)
+  captions -> vision : caption prompt + picture\n(+ nearby text as context)
+  alt model fails or none configured
+    captions -> captions : nearest text ("Figure 3: ...") or "[image, page N]"
+  end
+end
+post -> db : region.caption
+
+== Assemble ==
+assemble -> assemble : text chunks, then one image chunk per region\nchunk_content = caption\nmetadata = {kind: image, page, bbox, highlight, nearby_text}
+assemble -> assemble : ChunkLinker.link_chunks\nlabel match ("Figure 3" / "الشكل ٣", any page) ≫ distance on the page ≫ same page
+note right of assemble
+  image chunk:  linked_chunks = [best LINK_MAX_TEXT_PER_IMAGE passages]
+  text chunk:   linked_images = [best LINK_MAX_IMAGES_PER_TEXT figures]
+end note
+assemble -> db : all chunks, links in chunk_metadata
+assemble -> textindex : index chunks (captions too, so text search finds figures)
+textindex -> vec : project_<id>
+textindex -> imgindex : linked, when the asset has pictures
+imgindex -> regions : render each image chunk
+imgindex -> embed : input: [{"image": base64}, ...]
+embed --> imgindex : 768-d vectors
+imgindex -> vec : project_<id>__img\n(id = asset_id:chunk_order, text = caption)
+@enduml

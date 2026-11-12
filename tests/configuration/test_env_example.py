@@ -56,8 +56,28 @@ def test_every_documented_key_is_a_real_field():
     assert not unknown, (
         f"{ENV_EXAMPLE.name} sets {sorted(unknown)}, which {Settings.__name__} "
         "no longer has a field for — a rename left behind a stale key that "
-        "pydantic-settings' extra=\"ignore\" will drop without a word."
+        'pydantic-settings\' extra="ignore" will drop without a word.'
     )
+
+
+# Fields that are not .env knobs: ProviderCache sets them per client (see the
+# comments on each in config.py), so documenting them would invite setting them
+# globally, which is exactly what they must not be.
+INTERNAL = {"OLLAMA_BASE_URL_OVERRIDE", "OLLAMA_NUM_CTX", "CHAT_THINKING_OVERRIDE"}
+
+
+def test_every_setting_is_documented_in_the_example():
+    """The other direction: a field nobody wrote down.
+
+    A setting missing from `.env.example` still works, at its default, which is
+    why nothing notices. Eleven had gone missing this way, among them every
+    knob for what counts as a figure. Adding a field now means adding its line,
+    or naming it in INTERNAL with the reason.
+    """
+    missing = set(Settings.model_fields) - documented_keys(ENV_EXAMPLE) - INTERNAL
+
+    assert not missing, f"{ENV_EXAMPLE.name} does not document {sorted(missing)}"
+    assert INTERNAL <= set(Settings.model_fields), "INTERNAL names a field that no longer exists"
 
 
 def test_the_ollama_host_and_port_are_still_there_specifically():
@@ -99,6 +119,5 @@ def test_every_key_in_the_docker_app_example_is_a_real_field():
 
     unknown = keys - set(Settings.model_fields)
     assert not unknown, (
-        f"Docker/env.example/.env.app sets {sorted(unknown)}, which "
-        f"{Settings.__name__} has no field for."
+        f"Docker/env.example/.env.app sets {sorted(unknown)}, which " f"{Settings.__name__} has no field for."
     )

@@ -9,8 +9,6 @@ class ModelCapability(StrEnum):
     COMPLETION = "completion"
     EMBEDDING = "embedding"
     VISION = "vision"
-    TOOLS = "tools"
-    THINKING = "thinking"
 
 
 class NvidiaSafetyModelMarker(StrEnum):

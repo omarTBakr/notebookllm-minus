@@ -20,9 +20,7 @@ def chat_with_own_model(fake_db, seed):
     return seed
 
 
-async def test_search_uses_the_chats_embedding_model(
-    client, fake_providers, chat_with_own_model
-):
+async def test_search_uses_the_chats_embedding_model(client, fake_providers, chat_with_own_model):
     """The query must be embedded with the model the chat's vectors came from."""
     fake_providers.asked_for.clear()
 
@@ -44,12 +42,8 @@ async def test_a_project_with_no_notebook_is_unreachable(client, fake_db, seed):
     chat has no owner and nobody may search it."""
     from data.models import Project
 
-    fake_db.projects().items["p-no-chat"] = Project(
-        project_id="p-no-chat", name="not a notebook"
-    )
+    fake_db.projects().items["p-no-chat"] = Project(project_id="p-no-chat", name="not a notebook")
 
-    response = await client.post(
-        "/nlp/index/search/p-no-chat", json={"text": "hello", "limit": 3}
-    )
+    response = await client.post("/nlp/index/search/p-no-chat", json={"text": "hello", "limit": 3})
 
     assert response.status_code == 404

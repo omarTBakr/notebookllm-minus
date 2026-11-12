@@ -103,9 +103,23 @@ async def resolve_pages(db, keys: list[tuple[str, int]]) -> PageMap:
     it just does not become a link — and that is a far better outcome than a
     database hiccup taking down the answer it belongs to.
     """
-    if not keys:
-        return {}
+    pages: PageMap = {}
 
+    for key, chunk in (await chunks_for_keys(db, keys, what="resolve pages")).items():
+        located = located_from_metadata(chunk.chunk_metadata)
+        if located is not None:
+            pages[key] = located
+
+    return pages
+
+
+async def chunks_for_keys(db, keys: list[tuple[str, int]], what: str = "read chunks") -> dict[tuple[str, int], object]:
+    """The chunk rows for these ``(asset_id, chunk_order)`` pairs.
+
+    One query per asset. Never raises: an asset whose rows cannot be read is
+    logged (``Could not <what> for asset ...``) and left out, so each caller
+    degrades to "that one is missing" instead of failing the answer.
+    """
     by_asset: dict[str, list[int]] = defaultdict(list)
     for asset_id, chunk_order in keys:
         if asset_id is not None and chunk_order is not None:
@@ -115,21 +129,19 @@ async def resolve_pages(db, keys: list[tuple[str, int]]) -> PageMap:
         return {}
 
     chunk_model = ChunkModel(db)
-    pages: PageMap = {}
+    rows: dict[tuple[str, int], object] = {}
 
     for asset_id, orders in by_asset.items():
         try:
             chunks = await chunk_model.get_chunks_by_orders(asset_id, orders)
-        except Exception as exc:
-            logger.warning("Could not resolve pages for asset %r: %s", asset_id, exc)
+        except Exception as exc:  # noqa: BLE001 - see docstring
+            logger.warning("Could not %s for asset %r: %s", what, asset_id, exc)
             continue
 
         for order, chunk in chunks.items():
-            located = located_from_metadata(chunk.chunk_metadata)
-            if located is not None:
-                pages[(asset_id, order)] = located
+            rows[(asset_id, order)] = chunk
 
-    return pages
+    return rows
 
 
 def keys_from_hits(hits: list[dict]) -> list[tuple[str, int]]:

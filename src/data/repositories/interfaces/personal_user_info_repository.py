@@ -19,7 +19,3 @@ class PersonalUserInfoRepository(ABC):
     @abstractmethod
     async def list_facts(self, user_id: str) -> AsyncIterator[PersonalUserInfo]:
         pass
-
-    @abstractmethod
-    async def delete_fact(self, user_id: str, key: str) -> bool:
-        pass

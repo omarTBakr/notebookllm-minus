@@ -35,9 +35,9 @@ def test_the_defect_reproduces_without_the_floor():
 
     chunks = controller.split([_page(f"{HEADER}\n\n{BODY}")])
 
-    assert any(c.page_content == HEADER for c in chunks), (
-        "expected the splitter to orphan the header into its own chunk"
-    )
+    assert any(
+        c.page_content == HEADER for c in chunks
+    ), "expected the splitter to orphan the header into its own chunk"
 
 
 def test_a_running_header_is_folded_into_the_body():

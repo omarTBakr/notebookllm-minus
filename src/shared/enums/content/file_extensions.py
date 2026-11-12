@@ -4,14 +4,9 @@ from enum import Enum
 class FileExtension(str, Enum):
     TXT = ".txt"
     PDF = ".pdf"
-    # for later usage
-    DOC = ".doc"
-    DOCX = ".docx"
     XLSX = ".xlsx"
     MD = ".md"
-    JSON = ".json"
     CSV = ".csv"
-    PY = ".py"
 
 
 class PdfLoader(str, Enum):

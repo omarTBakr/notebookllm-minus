@@ -1,0 +1,63 @@
+@startuml
+!include ../_style.iuml
+title Epic 8 — Pictures as sources (multimodal retrieval)
+
+rectangle "Pictures as sources" {
+  card US8_1 [
+    **US-8.1  Find a figure by describing it**
+    As a //reader//, I want a question like "what does the revenue chart show?" to find the chart itself,
+    so that answers can come from figures, not only from the text around them.
+    ----
+    * Figures inside uploaded PDFs are found at ingest (icons, bullets and repeated logos are skipped).
+    * A page OCR rejects as "not text" (a scan, a full-page diagram) is kept as one picture.
+    * Pictures are embedded with EmbeddingGemma 2, text and images in one space, so English
+      and Arabic questions both reach them.
+  ]
+  card US8_2 [
+    **US-8.2  Upload a picture as a source**
+    As a //reader//, I want to add a PNG, JPEG or WebP to a notebook,
+    so that a photographed handout or a screenshot is searchable like a document.
+    ----
+    * The file type is read from the bytes; a renamed text file is refused.
+    * Any text OCR can read off it is indexed as text too.
+    * The Sources panel shows it with an IMG badge and previews it.
+  ]
+  card US8_3 [
+    **US-8.3  Ask with a picture**
+    As a //reader//, I want to attach, paste or drop a picture into the question box,
+    so that I can ask "where is this diagram in my sources?" or "explain this".
+    ----
+    * The picture is searched against the notebook's pictures, and its caption against the text.
+    * At most 5 MB; checked in the browser and again on the server.
+    * The transcript keeps a caption of the picture, not the picture.
+  ]
+  card US8_4 [
+    **US-8.4  See what was cited**
+    As a //reader//, I want an image citation to show a thumbnail and open the page with the figure outlined,
+    so that I can check the answer against the figure itself.
+  ]
+  card US8_5 [
+    **US-8.5  Models that can see, and models that cannot**
+    As a //reader//, I want a vision model to look at the cited figures, and any other model to still use them,
+    so that the choice of model never makes the pictures useless.
+    ----
+    * Vision models (Ollama "vision", OpenRouter image input, NVIDIA vision names, Claude, Gemini)
+      get the pictures, up to IMAGE_MAX_PER_ANSWER, each labelled with its citation number.
+    * Every other model reads the caption a vision model wrote at ingest.
+  ]
+  card US8_7 [
+    **US-8.7  A figure and its explanation travel together**
+    As a //reader//, I want a retrieved passage to bring the figure it refers to, and a retrieved figure
+    to bring the paragraph that explains it, so that an answer about "Figure 3" is written from both.
+    ----
+    * At ingest each figure is linked to the passages that name it ("Figure 3", "الشكل ٣") or sit next to it.
+    * Partners are added after the ranked hits, never in place of one, and capped per answer.
+    * The citation list marks a partner as "↳ with [n]".
+  ]
+  card US8_6 [
+    **US-8.6  Switch it off**
+    As an //operator//, I want MULTIMODAL_ENABLED=false to leave the pipeline exactly as before,
+    so that a machine without the embedding model still runs.
+  ]
+}
+@enduml

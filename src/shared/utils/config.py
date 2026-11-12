@@ -97,22 +97,13 @@ class Settings(BaseSettings):
     YOUTUBE_PROXY_URL: str = ""
 
     # --- Arabic OCR ----------------------------------------------------------
-    # Re-read a page with OCR when its Arabic text layer cannot be searched.
-    # Off by default: it costs seconds per page, and on a well-produced PDF the
-    # text layer is already correct, so this must be a decision rather than a
-    # habit. `arabic_extraction.language.profile()` makes that decision per
-    # page and costs microseconds.
-    OCR_ENABLED: bool = False
-    # Which engine. qalam reads the PDF's own text layer in logical order
-    # rather than OCRing a rendered page — free of tesseract-best's
-    # 2.29s/page CPU cost, and it matched or beat it on the two lines checked
-    # against this corpus's ground truth. But qalam 0.1.1 has a known bug:
-    # on some documents it returns 200-300x too much text per page (a
-    # repeating header/footer), silently paired with confidence 1.0 and no
-    # guard against it yet — see
-    # src/arabic_extraction/benchmark/reports/qalam/report/report.md before
-    # changing this back, or before trusting it blindly on a new corpus.
-    OCR_EXTRACTOR: str = "qalam"
+    # Two things read a damaged page today: the correction pass below (pages
+    # whose text is there but badly spaced) and OCR_UNREADABLE_PAGES (pages
+    # with no usable text at all). The per-page OCR re-read of badly spaced
+    # Arabic (OCR_ENABLED / OCR_EXTRACTOR / OCR_MIN_CHARS) was removed: batched
+    # ingest never reached it. docs/roadmap/arabic_reread_in_batched_ingest.md
+    # records what it did and what bringing it back would take.
+    #
     # qalam's word-break threshold, as a fraction of the type size: a pen
     # move wider than this between two glyphs becomes a space. Upstream
     # hard-codes 0.25, which fuses whole lines on this corpus; 0.15 spaces
@@ -121,18 +112,13 @@ class Settings(BaseSettings):
     QALAM_WORD_GAP: float = 0.15
     # OCR the pages qalam says have no usable text layer -- a scan, a title
     # page drawn as a picture, glyphs that decode to nothing -- with
-    # tesseract-best (Arabic + English). Separate from OCR_ENABLED: that one
-    # re-reads badly *spaced* Arabic, this one reads pages that otherwise index
-    # as empty. Warns and skips if qalam or tessdata_best is missing.
+    # tesseract-best (Arabic + English). Without it those pages index as
+    # empty. Warns and skips if qalam or tessdata_best is missing.
     OCR_UNREADABLE_PAGES: bool = True
     # Where ara.traineddata from tessdata_best lives. The distribution package
     # ships the *fast* model, which is a different model and three times worse
     # on this corpus; the image downloads the better one to this path.
     TESSDATA_BEST: str = "/usr/share/tessdata-best"
-    # A page needs this many characters before its spacing is judged. Below it,
-    # a plate or a chapter heading would be called unusable and re-read for
-    # nothing.
-    OCR_MIN_CHARS: int = 80
     # --- hosted OCR (optional) -----------------------------------------------
     # OpenRouter fronts many models behind one OpenAI-compatible API, so the
     # model is configuration rather than code. The key is shared: it enables the
@@ -163,10 +149,9 @@ class Settings(BaseSettings):
     # page to a local model to undo that damage — see src/application/ocr_prompts/en/ocr_correction.py
     # for what it is and is not allowed to change.
     #
-    # It replaces the tesseract re-read above rather than competing with it:
-    # OCR throws away the per-word boxes a citation highlight is drawn from and
-    # costs seconds a page to render. The two are independent and can both run,
-    # but OCR_ENABLED is off by default now.
+    # It replaced a tesseract re-read of the same pages: OCR throws away the
+    # per-word boxes a citation highlight is drawn from and costs seconds a
+    # page to render.
     POSTPROCESS_ENABLED: bool = True
     # Qualified (`<source>/<tag>`), so ProviderCache resolves which host serves
     # it without this module knowing about a vendor at all. `local/` is the
@@ -477,6 +462,57 @@ class Settings(BaseSettings):
     # everything, for the same reason RETRIEVAL_MIN_SCORE defaults to it.
     RERANK_MIN_SCORE: float = 0.0
 
+    # --- images (multimodal retrieval) ---------------------------------------
+    # Figures inside PDFs, image uploads and an image attached to a question
+    # become searchable. One multimodal embedder (EmbeddingGemma 2: text and
+    # images in one 768-d space, Arabic included) fills a second collection
+    # per notebook, `project_<id>__img`, beside the text one. It is global,
+    # not per chat, so a chat's own text embedder choice never touches it.
+    # Off leaves the pipeline exactly as it was: no extraction, no captions,
+    # no image search.
+    MULTIMODAL_ENABLED: bool = False
+    # "ollama" (the host daemon at OLLAMA_HOST) or "llamacpp" (a llama-server
+    # with an mmproj, at IMAGE_EMBEDDING_URL).
+    IMAGE_EMBEDDING_BACKEND: str = "ollama"
+    IMAGE_EMBEDDING_MODEL_ID: str = "embeddinggemma-2:440m-q8_0-text-vision"
+    IMAGE_EMBEDDING_SIZE: int = 768
+    IMAGE_EMBEDDING_URL: str = "http://embedder:8080"
+    IMAGE_EMBEDDING_TIMEOUT_S: float = 60.0
+    # A vision chat model writes a short caption for every image at ingest.
+    # The caption is what the reranker scores and what a model without vision
+    # reads. Empty skips the model and uses the nearest text on the page
+    # ("Figure 3: ...") instead. Any id the model picker accepts works here.
+    IMAGE_CAPTION_MODEL_ID: str = "local/gemma3:4b"
+    # Embedded pictures smaller than this (either side, in pixels) or covering
+    # less than IMAGE_MIN_AREA_RATIO of the page are icons and bullets, not
+    # figures. One that repeats on more than IMAGE_MAX_REPEAT pages of the
+    # same document is a logo or a header band.
+    IMAGE_MIN_SIDE_PX: int = 96
+    IMAGE_MIN_AREA_RATIO: float = 0.02
+    IMAGE_MAX_REPEAT: int = 3
+    # Longest side an image is scaled down to before it is embedded, captioned
+    # or shown to a model. Bigger costs tokens and VRAM, not accuracy.
+    IMAGE_MAX_SIDE_PX: int = 1024
+    # Image hits each query keeps from the image collection, and the vector
+    # similarity floor they need first.
+    IMAGE_TOP_K: int = 4
+    IMAGE_MIN_SCORE: float = 0.0
+    # At most this many images reach a vision model with one answer.
+    IMAGE_MAX_PER_ANSWER: int = 4
+    # Largest image accepted from the chat composer, in bytes.
+    IMAGE_QUERY_MAX_BYTES: int = 5 * 1024 * 1024
+    # Figure <-> passage links. At ingest each picture is linked to the text
+    # chunks that refer to it ("Figure 3", "الشكل ٣") or sit next to it on the
+    # page; at answer time a retrieved passage brings its linked picture and a
+    # retrieved picture brings the passage that explains it. The partners are
+    # added after the ranked hits, never in place of one, and capped per
+    # answer by the last two settings.
+    LINKS_ENABLED: bool = True
+    LINK_MAX_TEXT_PER_IMAGE: int = 2
+    LINK_MAX_IMAGES_PER_TEXT: int = 2
+    LINK_MAX_IMAGES_PER_ANSWER: int = 2
+    LINK_MAX_PASSAGES_PER_ANSWER: int = 2
+
     # Which library extracts text from PDFs. Measured on the 274-page Arabic
     # guide (25 MB), whole document, after NFKC normalisation:
     #
@@ -566,6 +602,12 @@ class Settings(BaseSettings):
     LANGFUSE_PROMPTS_ENABLED: bool = True
     LANGFUSE_PROMPT_LABEL: str = "production"
     LANGFUSE_PROMPT_CACHE_TTL: int = 60
+    # USD per million tokens, keyed "<backend>/<model id>" with wildcards, e.g.
+    # {"nvidia/meta/*": {"input": 0.02, "output": 0.05}}. Added to the built-in
+    # table in shared/utils/model_pricing.py (local Ollama models cost 0). A
+    # priced model's generations carry cost_details to Langfuse; an unpriced
+    # one is left for Langfuse's own price list (OpenAI, Anthropic, Google).
+    MODEL_PRICES: dict[str, dict[str, float]] = {}
 
     # --- task queue / Celery -------------------------------------------------
     # Broker: RabbitMQ — celery_broker_url assembles these into an amqp:// DSN.

@@ -75,7 +75,7 @@ class OllamaChatProvider(LLMChattingInterface):
         try:
             response = await self.client.chat(
                 model=self.model_id,
-                messages=messages,
+                messages=self._ollama_messages(messages),
                 # Generation knobs live under `options`, and the token cap is
                 # called num_predict rather than max_tokens.
                 options=self._options(max_tokens, temperature),
@@ -109,7 +109,7 @@ class OllamaChatProvider(LLMChattingInterface):
         """
         request = {
             "model": self.model_id,
-            "messages": messages,
+            "messages": self._ollama_messages(messages),
             "stream": True,
             "options": options,
         }
@@ -151,6 +151,11 @@ class OllamaChatProvider(LLMChattingInterface):
                 # content; skipping empties keeps them out of the answer.
                 if part.message.content:
                     yield {"kind": "content", "text": part.message.content}
+
+                # ...and the token counts, which were dropped here before, so
+                # every streamed answer reached Langfuse with no usage or cost.
+                if getattr(part, "done", False):
+                    self._log_usage(getattr(part, "prompt_eval_count", None), getattr(part, "eval_count", None))
 
         except Exception as exc:
             # Raised mid-iteration once the caller has already begun consuming.

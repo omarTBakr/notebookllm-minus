@@ -112,6 +112,68 @@ async def _correct(pages: list[dict], settings) -> int:
     return len(replacements)
 
 
+def region_renderer(asset, max_side: int):
+    """``render(page, region) -> (bytes, mime)`` over one asset's stored bytes."""
+    from application.services.ingest.ImageRegionService import render_asset_region
+
+    def render(page: dict, region: dict) -> tuple[bytes, str]:
+        return render_asset_region(asset, page["page_index"], region.get("bbox"), max_side)
+
+    return render
+
+
+async def _caption(pages: list[dict], asset_id: str, db, settings) -> int:
+    """Caption every image region on *pages* in place. Returns how many the model wrote.
+
+    Every region leaves with a caption: the model's, or the nearest text on
+    the page when there is no model or it fails. Assembly relies on that.
+    """
+    from application.services.ingest.ImageCaptionService import (
+        ImageCaptionService,
+        annotate_nearby,
+        fallback_caption,
+    )
+    from data.models import AssetModel
+
+    regions = [(page, region) for page in pages for region in page.get("images") or []]
+    if not regions:
+        return 0
+
+    annotate_nearby(pages)
+
+    def fallback_all() -> None:
+        for page, region in regions:
+            region.setdefault("caption", fallback_caption(page, region))
+
+    if not settings.IMAGE_CAPTION_MODEL_ID:
+        fallback_all()
+        return 0
+
+    asset = await AssetModel(db).get_asset(asset_id)
+    if asset is None or not asset.file_bytes:
+        fallback_all()
+        return 0
+
+    providers = ProviderCache(settings)
+    try:
+        client = providers.chatting(settings.IMAGE_CAPTION_MODEL_ID, thinking=False)
+        service = ImageCaptionService(
+            client,
+            region_renderer(asset, settings.IMAGE_MAX_SIDE_PX),
+            lang=_language_of(pages),
+            max_side=settings.IMAGE_MAX_SIDE_PX,
+        )
+        written = await service.caption(pages)
+    except Exception as exc:  # noqa: BLE001 - captions are never worth failing an ingest
+        logger.warning("Captioning unavailable (%s); using nearby text", exc)
+        written = 0
+    finally:
+        await providers.aclose_all()
+
+    fallback_all()
+    return written
+
+
 async def _report(db, run, done: int) -> None:
     """Move the row the browser is polling one batch further along.
 
@@ -149,6 +211,11 @@ async def _run_postprocess(asset_id: str, batch_index: int) -> dict:
         pages = batch.payload.get("pages", [])
 
         corrected = await _correct(pages, job.settings)
+
+        # After correction, so the nearby-text fallback reads repaired text.
+        captioned = await _caption(pages, asset_id, job.db, job.settings)
+        if captioned:
+            logger.info("Captioned %d figure(s) in batch %d of %r", captioned, batch_index, batch.asset_name)
 
         batch.payload["pages"] = pages
         batch.status = IngestBatchStatus.CORRECTED

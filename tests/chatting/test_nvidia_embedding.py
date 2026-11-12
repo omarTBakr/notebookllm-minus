@@ -65,9 +65,7 @@ def _provider(settings, overrides: dict | None = None, **fake):
 
 
 def test_the_factory_builds_nvidia_at_the_configured_endpoint(settings):
-    client = LLMEmbeddingFactory(
-        settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})
-    ).create(provider="nvidia")
+    client = LLMEmbeddingFactory(settings.model_copy(update={"NVIDIA_API_KEY": "nvapi-test"})).create(provider="nvidia")
 
     assert isinstance(client, NvidiaEmbeddingProvider)
     assert str(client.client.base_url).rstrip("/") == settings.NVIDIA_API_BASE_URL
@@ -86,23 +84,24 @@ def test_the_factory_passes_the_configured_cap_and_truncation(settings):
     ).create(provider="nvidia")
 
     assert client.max_batch == 32
-    assert client.truncate == "START"      # NVIDIA's spelling, not the enum's
+    assert client.truncate == "START"  # NVIDIA's spelling, not the enum's
 
 
 def test_the_factory_rejects_nvidia_with_no_key(settings):
     with pytest.raises(UnsupportedProviderError):
-        LLMEmbeddingFactory(settings.model_copy(update={"NVIDIA_API_KEY": ""})).create(
-            provider="nvidia"
-        )
+        LLMEmbeddingFactory(settings.model_copy(update={"NVIDIA_API_KEY": ""})).create(provider="nvidia")
 
 
 # --- input_type ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize("given, sent", [
-    (EmbeddingInputType.DOCUMENT, "passage"),
-    (EmbeddingInputType.QUERY, "query"),
-])
+@pytest.mark.parametrize(
+    "given, sent",
+    [
+        (EmbeddingInputType.DOCUMENT, "passage"),
+        (EmbeddingInputType.QUERY, "query"),
+    ],
+)
 async def test_input_type_is_translated_for_nvidia(settings, given, sent):
     """Optional on the wire and silently degrading when omitted, so it is
     always sent — and in NVIDIA's spelling, not Cohere's or Google's."""
@@ -142,10 +141,7 @@ async def test_a_batch_is_split_at_the_cap(settings, count, requests):
 
     assert len(vectors) == count
     assert len(client.client.embeddings.requests) == requests
-    assert all(
-        len(request["input"]) <= client.max_batch
-        for request in client.client.embeddings.requests
-    )
+    assert all(len(request["input"]) <= client.max_batch for request in client.client.embeddings.requests)
 
 
 async def test_the_cap_is_whatever_env_says(settings):

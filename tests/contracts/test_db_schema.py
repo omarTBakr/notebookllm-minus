@@ -8,11 +8,14 @@ from data.models import Asset, Chat, DataChunk, Project, Session, User
 from shared.enums import AssetType
 
 
-@pytest.mark.parametrize("model, kwargs, field", [
-    (Project, {"project_id": "p"}, "name"),
-    (Asset, {"asset_id": "a", "asset_type": AssetType.TEXT, "project_id": "p"}, "name"),
-    (Chat, {"chat_id": "c", "session_id": "s", "user_id": "u"}, "title"),
-])
+@pytest.mark.parametrize(
+    "model, kwargs, field",
+    [
+        (Project, {"project_id": "p"}, "name"),
+        (Asset, {"asset_id": "a", "asset_type": AssetType.TEXT, "project_id": "p"}, "name"),
+        (Chat, {"chat_id": "c", "session_id": "s", "user_id": "u"}, "title"),
+    ],
+)
 @pytest.mark.parametrize("blank", ["   ", "\t"])
 def test_names_must_contain_visible_text(model, kwargs, field, blank):
     with pytest.raises(ValidationError):
@@ -23,13 +26,20 @@ def test_names_are_stripped():
     assert Project(project_id="p", name="  Report  ").name == "Report"
 
 
-@pytest.mark.parametrize("field, bad", [
-    ("temperature", 2.5), ("temperature", -0.1),
-    ("max_tokens", 63), ("max_tokens", 32769),
-    ("chunk_size", 99), ("chunk_size", 8001),
-    ("overlap_size", -1), ("overlap_size", 2001),
-    ("embedding_dimensions", 0),
-])
+@pytest.mark.parametrize(
+    "field, bad",
+    [
+        ("temperature", 2.5),
+        ("temperature", -0.1),
+        ("max_tokens", 63),
+        ("max_tokens", 32769),
+        ("chunk_size", 99),
+        ("chunk_size", 8001),
+        ("overlap_size", -1),
+        ("overlap_size", 2001),
+        ("embedding_dimensions", 0),
+    ],
+)
 def test_chat_numeric_bounds(field, bad):
     with pytest.raises(ValidationError):
         Chat(chat_id="c", session_id="s", user_id="u", **{field: bad})
@@ -56,20 +66,17 @@ def test_a_mongo_document_round_trips_through_the_alias():
 
 def test_chunk_order_may_not_be_negative():
     with pytest.raises(ValidationError):
-        DataChunk(project_id=ObjectId(), asset_id="a", chunk_order=-1,
-                  chunk_content="x")
+        DataChunk(project_id=ObjectId(), asset_id="a", chunk_order=-1, chunk_content="x")
 
 
 def test_chunk_requires_a_project_object_id():
     with pytest.raises(ValidationError):
-        DataChunk(project_id="not-an-objectid", asset_id="a", chunk_order=0,
-                  chunk_content="x")
+        DataChunk(project_id="not-an-objectid", asset_id="a", chunk_order=0, chunk_content="x")
 
 
 def test_asset_bytes_have_a_ceiling():
     with pytest.raises(ValidationError):
-        Asset(asset_id="a", asset_type=AssetType.TEXT, project_id="p", name="n",
-              file_bytes=b"x" * (10_485_760 + 1))
+        Asset(asset_id="a", asset_type=AssetType.TEXT, project_id="p", name="n", file_bytes=b"x" * (10_485_760 + 1))
 
 
 def test_timestamps_are_timezone_aware():

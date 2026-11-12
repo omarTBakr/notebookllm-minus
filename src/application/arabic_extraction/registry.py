@@ -26,11 +26,21 @@ class Availability:
         return self.extractor.name
 
 
-def survey() -> list[Availability]:
-    """Every known extractor and whether it can run, in report order."""
+def survey(names: list[str] | None = None) -> list[Availability]:
+    """Every known extractor and whether it can run, in report order.
+
+    Narrowed to *names* when given, and then only those are probed. A probe
+    is not free -- some import torch, look for a CUDA device or make an HTTP
+    call -- so the application, which wants one engine, must not pay for the
+    other twelve on every upload. The benchmark passes nothing and gets all.
+    """
+    wanted = set(names) if names else None
     results = []
 
     for extractor in ALL_EXTRACTORS:
+        if wanted is not None and extractor.name not in wanted:
+            continue
+
         try:
             ok, reason = extractor.available()
         except Exception as exc:  # noqa: BLE001 - a broken probe is unavailable
@@ -43,13 +53,7 @@ def survey() -> list[Availability]:
 
 def build(names: list[str] | None = None, **options) -> list[ArabicExtractor]:
     """Instantiate the available extractors, optionally narrowed to *names*."""
-    wanted = set(names) if names else None
-
-    return [
-        entry.extractor(**options.get(entry.name, {}))
-        for entry in survey()
-        if entry.ok and (wanted is None or entry.name in wanted)
-    ]
+    return [entry.extractor(**options.get(entry.name, {})) for entry in survey(names) if entry.ok]
 
 
 def unavailable() -> list[Availability]:

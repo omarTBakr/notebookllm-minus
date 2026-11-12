@@ -34,8 +34,7 @@ so the document's own median page length is itself a bloated one and a
 "many times the median" check flags zero of the corrupted pages — see the
 report for the full census. A workable guard needs an absolute bound (or a
 cross-check against a fast independent extractor such as `pymupdf-raw`),
-which this project has not implemented yet — `OCR_EXTRACTOR=qalam` runs
-without one.
+which this project has not implemented yet — qalam runs without one.
 """
 
 from __future__ import annotations
@@ -59,9 +58,8 @@ class QalamExtractor(ArabicExtractor):
     one. Reparsing the whole PDF on every page would multiply the cost by the
     page count for no reason, so the parsed document is cached by path.
 
-    The production caller (`ProcessService._reread_unusable_arabic`) is
-    not the harness: it submits every candidate page of one document to a
-    thread pool at once, so the first access to a not-yet-cached path is a
+    A caller that is not the harness may submit every candidate page of one
+    document to a thread pool at once, so the first access to a not-yet-cached path is a
     race between however many threads that document has candidates for. Each
     would see the cache empty and start its own `qalam.Document(path)` --
     every one of them a multi-second-to-minutes eager parse -- and only the
