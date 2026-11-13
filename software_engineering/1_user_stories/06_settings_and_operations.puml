@@ -35,8 +35,19 @@ rectangle "Operations" {
     As an //operator//, I want Prometheus metrics and Grafana dashboards,
     so that I can see latency, errors, queue depth and model time at a glance.
   ]
+  card US6_5 [
+    **US-6.5  See under the hood without leaving the app**
+    As a //signed-in user//, I want dashboards, traces, tasks and queues inside the app,
+    so that I can show what the system is doing without juggling four other tabs.
+    ----
+    * One Visualization button opens Grafana, Langfuse, Flower and RabbitMQ in frames.
+    * Traces open on the notebook that is on screen.
+    * Grafana, Flower and RabbitMQ are served only to a signed-in user.
+    * A tool that is not running says so; the button is hidden when none is configured.
+  ]
 }
 US6_1 -[hidden]down- US6_2
 US6_2 -[hidden]down- US6_3
 US6_3 -[hidden]down- US6_4
+US6_4 -[hidden]down- US6_5
 @enduml

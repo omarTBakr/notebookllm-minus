@@ -1,0 +1,43 @@
+@startuml
+!include ../_style.iuml
+title Visualization — the operations tools, framed inside the app
+autonumber "<b>0"
+
+actor "Signed-in user" as user
+participant "Browser\n(visualization.js)" as ui
+participant "nginx :8081" as nginx
+participant "API\n/chat/visualization\n/auth/me" as app
+participant "Grafana" as grafana
+participant "Flower" as flower
+participant "RabbitMQ\nmanagement" as rabbit
+participant "Langfuse :3001\n(own origin, own sign-in)" as langfuse
+
+== which tools exist ==
+ui -> nginx : GET /chat/visualization
+nginx -> app : require_user (session cookie)
+app --> ui : {enabled, tabs:[dashboards, traces, tasks, queues]}\naddresses built from settings
+note over ui : enabled=false → the button stays hidden
+
+== open a tab served from this origin ==
+user -> ui : Visualization → Dashboards
+ui -> nginx : <iframe> GET /grafana/d/<uid>?kiosk&theme=…
+nginx -> app : auth_request /_auth → GET /auth/me
+alt signed in
+  app --> nginx : 200
+  nginx -> grafana : proxy (sub-path, anonymous Viewer)
+  grafana --> ui : dashboard, in the frame
+else no session
+  app --> nginx : 401
+  nginx --> ui : 401, note "not answering"
+end
+ui -> nginx : /flower/tasks  (same gate) → Flower
+ui -> nginx : /rabbitmq/#/queues  (same gate) → RabbitMQ, then its own login
+
+== traces follow the open notebook ==
+user -> ui : Traces
+ui -> langfuse : <iframe> /project/<id>/sessions/<chat_id>
+note right of langfuse : a notebook's id is its\nLangfuse session id
+langfuse --> ui : this notebook's answers, step by step
+user -> ui : open another notebook
+ui -> langfuse : frame re-pointed at the new session
+@enduml

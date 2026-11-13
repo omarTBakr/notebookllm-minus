@@ -7,6 +7,8 @@ actor Operator as operator
 actor "Langfuse" as langfuse <<system>>
 actor "Prometheus + Grafana" as prom <<system>>
 actor "Flower" as flower <<system>>
+actor "RabbitMQ management" as rabbit <<system>>
+actor "Signed-in user" as user
 
 rectangle "Operations" {
   usecase "Read one trace per answer" as UC_trace
@@ -15,6 +17,8 @@ rectangle "Operations" {
   usecase "Promote / roll back a prompt version" as UC_label
   usecase "Watch HTTP, ingest, generation,\nrerank and guardrail metrics" as UC_metrics
   usecase "Inspect workers and tasks" as UC_tasks
+  usecase "Inspect queues and consumers" as UC_queues
+  usecase "Open the tools inside the app\n(Visualization)" as UC_viz
   usecase "Set guard models, batch size,\nwait and fail mode" as UC_guard
   usecase "Turn the reranker / agentic RAG\non or off" as UC_toggles
 }
@@ -34,4 +38,12 @@ UC_seed --> langfuse
 UC_label --> langfuse
 UC_metrics --> prom
 UC_tasks --> flower
+UC_queues --> rabbit
+
+user --> UC_viz
+operator --> UC_queues
+UC_viz ..> UC_metrics : <<include>>
+UC_viz ..> UC_trace : <<include>>
+UC_viz ..> UC_tasks : <<include>>
+UC_viz ..> UC_queues : <<include>>
 @enduml

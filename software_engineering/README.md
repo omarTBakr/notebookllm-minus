@@ -60,6 +60,7 @@ different jar. `_style.iuml` holds the shared look.
 | Pictures at ingest: find, caption, chunk, link, embed | [image_ingest](3_sequence_diagrams/image_ingest.png) |
 | A question with pictures: both indexes, linked partners, with or without vision | [image_query_answer](3_sequence_diagrams/image_query_answer.png) |
 | Evaluation and load: Ragas scores the deployed system, Locust loads it | [evaluation_and_load](3_sequence_diagrams/evaluation_and_load.png) |
+| Visualization: Grafana, Flower and RabbitMQ behind the app's session, Langfuse on the open notebook | [visualization](3_sequence_diagrams/visualization.png) |
 
 ## 4. Class diagrams — `4_class_diagrams/`
 

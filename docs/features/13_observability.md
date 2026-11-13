@@ -8,6 +8,35 @@ durable row for every background run.
 
 ## How it works
 
+### Visualization: the tools inside the app
+
+A **Visualization** button in the top bar opens the operations tools over the workspace, one tab
+each, so nobody has to know four ports or leave the app to see what it is doing.
+
+| Tab | Tool | Shows | Served from |
+| --- | --- | --- | --- |
+| Dashboards | Grafana | app and ingestion, message queues, database, host | `/grafana/` on the app's origin |
+| Traces | Langfuse | the open notebook's answers, step by step, with tokens and cost | Langfuse's own origin (`:3001`) |
+| Tasks | Flower | workers and task history | `/flower/` on the app's origin |
+| Queues | RabbitMQ management | queues and consumers | `/rabbitmq/` on the app's origin |
+
+- **Behind the app's sign-in.** nginx serves Grafana, Flower and RabbitMQ under sub-paths and
+  asks the app first (`auth_request` to `/auth/me`): no session, no dashboard. Grafana and Flower
+  have no sign-in of their own here, so this is their gate. RabbitMQ keeps its own login on top.
+- **Langfuse is the exception.** Its image cannot be served under a sub-path, so it is framed
+  from its own origin and keeps its own sign-in, once per browser.
+- **Traces follow the notebook.** A notebook's id is its Langfuse session id, so the tab opens on
+  the notebook that is on screen and moves when another is opened.
+- **Nothing loads until asked.** Each frame is created when its tab is first opened and then
+  kept, so switching tabs does not reload a dashboard. Dashboards open in the app's own theme and
+  in Grafana's kiosk mode; "Open in new tab" gives the full tool.
+- **Addresses come from settings** (`application/services/core/visualization.py`,
+  `GET /chat/visualization`). An empty address hides that tab; with the view off, or nothing
+  configured, the button is not shown. A tool that is not running shows a note, not a blank frame.
+
+Code: `src/presentation/web/static/js/visualization.js` (and `visualization_urls.js` for the pure
+parts), `templates/partials/visualization.html`, `Docker/services/nginx/proxy.conf`.
+
 ### Tracing and prompt versions (Langfuse)
 
 Self-hosted, in the compose profile `langfuse`. `src/shared/utils/tracing.py` opens one trace per
@@ -127,18 +156,28 @@ what should not be sitting in a log file.
 | `MODEL_PRICES` | USD per million tokens, keyed `<backend>/<model id>` with wildcards |
 | `METRICS_ENABLED` / `METRICS_PATH` / `WORKER_METRICS_PORT` | the API's `/metrics`, and the port each worker serves its own on (9808) |
 | `LOG_LEVEL`, `LOG_FORMAT`, `LOG_TO_CONSOLE`, `LOG_TO_FILE`, `LOG_DIR` | logging |
+| `VISUALIZATION_ENABLED` | the Visualization button and view |
+| `VISUALIZATION_GRAFANA_URL` / `_FLOWER_URL` / `_RABBITMQ_URL` | where the browser finds each tool; `/grafana/`, `/flower/`, `/rabbitmq/` behind nginx. Empty hides the tab |
+| `VISUALIZATION_LANGFUSE_URL` / `VISUALIZATION_LANGFUSE_PROJECT_ID` | Langfuse as the browser reaches it, and its project id |
+| `CELERY_MANAGEMENT_PATH_PREFIX` | RabbitMQ's `management.path_prefix`, so Flower's Broker tab asks the right address |
 | `FLOWER_*` | read by Flower itself from the environment |
 
 ## Tests
 
-`tests/observability/test_tracing.py`, `test_model_pricing.py`.
+`tests/observability/test_tracing.py`, `test_model_pricing.py`. Visualization:
+`tests/domain/test_visualization.py`, `tests/api/test_visualization.py` (including a check that
+nginx keeps each tool behind the session), `tests/frontend/visualization.test.mjs`.
 
 ## Diagrams
 
-[Langfuse tracing and prompt versions](../../software_engineering/3_sequence_diagrams/langfuse_tracing.png) · [operations use cases](../../software_engineering/2_use_case_diagrams/operations.png) ·
+[Langfuse tracing and prompt versions](../../software_engineering/3_sequence_diagrams/langfuse_tracing.png) ·
+[Visualization](../../software_engineering/3_sequence_diagrams/visualization.png) · [operations use cases](../../software_engineering/2_use_case_diagrams/operations.png) ·
 [user stories](../../software_engineering/1_user_stories/06_settings_and_operations.png)
 
 ## Known limits
 
 - Flower's per-queue counts read N/A by design; queue depths are in Grafana.
+- Langfuse needs its own sign-in inside the Traces tab, once per browser.
+- Visualization shows whoever is signed in the whole deployment's dashboards, not only their
+  own notebooks. That suits a single-team install; a multi-tenant one should leave it off.
 - `node_exporter` is installed on the host, not in the stack.
