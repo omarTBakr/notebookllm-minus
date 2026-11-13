@@ -587,7 +587,7 @@ class Settings(BaseSettings):
     # management UI inside the app, so nobody has to know four ports. Off by
     # default: the sub-path URLs below only exist behind nginx, which serves
     # them from this origin and checks the app's session first (see
-    # Docker/services/nginx/proxy.conf). An empty URL hides that tab.
+    # Docker/services/nginx/gateway.conf). An empty URL hides that tab.
     VISUALIZATION_ENABLED: bool = False
     VISUALIZATION_GRAFANA_URL: str = "/grafana/"
     VISUALIZATION_FLOWER_URL: str = "/flower/"

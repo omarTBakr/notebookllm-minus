@@ -24,7 +24,10 @@ each, so nobody has to know four ports or leave the app to see what it is doing.
   asks the app first (`auth_request` to `/auth/me`): no session, no dashboard. Grafana and Flower
   have no sign-in of their own here, so this is their gate. RabbitMQ keeps its own login on top.
 - **Langfuse is the exception.** Its image cannot be served under a sub-path, so it is framed
-  from its own origin and keeps its own sign-in, once per browser.
+  from its own origin and keeps its own sign-in, once per browser. It sends
+  `frame-ancestors 'none'`, which would keep the tab blank, so nginx publishes it on host port
+  3001 and rewrites that one directive to allow a page on the same host; the rest of Langfuse's
+  policy is passed through as sent.
 - **Traces follow the notebook.** A notebook's id is its Langfuse session id, so the tab opens on
   the notebook that is on screen and moves when another is opened.
 - **Nothing loads until asked.** Each frame is created when its tab is first opened and then
@@ -35,7 +38,7 @@ each, so nobody has to know four ports or leave the app to see what it is doing.
   configured, the button is not shown. A tool that is not running shows a note, not a blank frame.
 
 Code: `src/presentation/web/static/js/visualization.js` (and `visualization_urls.js` for the pure
-parts), `templates/partials/visualization.html`, `Docker/services/nginx/proxy.conf`.
+parts), `templates/partials/visualization.html`, `Docker/services/nginx/gateway.conf`.
 
 ### Tracing and prompt versions (Langfuse)
 

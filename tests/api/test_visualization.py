@@ -4,7 +4,7 @@ from pathlib import Path
 
 from shared.utils import get_settings
 
-NGINX = Path(__file__).resolve().parents[2] / "Docker" / "services" / "nginx" / "proxy.conf"
+NGINX = Path(__file__).resolve().parents[2] / "Docker" / "services" / "nginx" / "gateway.conf"
 
 
 async def test_it_needs_a_session(anon_client):
@@ -56,3 +56,21 @@ def test_the_management_api_url_follows_the_path_prefix(monkeypatch):
 
     monkeypatch.setattr(settings, "CELERY_MANAGEMENT_PATH_PREFIX", "/rabbitmq")
     assert settings.rabbitmq_management_api_url.endswith(f":{settings.CELERY_MANAGEMENT_PORT}/rabbitmq/api/")
+
+
+def test_langfuse_is_published_through_nginx_so_the_app_may_frame_it():
+    """Langfuse sends `frame-ancestors 'none'` and X-Frame-Options, which keep
+    the Traces tab blank. nginx rewrites the one directive and drops the old
+    header; the port has to be nginx's, not langfuse-web's, or the rewrite is
+    bypassed."""
+    text = NGINX.read_text()
+
+    server = text[text.index("listen 3001;") :]
+    assert "proxy_hide_header X-Frame-Options;" in server
+    assert "add_header Content-Security-Policy $langfuse_csp always;" in server
+    assert "frame-ancestors 'self'" in text[text.index("map $upstream_http_content_security_policy") :]
+
+    compose = (NGINX.parents[2] / "docker-compose.yml").read_text()
+    langfuse = compose[compose.index("  langfuse-web:") : compose.index("  langfuse-worker:")]
+    assert '"3001:3000"' not in langfuse, "langfuse-web publishes 3001 itself, bypassing nginx"
+    assert '"3001:3001"' in compose[compose.index("  nginx:") : compose.index("  nginx:") + 2000]

@@ -50,7 +50,7 @@ Then:
 Docker/
 ├── docker-compose.yml            the whole stack
 ├── services/                     each service's checked-in config, one directory apiece
-│   ├── nginx/proxy.conf          reverse proxy config
+│   ├── nginx/gateway.conf        reverse proxy: the app, the tools under /grafana/ /flower/ /rabbitmq/, Langfuse on :3001
 │   ├── prometheus/prometheus.yml scrape targets
 │   ├── grafana/                  provisioning + dashboards
 │   ├── rabbitmq/rabbitmq.conf    broker config: ports, vhost, memory/disk limits
@@ -343,7 +343,7 @@ and `--docker_only=true` to keep it from using more CPU than the app it is watch
 you do not need per-container graphs.
 
 **Uploads are capped twice.** `MAX_FILE_SIZE` in `env/.env.app` (50 MB) and
-`client_max_body_size` in `services/nginx/proxy.conf` (64 MB). Raise the app's and nginx will reject the
+`client_max_body_size` in `services/nginx/gateway.conf` (64 MB). Raise the app's and nginx will reject the
 request with a 413 before the app ever sees it.
 
 **A citation's highlight needs `PDF_LOADER=pymupdf` set in `env/.env.app` — it is not

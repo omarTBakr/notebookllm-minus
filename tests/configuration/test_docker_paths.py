@@ -3,7 +3,7 @@
 Compose does not validate a bind-mount source or a `dockerfile:` path until it
 acts on them: a mount whose source is missing is silently created as an empty
 *directory* on the host, and the service then starts against an empty config
-(nginx with no proxy.conf, redis with no requirepass) instead of failing. That is
+(nginx with no gateway.conf, redis with no requirepass) instead of failing. That is
 exactly what a directory move leaves behind, so it is checked here, statically.
 """
 

@@ -34,6 +34,8 @@ docker compose up -d --build    # postgres profile: app, pgvector, nginx, promet
   `VISUALIZATION_*` and `CELERY_MANAGEMENT_PATH_PREFIX` lines from `env.example/.env.app` into
   your `env/` files. Direct addresses move with the prefixes: `:3000/grafana/`,
   `:5555/flower/`, `:15672/rabbitmq/`.
+  Langfuse's host port 3001 is now published by nginx, not by `langfuse-web`, so the app may
+  frame it; `NEXTAUTH_URL` stays `http://localhost:3001`.
 - **Ollama runs on the host**, reached as `host.docker.internal`. Multimodal retrieval needs
   Ollama 0.40 or newer with the embedding model pulled.
 - **The reranker** is its own container: llama.cpp's `llama-server` with a GGUF of

@@ -338,12 +338,17 @@ services:
       # Overridable so a host with a different set of neighbours can say so
       # without editing this file.
       - "${NGINX_PORT:-8081}:80"
+      # Langfuse, when the `langfuse` profile is up. Published here rather
+      # than on langfuse-web so nginx can let the app frame it (see the
+      # second server block in gateway.conf). NEXTAUTH_URL must name this port.
+      - "3001:3001"
     volumes:
-      # proxy.conf, not nginx.conf: Docker Desktop's file sharing cached the
-      # old path as missing after an in-place replace on this external drive,
-      # and every container mounting it saw an empty file. A fresh path is the
-      # reliable way out; the contents are unchanged.
-      - ./services/nginx/proxy.conf:/etc/nginx/nginx.conf:ro
+      # gateway.conf, and proxy.conf and nginx.conf before it: Docker
+      # Desktop's file sharing on this external drive caches a file's old
+      # contents after it is replaced in place, and every container mounting
+      # it keeps seeing the stale copy (most recently a version without the
+      # Visualization locations). A fresh path is the reliable way out.
+      - ./services/nginx/gateway.conf:/etc/nginx/nginx.conf:ro
     networks:
       - backend
     depends_on:
@@ -645,9 +650,9 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/.env.langfuse
-    ports:
-      # 3001: Grafana has 3000. NEXTAUTH_URL in .env.langfuse must match.
-      - "3001:3000"
+    # No published port: nginx serves it on host port 3001 (gateway.conf), so
+    # the app's Traces tab can frame it. NEXTAUTH_URL in .env.langfuse names
+    # that port.
     networks:
       - backend
     depends_on: &langfuse-depends-on
