@@ -1,0 +1,127 @@
+/* Visualization: the operations tools, framed over the workspace.
+   Sits below the top bar so the way back (the button, the notebook switcher)
+   never goes away. Under the dropdowns (50), toasts (60) and modals (70). */
+
+.viz {
+  position: fixed;
+  inset-block: var(--topbar-h) 0;
+  inset-inline: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 var(--gap) var(--gap);
+  background: var(--page);
+}
+
+.viz[hidden] { display: none; }
+
+.viz__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  min-height: 44px;
+}
+
+.viz__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.viz__tabs,
+.viz__views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.viz__views { border-radius: var(--radius-sm); }
+.viz__views[hidden] { display: none; }
+
+.viz__tab,
+.viz__view {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 5px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.viz__view { border-radius: 6px; padding: 4px 10px; font-size: 0.8rem; }
+
+.viz__tab:hover,
+.viz__view:hover { color: var(--text); }
+
+.viz__tab[aria-selected="true"] {
+  background: var(--dark);
+  color: #fff;
+}
+
+.viz__view[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.viz__tab:focus-visible,
+.viz__view:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Pushes "open in new tab" and close to the far end, in either direction. */
+.viz__spacer { flex: 1; }
+
+.viz__note {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--warn);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+
+.viz__note[hidden] { display: none; }
+
+.viz__frames {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.viz__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.viz__frame[hidden] { display: none; }
+
+/* The page behind must not scroll while the view covers it. */
+body.viz-open { overflow: hidden; }
+
+#btn-visualization[aria-pressed="true"] {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+#btn-visualization[hidden] { display: none; }
+
+@media (max-width: 780px) {
+  .viz__title { display: none; }
+  .viz__tab { padding: 5px 10px; }
+}

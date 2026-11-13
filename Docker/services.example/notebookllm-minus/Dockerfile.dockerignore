@@ -41,3 +41,28 @@ README.md
 LICENSE
 pytest.ini
 *.md
+
+# Anything named like a virtualenv, at any depth: a set-aside broken one
+# (src/.venv.broken-intxlnk, 1 GB) matched none of the patterns above, was
+# uploaded as build context on every build, and was then copied into the
+# image by `COPY src/`.
+**/.venv*/
+# Tool caches below the root as well as at it (src/.mypy_cache was 290 MB).
+**/.mypy_cache/
+**/.pytest_cache/
+**/.ruff_cache/
+
+# The image reads only src/ (see the Dockerfile's COPY and bind mounts), so the
+# rest of the repository is never sent: tests, evaluation, the demo and its
+# recording assets, diagrams, notebooks.
+tests/
+evals/
+demo/
+docs/
+scripts/
+software_engineering/
+fineTuning/
+colabNotebooks/
+.claude/
+.github/
+.githooks/

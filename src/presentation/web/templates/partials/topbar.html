@@ -41,7 +41,11 @@
       <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-settings"/></svg> <span data-i18n="appearance"></span>
     </button>
 
-    <button class="btn btn--icon" data-soon="Apps" aria-label="apps"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-apps"/></svg></button>
+    {# Grafana, Langfuse, Flower and RabbitMQ inside the app. Hidden until
+       the server says this deployment exposes them (visualization.js). #}
+    <button class="btn btn--icon-text" id="btn-visualization" aria-pressed="false" hidden>
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-chart"/></svg> <span data-i18n="visualization"></span>
+    </button>
 
     <button class="avatar" id="btn-profile" aria-haspopup="true" aria-expanded="false">
       <span id="avatar-initial">?</span>

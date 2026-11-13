@@ -89,8 +89,9 @@ uv run uvicorn main:app --reload
 ```
 
 - UI and API: <http://localhost:8000> (`:8081` through nginx)
-- Grafana: <http://localhost:3000> · Prometheus: <http://localhost:9090>
-- Flower: <http://localhost:5555> · RabbitMQ: <http://localhost:15672>
+- Dashboards, traces, tasks and queues: the **Visualization** button in the app's top bar
+- Directly: Grafana <http://localhost:3000/grafana/> · Flower <http://localhost:5555/flower/> ·
+  RabbitMQ <http://localhost:15672/rabbitmq/> · Prometheus <http://localhost:9090> · Langfuse <http://localhost:3001>
 
 Compose needs no `--env-file` flags. Mongo and Qdrant sit behind `--profile mongo`, Langfuse
 behind `--profile langfuse`. More in [deployment](docs/features/15_deployment.md).
@@ -111,7 +112,7 @@ behind `--profile langfuse`. More in [deployment](docs/features/15_deployment.md
 | Guardrails | A guard model checks the question and the streamed answer, micro-batched on Celery | [10](docs/features/10_guardrails.md) |
 | Memory | `/memory …` stores a fact about the user, folded into every later answer | [11](docs/features/11_memory.md) |
 | Studio | Mind map, flashcards and quiz from the notebook's own chunks, each item traceable | [12](docs/features/12_studio.md) |
-| Observability | Langfuse traces, Prometheus, Grafana, Flower, structured logs | [13](docs/features/13_observability.md) |
+| Observability | Langfuse traces, Prometheus, Grafana, Flower, structured logs; all opened inside the app from one Visualization button | [13](docs/features/13_observability.md) |
 | Pictures as sources | Figures and uploaded pictures are captioned, embedded and cited; figures travel with their text | [14](docs/features/14_multimodal_retrieval.md) |
 | Deployment | Docker Compose; `main` deploys when the suite is green | [15](docs/features/15_deployment.md) |
 | Tests and code quality | A suite that needs no network, model or database; Black and Ruff on commit | [16](docs/features/16_tests_and_code_quality.md) |

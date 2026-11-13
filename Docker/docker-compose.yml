@@ -288,7 +288,11 @@ services:
     # No --port here: FLOWER_PORT in env/.env.app is the single source, and a
     # flag would silently outrank it. Every other Flower option is configured
     # the same way (FLOWER_BASIC_AUTH, FLOWER_PERSISTENT, FLOWER_MAX_TASKS...).
-    command: ["celery", "--app", "celery_app:celery_app", "flower"]
+    #
+    # --url_prefix is the exception: nginx serves Flower inside the app at
+    # /flower/ (Visualization > Tasks), and the healthcheck below has to name
+    # the same path, so both live in this file where they cannot drift apart.
+    command: ["celery", "--app", "celery_app:celery_app", "flower", "--url_prefix=flower"]
     working_dir: /app
     ports:
       # Literal, and must match FLOWER_PORT: a ports: mapping cannot read a
@@ -310,7 +314,7 @@ services:
       # python, not wget or curl: python:3.12-slim ships neither, so a probe
       # using them fails forever while the service itself is fine. Same
       # reasoning as the app's own HEALTHCHECK in the Dockerfile.
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5555/healthcheck', timeout=4).status == 200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5555/flower/healthcheck', timeout=4).status == 200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -334,12 +338,17 @@ services:
       # Overridable so a host with a different set of neighbours can say so
       # without editing this file.
       - "${NGINX_PORT:-8081}:80"
+      # Langfuse, when the `langfuse` profile is up. Published here rather
+      # than on langfuse-web so nginx can let the app frame it (see the
+      # second server block in gateway.conf). NEXTAUTH_URL must name this port.
+      - "3001:3001"
     volumes:
-      # proxy.conf, not nginx.conf: Docker Desktop's file sharing cached the
-      # old path as missing after an in-place replace on this external drive,
-      # and every container mounting it saw an empty file. A fresh path is the
-      # reliable way out; the contents are unchanged.
-      - ./services/nginx/proxy.conf:/etc/nginx/nginx.conf:ro
+      # gateway.conf, and proxy.conf and nginx.conf before it: Docker
+      # Desktop's file sharing on this external drive caches a file's old
+      # contents after it is replaced in place, and every container mounting
+      # it keeps seeing the stale copy (most recently a version without the
+      # Visualization locations). A fresh path is the reliable way out.
+      - ./services/nginx/gateway.conf:/etc/nginx/nginx.conf:ro
     networks:
       - backend
     depends_on:
@@ -422,7 +431,8 @@ services:
     ports:
       # AMQP clients (app, workers, publishers)
       - "5672:5672"
-      # Management web UI — browse to http://localhost:15672
+      # Management web UI — browse to http://localhost:15672/rabbitmq/
+      # (the path prefix is set in rabbitmq.conf), or open Visualization > Queues.
       - "15672:15672"
       # Prometheus exporter endpoint used by the Grafana RabbitMQ dashboard.
       - "15692:15692"
@@ -483,7 +493,9 @@ services:
     container_name: prometheus
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      # Overridable, like NGINX_PORT, for a host where another stack holds
+      # 9090. Grafana reaches Prometheus on the compose network either way.
+      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       # Without this mount Prometheus starts with its built-in defaults and
       # scrapes nothing — which is what the previous file did.
@@ -507,7 +519,9 @@ services:
     container_name: grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Overridable for a host where another Grafana holds 3000. The app
+      # reaches Grafana through nginx at /grafana/, not through this port.
+      - "${GRAFANA_PORT:-3000}:3000"
     env_file:
       - ./env/.env.grafana
     volumes:
@@ -555,7 +569,7 @@ services:
     ports:
       # 9187, its actual default. The previous file put this on 9100 and
       # collided with node-exporter, so neither could start.
-      - "9187:9187"
+      - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
     networks:
       - backend
     depends_on:
@@ -640,9 +654,9 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/.env.langfuse
-    ports:
-      # 3001: Grafana has 3000. NEXTAUTH_URL in .env.langfuse must match.
-      - "3001:3000"
+    # No published port: nginx serves it on host port 3001 (gateway.conf), so
+    # the app's Traces tab can frame it. NEXTAUTH_URL in .env.langfuse names
+    # that port.
     networks:
       - backend
     depends_on: &langfuse-depends-on

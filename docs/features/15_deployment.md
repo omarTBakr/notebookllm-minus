@@ -24,7 +24,18 @@ docker compose up -d --build    # postgres profile: app, pgvector, nginx, promet
 - **Workers.** `celery-process`, `celery-postprocess`, `celery-index`, `celery-studio`,
   `celery-memory`, `celery-guardrail-input`, `celery-guardrail-output`, `celery-maintenance` and
   `celery-beat`. A queue with no `-Q` consumer accepts tasks nothing will ever run.
-- **nginx** is the only published entry point for the app (`:8081`).
+- **nginx** is the only published entry point for the app (`:8081`). It also serves Grafana,
+  Flower and RabbitMQ's management UI under `/grafana/`, `/flower/` and `/rabbitmq/`, to
+  signed-in users only, for the app's Visualization view. Each tool is configured to live under
+  its prefix: Grafana in `env/.env.grafana` (`GF_SERVER_SERVE_FROM_SUB_PATH`, `GF_SERVER_ROOT_URL`,
+  `GF_SECURITY_ALLOW_EMBEDDING`, anonymous Viewer), Flower by `--url_prefix=flower` in compose,
+  RabbitMQ by `management.path_prefix` in `services/rabbitmq/rabbitmq.conf`. **Upgrading an
+  existing install:** copy the new `GF_*` lines from `env.example/.env.grafana` and the
+  `VISUALIZATION_*` and `CELERY_MANAGEMENT_PATH_PREFIX` lines from `env.example/.env.app` into
+  your `env/` files. Direct addresses move with the prefixes: `:3000/grafana/`,
+  `:5555/flower/`, `:15672/rabbitmq/`.
+  Langfuse's host port 3001 is now published by nginx, not by `langfuse-web`, so the app may
+  frame it; `NEXTAUTH_URL` stays `http://localhost:3001`.
 - **Ollama runs on the host**, reached as `host.docker.internal`. Multimodal retrieval needs
   Ollama 0.40 or newer with the embedding model pulled.
 - **The reranker** is its own container: llama.cpp's `llama-server` with a GGUF of

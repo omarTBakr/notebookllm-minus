@@ -52,6 +52,9 @@ const patch = (body) => ({
 export const api = {
   health: () => request("/nlp/health"),
 
+  // Which operations tools the Visualization view may frame, and where.
+  visualization: () => request("/chat/visualization"),
+
   // --- the signed-in account ---
   me: () => request("/auth/me"),
   logout: () => request("/auth/logout", post({})),

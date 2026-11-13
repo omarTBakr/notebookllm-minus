@@ -582,6 +582,24 @@ class Settings(BaseSettings):
     # /docs, /redoc and /openapi.json. Off in production: they list every route.
     DOCS_ENABLED: bool = False
 
+    # --- Visualization (the operations tools, inside the app) ----------------
+    # A button in the top bar opens Grafana, Langfuse, Flower and RabbitMQ's
+    # management UI inside the app, so nobody has to know four ports. Off by
+    # default: the sub-path URLs below only exist behind nginx, which serves
+    # them from this origin and checks the app's session first (see
+    # Docker/services/nginx/gateway.conf). An empty URL hides that tab.
+    VISUALIZATION_ENABLED: bool = False
+    VISUALIZATION_GRAFANA_URL: str = "/grafana/"
+    VISUALIZATION_FLOWER_URL: str = "/flower/"
+    VISUALIZATION_RABBITMQ_URL: str = "/rabbitmq/"
+    # Langfuse as the *browser* reaches it (LANGFUSE_HOST below is how the
+    # app reaches it, inside the compose network). Its image cannot be served
+    # under a sub-path, so it is framed from its own origin and keeps its own
+    # sign-in.
+    VISUALIZATION_LANGFUSE_URL: str = "http://localhost:3001"
+    # LANGFUSE_INIT_PROJECT_ID in Docker/env/.env.langfuse.
+    VISUALIZATION_LANGFUSE_PROJECT_ID: str = "notebookllm-minus"
+
     # --- tracing + prompt versioning (Langfuse) ------------------------------
     # Self-hosted Langfuse from Docker/docker-compose.yml. Off by default, and
     # also off whenever either key is missing, so tests and a bare dev box
@@ -619,6 +637,10 @@ class Settings(BaseSettings):
     # RabbitMQ's management HTTP API, which Flower's Broker tab reads queue
     # depths from. Same host and credentials as the broker above.
     CELERY_MANAGEMENT_PORT: int = 15672
+    # management.path_prefix in rabbitmq.conf, when the management UI is
+    # served under a sub-path (compose: "/rabbitmq", so nginx can put it
+    # inside the app). Empty for a RabbitMQ at its default root.
+    CELERY_MANAGEMENT_PATH_PREFIX: str = ""
 
     # Result backend: Redis — celery_result_backend_url builds the redis:// DSN.
     CELERY_BACKEND_HOST: str = "localhost"
@@ -1012,7 +1034,9 @@ class Settings(BaseSettings):
         """
         user = quote_plus(self.CELERY_USERNAME)
         password = quote_plus(self.CELERY_PASSWORD)
-        return f"http://{user}:{password}@{self.CELERY_HOST}:{self.CELERY_MANAGEMENT_PORT}/api/"
+        prefix = self.CELERY_MANAGEMENT_PATH_PREFIX.strip("/")
+        path = f"{prefix}/api/" if prefix else "api/"
+        return f"http://{user}:{password}@{self.CELERY_HOST}:{self.CELERY_MANAGEMENT_PORT}/{path}"
 
     @property
     def celery_broker_url(self) -> str:

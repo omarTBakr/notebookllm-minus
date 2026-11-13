@@ -36,7 +36,9 @@ Then:
 | | |
 | --- | --- |
 | the app | http://localhost:8081 — through nginx (`NGINX_PORT` in `.env`) |
-| Grafana | http://localhost:3000 — `admin` / `admin` on first boot |
+| host ports | `GRAFANA_PORT`, `PROMETHEUS_PORT`, `POSTGRES_EXPORTER_PORT` in `.env` move Grafana, Prometheus and the Postgres exporter off 3000, 9090 and 9187 when another stack holds them |
+| dashboards, traces, tasks, queues | the **Visualization** button in the app's top bar. It stays hidden until `env/.env.app` has `VISUALIZATION_ENABLED=true` (with the `VISUALIZATION_*` URLs and `CELERY_MANAGEMENT_PATH_PREFIX`) and `env/.env.grafana` has the sub-path and embedding lines; copy both blocks from `env.example/` into an older env |
+| Grafana | http://localhost:3000/grafana/ — `admin` / `admin` on first boot; also at `/grafana/` inside the app |
 | Prometheus | http://localhost:9090 — check `/targets` first |
 | Langfuse | http://localhost:3001 — profile `langfuse`, see [Observability](#observability) |
 | Reranker | http://localhost:8082 — llama.cpp `llama-server` with `bge-reranker-v2-m3` (Q8_0 GGUF, ~640 MB downloaded on first start, ~1 GB RAM) |
@@ -49,7 +51,7 @@ Then:
 Docker/
 ├── docker-compose.yml            the whole stack
 ├── services/                     each service's checked-in config, one directory apiece
-│   ├── nginx/proxy.conf          reverse proxy config
+│   ├── nginx/gateway.conf        reverse proxy: the app, the tools under /grafana/ /flower/ /rabbitmq/, Langfuse on :3001
 │   ├── prometheus/prometheus.yml scrape targets
 │   ├── grafana/                  provisioning + dashboards
 │   ├── rabbitmq/rabbitmq.conf    broker config: ports, vhost, memory/disk limits
@@ -212,7 +214,7 @@ The Redis healthcheck (`redis-cli -a $$REDIS_PASSWORD ping`) and the RabbitMQ on
 waits on — a wrong password fails the healthcheck, not just a client connection, so
 `docker compose ps` shows it directly rather than the app failing later with a vague error.
 
-Ports on the host: AMQP `5672`, RabbitMQ's management UI `15672` (browse to it, log in with
+Ports on the host: AMQP `5672`, RabbitMQ's management UI `15672` (browse to `/rabbitmq/` on it, log in with
 `RABBITMQ_DEFAULT_USER`/`RABBITMQ_DEFAULT_PASS`), Redis `6379`. All three are also reachable
 inside the `backend` network at their service names (`rabbitmq`, `redis`) — that is what a
 future `RABBITMQ_HOST=rabbitmq` / `REDIS_HOST=redis` in `env/.env.app` would point at.
@@ -342,7 +344,7 @@ and `--docker_only=true` to keep it from using more CPU than the app it is watch
 you do not need per-container graphs.
 
 **Uploads are capped twice.** `MAX_FILE_SIZE` in `env/.env.app` (50 MB) and
-`client_max_body_size` in `services/nginx/proxy.conf` (64 MB). Raise the app's and nginx will reject the
+`client_max_body_size` in `services/nginx/gateway.conf` (64 MB). Raise the app's and nginx will reject the
 request with a 413 before the app ever sees it.
 
 **A citation's highlight needs `PDF_LOADER=pymupdf` set in `env/.env.app` — it is not

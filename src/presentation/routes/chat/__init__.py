@@ -13,6 +13,7 @@ models   — model catalogue + per-chat model / settings tuning
 messages — message listing + streaming answer endpoint
 memory   — `/memory` command handling, and the memory-search endpoint
 studio   — generated study material: flashcard decks and quizzes
+visualization — which operations tools the Visualization view shows
 """
 
 from fastapi import APIRouter, Depends
@@ -27,6 +28,7 @@ from .models import models_router
 from .sessions import sessions_router
 from .studio import studio_router
 from .users import users_router
+from .visualization import visualization_router
 
 # Order matters: require_user sets request.state.user, which
 # enforce_ownership reads.
@@ -44,5 +46,6 @@ chat_router.include_router(models_router)
 chat_router.include_router(messages_router)
 chat_router.include_router(memory_router)
 chat_router.include_router(studio_router)
+chat_router.include_router(visualization_router)
 
 __all__ = ["chat_router"]
