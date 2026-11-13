@@ -1,0 +1,18 @@
+{# Visualization: Grafana, Langfuse, Flower and RabbitMQ, framed over the
+   workspace. Empty until visualization.js has asked the server which tools
+   this deployment exposes; each frame is created when its tab is first
+   opened, so nothing loads for someone who never looks. #}
+<section class="viz" id="visualization" aria-labelledby="viz-title" hidden>
+  <header class="viz__head">
+    <h2 class="viz__title" id="viz-title" data-i18n="visualization"></h2>
+    <div class="viz__tabs" id="viz-tabs" role="tablist" aria-labelledby="viz-title"></div>
+    <div class="viz__views" id="viz-views" role="group" hidden></div>
+    <span class="viz__spacer"></span>
+    <a class="btn btn--icon-text" id="viz-open" href="#" target="_blank" rel="noopener">
+      <svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-external"/></svg> <span data-i18n="vizOpenNewTab"></span>
+    </a>
+    <button class="btn btn--icon" id="viz-close" aria-label="close"><svg class="ico" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </header>
+  <p class="viz__note" id="viz-note" role="status" hidden></p>
+  <div class="viz__frames" id="viz-frames"></div>
+</section>

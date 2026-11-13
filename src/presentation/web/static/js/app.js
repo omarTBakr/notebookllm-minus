@@ -57,6 +57,11 @@ import { bindFlashcards, repaintFlashcards } from "./flashcards.js";
 import { bindMindMap, repaintMindMap } from "./mindmap.js";
 import { bindQuiz, repaintQuiz } from "./quiz.js";
 import { bindTheme } from "./theme.js";
+import {
+  bindVisualization,
+  notebookChanged as visualizationNotebookChanged,
+  repaint as repaintVisualization,
+} from "./visualization.js";
 import { bindAutoCopy, copyText } from "./clipboard.js";
 import { bindComingSoon, toast } from "./soon.js";
 import { rememberNotebook, state, storedLang } from "./state.js";
@@ -105,6 +110,9 @@ async function openNotebook(chatId) {
 
   $("question").disabled = false;
   $("btn-send").disabled = false;
+
+  // The traces tab follows the open notebook.
+  visualizationNotebookChanged();
 }
 
 /** Load everything belonging to the current profile. */
@@ -260,6 +268,9 @@ async function main() {
   bindMindMap();
   bindAutoCopy();
   bindTranscript();
+  // Not awaited: it asks the server which tools exist, and nothing on the
+  // first screen waits for that.
+  bindVisualization();
 
   bindNotebookOpen((chatId) => openNotebook(chatId).catch((e) => toast(e.message)));
   bindSourcesChanged(() => paintMeta());
@@ -283,6 +294,7 @@ async function main() {
     paintMeta();
     repaintStudio();
     repaintPanels();
+    repaintVisualization();
     showFor(state.notebook);
   });
 
