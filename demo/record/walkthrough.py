@@ -40,6 +40,9 @@ HERE = Path(__file__).parent
 ASSETS = HERE / "assets"
 OUT = HERE / "out"
 EVALS = HERE.parents[1] / "evals"
+#: The stack's env files: read (never written, never printed) for the logins of
+#: the tools the Visualization view frames, which have sign-in pages of their own.
+DOCKER_ENV = HERE.parents[1] / "Docker" / "env"
 
 SIZE = {"width": 1440, "height": 900}
 
@@ -51,14 +54,21 @@ class Skip(Exception):
     """This scene cannot be shown on this deployment; say why and move on."""
 
 
-def load_env(path: Path) -> None:
+def read_env(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
     if not path.is_file():
-        return
+        return values
     for line in path.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, _, value = line.partition("=")
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+            values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def load_env(path: Path) -> None:
+    for key, value in read_env(path).items():
+        os.environ.setdefault(key, value)
 
 
 class Recorder:
@@ -117,6 +127,36 @@ class Recorder:
             }""",
             text,
         )
+
+    def card(self, title: str, seconds: float = 2.5) -> None:
+        """A blank white page with the next topic's name in bold black, between topics.
+
+        Drawn in the page like the captions, so it is part of the recording. Its
+        timeline kind is "card", which render.py leaves at normal speed.
+        """
+        start = self.now()
+        self.page.evaluate(
+            """(title) => {
+                const card = document.createElement("div");
+                card.id = "demo-card";
+                card.style.cssText = [
+                    "position:fixed", "inset:0", "z-index:100000", "display:flex",
+                    "align-items:center", "justify-content:center", "padding:0 8vw",
+                    "background:#fff", "color:#000", "text-align:center", "direction:ltr",
+                    "font:800 64px/1.2 system-ui,'Noto Sans',sans-serif", "letter-spacing:-0.01em",
+                ].join(";");
+                card.textContent = title;
+                document.body.append(card);
+                const bar = document.getElementById("demo-caption");
+                if (bar) bar.style.display = "none";
+            }""",
+            title,
+        )
+        print(f"[{start:7.1f}s] card: {title}")
+        self.pause(seconds)
+        self.page.evaluate('() => document.getElementById("demo-card")?.remove()')
+        self.caption(self._caption)
+        self.timeline.append({"scene": f"card: {title}", "kind": "card", "start": start, "end": self.now()})
 
     def begin(self, scene: str, caption: str) -> None:
         self.scene = scene
@@ -178,7 +218,18 @@ class Recorder:
     def last_message(self):
         return self.page.locator("#messages > *").last
 
+    def expand_sources(self) -> None:
+        """Open the answer's collapsed "Sources (N)" list, on camera."""
+        block = self.last_message().locator("details.sources-block").first
+        if block.count() and not block.evaluate("el => el.open"):
+            summary = block.locator("summary")
+            summary.scroll_into_view_if_needed()
+            self.pause(0.6)
+            summary.click()
+            self.pause(1.2)
+
     def open_first_citation(self) -> None:
+        self.expand_sources()
         link = self.last_message().locator(".sources-block__link").first
         if not link.count():
             raise Skip("the answer carried no citation to open")
@@ -202,6 +253,7 @@ def scene_account(r: Recorder, email: str, password: str) -> None:
     page = r.page
     page.goto(f"{r.base_url}/login")
     page.wait_for_selector("#auth-form")
+    r.card("NotebookLLM-minus", seconds=3)
     r.caption(r._caption)
 
     exists = page.request.post(f"{r.base_url}/auth/login", data={"email": email, "password": password}).ok
@@ -225,6 +277,52 @@ def scene_account(r: Recorder, email: str, password: str) -> None:
     r.pause(1.5)
 
 
+def sign_in_tools(r: Recorder) -> list[tuple[str, str]]:
+    """Sign in to Langfuse and RabbitMQ off camera, so their frames open on content.
+
+    Both have login pages of their own (nginx only checks the app session).
+    This runs in a second page of the same browser context: only the main
+    page's video is kept, and the cookies it leaves are shared with the frames.
+    Returns (tool, reason) for any login that did not work.
+    """
+    problems: list[tuple[str, str]] = []
+    langfuse = read_env(DOCKER_ENV / ".env.langfuse")
+    rabbit = read_env(DOCKER_ENV / ".env.rabbitmq")
+    viz = r.api("/chat/visualization")
+    tabs = {tab.get("id"): tab for tab in viz.get("tabs", [])}
+
+    page = r.page.context.new_page()
+    try:
+        traces = tabs.get("traces", {}).get("url", "")
+        if traces and langfuse.get("LANGFUSE_INIT_USER_EMAIL"):
+            origin = "/".join(traces.split("/")[:3])
+            try:
+                page.goto(f"{origin}/auth/sign-in", timeout=30000)
+                page.locator('input[name="email"]').fill(langfuse["LANGFUSE_INIT_USER_EMAIL"])
+                page.locator('input[name="password"]').fill(langfuse.get("LANGFUSE_INIT_USER_PASSWORD", ""))
+                page.locator('button[type="submit"]').first.click()
+                page.wait_for_url(lambda url: "/auth/" not in url, timeout=30000)
+            except (PlaywrightTimeout, PlaywrightError) as error:
+                problems.append(("Langfuse login", str(error).splitlines()[0]))
+        elif traces:
+            problems.append(("Langfuse login", "no LANGFUSE_INIT_USER_EMAIL in Docker/env/.env.langfuse"))
+
+        queues = tabs.get("queues", {}).get("url", "")
+        if queues and rabbit.get("RABBITMQ_DEFAULT_USER"):
+            base = queues.split("#")[0]
+            try:
+                page.goto(base if base.startswith("http") else f"{r.base_url}{base}", timeout=30000)
+                page.locator('input[name="username"]').fill(rabbit["RABBITMQ_DEFAULT_USER"])
+                page.locator('input[name="password"]').fill(rabbit.get("RABBITMQ_DEFAULT_PASS", ""))
+                page.locator('input[type="submit"], button[type="submit"]').first.click()
+                page.wait_for_selector("#logout, #main", timeout=30000)
+            except (PlaywrightTimeout, PlaywrightError) as error:
+                problems.append(("RabbitMQ login", str(error).splitlines()[0]))
+    finally:
+        page.close()
+    return problems
+
+
 def scene_notebook(r: Recorder) -> None:
     r.begin("notebook", "A new notebook, renamed")
     page = r.page
@@ -240,10 +338,10 @@ def scene_notebook(r: Recorder) -> None:
 
 
 def scene_sources(r: Recorder) -> None:
-    r.begin("sources", "Sources: files and links, ingested on background workers")
+    r.begin("sources", "Sources: files, pictures and links, ingested on background workers")
     page = r.page
 
-    for name in ("northwind_report.pdf", "team.csv", "sales.xlsx"):
+    for name in ("northwind_report.pdf", "team.csv", "sales.xlsx", "revenue_chart.png"):
         page.locator("#file-input").set_input_files(str(ASSETS / name))
         r.pause(1.5)
     r.wait_indexed()
@@ -304,6 +402,7 @@ def scene_pictures(r: Recorder) -> None:
     r.begin("pictures", "Pictures are sources too: the chart is retrieved and cited")
     r.ask("Which quarter had the highest revenue? Use the chart.")
     r.pause(2.5)
+    r.expand_sources()
 
     thumbs = r.last_message().locator(".sources-block__thumb")
     linked = r.last_message().locator(".sources-block__linked")
@@ -326,7 +425,7 @@ def scene_pictures(r: Recorder) -> None:
     r.pause(1.5)
     if not r.page.locator("#attachment-tray").is_visible():
         raise Skip("the composer refused the picture (MULTIMODAL_ENABLED off?)")
-    r.ask("What does this chart show, and which page of the report is it from?")
+    r.ask("What does this chart show?")
     r.pause(3)
 
 
@@ -471,43 +570,65 @@ def scene_visualization(r: Recorder) -> None:
     r.pause(1)
 
     captions = {
-        "dashboards": "Dashboards (Grafana): requests, ingest stages, model latency",
-        "traces": "Traces (Langfuse): this notebook's answers, step by step, with tokens and cost",
-        "tasks": "Tasks (Flower): every background job and the worker that ran it",
-        "queues": "Queues (RabbitMQ): one queue per kind of work",
+        "dashboards": "Grafana · FastAPI: requests, latency, errors, ingest stages",
+        "traces": "Langfuse: this notebook's answers step by step, with tokens and cost",
+        "tasks": "Flower: every background job and the worker that ran it",
+        "queues": "RabbitMQ: one queue per kind of work",
+    }
+    dashboards = {
+        "app": "Grafana · FastAPI: requests, latency, errors, ingest stages",
+        "queues": "Grafana · RabbitMQ: queue depth and throughput per worker",
+        "database": "Grafana · PostgreSQL: connections, transactions, cache hits",
+        "host": "Grafana · Host: CPU, memory, disk, GPU",
     }
 
     for tab in page.locator(".viz__tab").all():
         tab_id = tab.get_attribute("data-tab")
         r.caption(captions.get(tab_id, "Visualization"))
         tab.click()
-        r.pause(5)
 
         if tab_id == "dashboards":
+            r.pause(6)
             for view in page.locator(".viz__view").all()[1:]:
+                r.caption(dashboards.get(view.get_attribute("data-view"), "Grafana"))
                 view.click()
-                r.pause(4.5)
+                r.pause(6)
+        elif tab_id == "queues":
+            # Hide Celery's own reply and event queues: show the app's work queues.
+            r.pause(2.5)
+            # RabbitMQ 4.x's queue-name filter box (it applies on Enter).
+            try:
+                box = page.frame_locator("#viz-frame-queues").locator("#queues-name")
+                box.press_sequentially("notebookllm.", delay=60, timeout=8000)
+                box.press("Enter")
+            except (PlaywrightTimeout, PlaywrightError) as error:
+                print(f"           queue filter not applied: {str(error).splitlines()[0]}")
+            r.pause(4)
+        else:
+            r.pause(5)
 
     page.locator("#viz-close").click()
     r.pause(1.5)
 
 
-SCENES = [
-    ("notebook", scene_notebook),
-    ("sources", scene_sources),
-    ("pdf", scene_pdf_citation),
-    ("spreadsheet", scene_spreadsheet),
-    ("video", scene_video),
-    ("arabic", scene_arabic),
-    ("pictures", scene_pictures),
-    ("agentic", scene_agentic),
-    ("guardrails", scene_guardrails),
-    ("memory", scene_memory),
-    ("models", scene_models),
-    ("studio", scene_studio),
-    ("interface", scene_interface),
-    ("visualization", scene_visualization),
+#: Topics in the order the video tells them. A topic with a title opens on a
+#: white title card; the setup topic (None) has none. A topic whose scenes are
+#: all left out by --only is dropped with its card.
+TOPICS: list[tuple[str | None, list[tuple[str, object]]]] = [
+    (None, [("notebook", scene_notebook), ("sources", scene_sources)]),
+    ("Multimedia: pictures and video", [("pictures", scene_pictures), ("video", scene_video)]),
+    ("Guardrails", [("guardrails", scene_guardrails)]),
+    ("Observability", [("visualization", scene_visualization)]),
+    (
+        "Answers you can check",
+        [("pdf", scene_pdf_citation), ("spreadsheet", scene_spreadsheet), ("arabic", scene_arabic)],
+    ),
+    ("Agentic research", [("agentic", scene_agentic)]),
+    ("Memory and models", [("memory", scene_memory), ("models", scene_models)]),
+    ("Studio", [("studio", scene_studio)]),
+    ("Theme and Arabic interface", [("interface", scene_interface)]),
 ]
+SCENES = [scene for _, scenes in TOPICS for scene in scenes]
 
 
 def main() -> int:
@@ -545,22 +666,31 @@ def main() -> int:
 
         try:
             scene_account(recorder, email, password)
+            for tool, reason in sign_in_tools(recorder):
+                recorder.skipped.append((tool, reason))
+                print(f"           {tool} failed: {reason}")
 
-            for name, scene in SCENES:
-                if wanted and name not in wanted:
+            for title, scenes in TOPICS:
+                chosen = [(name, scene) for name, scene in scenes if not wanted or name in wanted]
+                if not chosen:
                     continue
-                try:
-                    scene(recorder)
-                except Skip as reason:
-                    recorder.skipped.append((name, str(reason)))
-                    print(f"           skipped {name}: {reason}")
-                except (PlaywrightTimeout, PlaywrightError) as error:
-                    recorder.skipped.append((name, f"{type(error).__name__}: {str(error).splitlines()[0]}"))
-                    print(f"           skipped {name}: {type(error).__name__}: {str(error).splitlines()[0]}")
-                    page.keyboard.press("Escape")
+                if title:
+                    recorder.card(title)
+                for name, scene in chosen:
+                    try:
+                        scene(recorder)
+                    except Skip as reason:
+                        recorder.skipped.append((name, str(reason)))
+                        print(f"           skipped {name}: {reason}")
+                    except (PlaywrightTimeout, PlaywrightError) as error:
+                        recorder.skipped.append((name, f"{type(error).__name__}: {str(error).splitlines()[0]}"))
+                        print(f"           skipped {name}: {type(error).__name__}: {str(error).splitlines()[0]}")
+                        page.keyboard.press("Escape")
 
             recorder.caption("")
-            recorder.pause(1)
+            recorder._caption = ""
+            recorder.card("NotebookLLM-minus", seconds=3)
+            recorder.pause(0.5)
         finally:
             total = recorder.now()
             video = page.video

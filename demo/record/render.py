@@ -91,8 +91,10 @@ def main() -> int:
     timeline = json.loads(timeline_file.read_text())
     cuts = cut_list(timeline["duration"], timeline["segments"])
     final = sum((end - start) / speed for start, end, speed in cuts)
+    cards = sum(s["kind"] == "card" for s in timeline["segments"])
     print(
-        f"{timeline['duration']:.0f}s recorded -> {final:.0f}s after fast-forwarding {sum(s > 1 for *_, s in cuts)} wait(s)"
+        f"{timeline['duration']:.0f}s recorded -> {final:.0f}s after fast-forwarding "
+        f"{sum(s > 1 for *_, s in cuts)} wait(s); {cards} title card(s) kept at normal speed"
     )
 
     args.to.mkdir(parents=True, exist_ok=True)

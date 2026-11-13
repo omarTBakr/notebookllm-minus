@@ -24,10 +24,19 @@ first run. A fresh notebook is made each time.
 
 ## Scenes
 
-Account · notebook · sources (files, then links) · a PDF citation · a spreadsheet row · a video
-moment · an Arabic question · pictures (the chart retrieved, then a picture attached) · an agentic
-answer · guardrails · `/memory` · the model picker · Studio (mind map, flashcards, quiz) · theme
-and Arabic · Visualization (dashboards, traces, tasks, queues).
+Grouped into topics, each opened by a white title card with the topic's name in bold black
+(drawn in the page like the captions, and kept at normal speed by `render.py`):
+
+Account · notebook · sources (files, a picture, then links) · **Multimedia**: pictures (the chart
+retrieved and cited, then a picture attached) and a video moment · **Guardrails** · **Observability**:
+Visualization, with each Grafana dashboard (FastAPI, RabbitMQ, PostgreSQL, host), Langfuse traces,
+Flower tasks and RabbitMQ queues · **Answers you can check**: a PDF citation, a spreadsheet row, an
+Arabic question · **Agentic research** · **Memory and models** · **Studio** (mind map, flashcards,
+quiz) · **Theme and Arabic interface**.
+
+Langfuse and RabbitMQ have sign-in pages of their own. Before the scenes, the recorder signs in to
+both in a second, unrecorded page of the same browser, with `LANGFUSE_INIT_USER_*` and
+`RABBITMQ_DEFAULT_*` read from `Docker/env/` (never printed), so their frames open on content.
 
 - `--only pdf,studio` records a subset (the account scene always runs). `--no-links` skips the
   link sources, for a run without network. `--headed` shows the browser.
