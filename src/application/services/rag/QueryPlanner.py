@@ -262,6 +262,35 @@ def normalise(raw: QueryPlanSchema, question: str, max_sub_queries: int) -> Quer
     return QueryPlan(intent=intent, standalone_query=standalone, sub_queries=queries)
 
 
+# Any letter of the Arabic block. Enough to tell the two languages this app
+# speaks apart; a query is "in the question's script" when both have Arabic
+# letters or neither does.
+_ARABIC_LETTER = re.compile(r"[\u0621-\u064A\u0671-\u06D3]")
+
+
+def search_queries(queries: list[str], question: str) -> list[str]:
+    """*queries*, plus the user's own *question* when the planner translated it.
+
+    The prompt asks for sub-queries "in the user's language", and a small chat
+    model ignores that whenever the surrounding text is English (the English
+    prompt of an `en` notebook, English turns in the history): an Arabic
+    question comes back as English sub-queries (llama3.1:8b, seen live). nomic-embed-text barely matches across
+    languages, so an English query ranks the Arabic passages that answer it
+    near the bottom of the notebook (53rd to 76th of 77, seen live) and they
+    never reach the reranker's pool -- the answer then says the documents do
+    not cover a question they answer word for word.
+
+    The translation is kept rather than replaced: it is the right query for a
+    question asked in one language about sources in the other. The question
+    is added beside it, so passages in the user's own language are searched
+    for in that language too.
+    """
+    script = bool(_ARABIC_LETTER.search(question or ""))
+    if not question or any(bool(_ARABIC_LETTER.search(query)) == script for query in queries):
+        return queries
+    return [*queries, question]
+
+
 async def plan_query(
     client: LLMChattingInterface,
     question: str,
