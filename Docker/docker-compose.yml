@@ -288,7 +288,11 @@ services:
     # No --port here: FLOWER_PORT in env/.env.app is the single source, and a
     # flag would silently outrank it. Every other Flower option is configured
     # the same way (FLOWER_BASIC_AUTH, FLOWER_PERSISTENT, FLOWER_MAX_TASKS...).
-    command: ["celery", "--app", "celery_app:celery_app", "flower"]
+    #
+    # --url_prefix is the exception: nginx serves Flower inside the app at
+    # /flower/ (Visualization > Tasks), and the healthcheck below has to name
+    # the same path, so both live in this file where they cannot drift apart.
+    command: ["celery", "--app", "celery_app:celery_app", "flower", "--url_prefix=flower"]
     working_dir: /app
     ports:
       # Literal, and must match FLOWER_PORT: a ports: mapping cannot read a
@@ -310,7 +314,7 @@ services:
       # python, not wget or curl: python:3.12-slim ships neither, so a probe
       # using them fails forever while the service itself is fine. Same
       # reasoning as the app's own HEALTHCHECK in the Dockerfile.
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5555/healthcheck', timeout=4).status == 200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5555/flower/healthcheck', timeout=4).status == 200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -422,7 +426,8 @@ services:
     ports:
       # AMQP clients (app, workers, publishers)
       - "5672:5672"
-      # Management web UI — browse to http://localhost:15672
+      # Management web UI — browse to http://localhost:15672/rabbitmq/
+      # (the path prefix is set in rabbitmq.conf), or open Visualization > Queues.
       - "15672:15672"
       # Prometheus exporter endpoint used by the Grafana RabbitMQ dashboard.
       - "15692:15692"

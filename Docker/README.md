@@ -36,7 +36,8 @@ Then:
 | | |
 | --- | --- |
 | the app | http://localhost:8081 — through nginx (`NGINX_PORT` in `.env`) |
-| Grafana | http://localhost:3000 — `admin` / `admin` on first boot |
+| dashboards, traces, tasks, queues | the **Visualization** button in the app's top bar |
+| Grafana | http://localhost:3000/grafana/ — `admin` / `admin` on first boot; also at `/grafana/` inside the app |
 | Prometheus | http://localhost:9090 — check `/targets` first |
 | Langfuse | http://localhost:3001 — profile `langfuse`, see [Observability](#observability) |
 | Reranker | http://localhost:8082 — llama.cpp `llama-server` with `bge-reranker-v2-m3` (Q8_0 GGUF, ~640 MB downloaded on first start, ~1 GB RAM) |
@@ -212,7 +213,7 @@ The Redis healthcheck (`redis-cli -a $$REDIS_PASSWORD ping`) and the RabbitMQ on
 waits on — a wrong password fails the healthcheck, not just a client connection, so
 `docker compose ps` shows it directly rather than the app failing later with a vague error.
 
-Ports on the host: AMQP `5672`, RabbitMQ's management UI `15672` (browse to it, log in with
+Ports on the host: AMQP `5672`, RabbitMQ's management UI `15672` (browse to `/rabbitmq/` on it, log in with
 `RABBITMQ_DEFAULT_USER`/`RABBITMQ_DEFAULT_PASS`), Redis `6379`. All three are also reachable
 inside the `backend` network at their service names (`rabbitmq`, `redis`) — that is what a
 future `RABBITMQ_HOST=rabbitmq` / `REDIS_HOST=redis` in `env/.env.app` would point at.
