@@ -203,6 +203,8 @@ CELERY_HOST="rabbitmq"
 CELERY_PORT=5672
 CELERY_VHOST="/"
 CELERY_MANAGEMENT_PORT=15672
+# Matches management.path_prefix in services/rabbitmq/rabbitmq.conf.
+CELERY_MANAGEMENT_PATH_PREFIX="/rabbitmq"
 
 # --- Celery result backend (Redis) ---------------------------------------------
 # Password must match REDIS_PASSWORD in env/.env.redis.
@@ -273,6 +275,17 @@ AUTH_PASSWORD_MIN_LENGTH=8
 AUTH_LOGIN_MAX_FAILURES=5
 AUTH_LOGIN_LOCKOUT_MINUTES=15
 DOCS_ENABLED=false
+
+# --- Visualization (Grafana, Langfuse, Flower, RabbitMQ inside the app) --------
+# nginx serves the first three under these paths, behind the app's sign-in.
+VISUALIZATION_ENABLED=true
+VISUALIZATION_GRAFANA_URL="/grafana/"
+VISUALIZATION_FLOWER_URL="/flower/"
+VISUALIZATION_RABBITMQ_URL="/rabbitmq/"
+# Langfuse as the browser reaches it; must match NEXTAUTH_URL in .env.langfuse.
+# Empty hides the tab (for a stack run without --profile langfuse).
+VISUALIZATION_LANGFUSE_URL="http://localhost:3001"
+VISUALIZATION_LANGFUSE_PROJECT_ID="notebookllm-minus"
 
 # --- Tracing + prompt versioning (Langfuse, http://localhost:3001) ------------
 # Create a project in the Langfuse UI and paste its keys here.
