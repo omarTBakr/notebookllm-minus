@@ -36,7 +36,8 @@ Then:
 | | |
 | --- | --- |
 | the app | http://localhost:8081 — through nginx (`NGINX_PORT` in `.env`) |
-| dashboards, traces, tasks, queues | the **Visualization** button in the app's top bar |
+| host ports | `GRAFANA_PORT`, `PROMETHEUS_PORT`, `POSTGRES_EXPORTER_PORT` in `.env` move Grafana, Prometheus and the Postgres exporter off 3000, 9090 and 9187 when another stack holds them |
+| dashboards, traces, tasks, queues | the **Visualization** button in the app's top bar. It stays hidden until `env/.env.app` has `VISUALIZATION_ENABLED=true` (with the `VISUALIZATION_*` URLs and `CELERY_MANAGEMENT_PATH_PREFIX`) and `env/.env.grafana` has the sub-path and embedding lines; copy both blocks from `env.example/` into an older env |
 | Grafana | http://localhost:3000/grafana/ — `admin` / `admin` on first boot; also at `/grafana/` inside the app |
 | Prometheus | http://localhost:9090 — check `/targets` first |
 | Langfuse | http://localhost:3001 — profile `langfuse`, see [Observability](#observability) |

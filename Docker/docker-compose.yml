@@ -493,7 +493,9 @@ services:
     container_name: prometheus
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      # Overridable, like NGINX_PORT, for a host where another stack holds
+      # 9090. Grafana reaches Prometheus on the compose network either way.
+      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       # Without this mount Prometheus starts with its built-in defaults and
       # scrapes nothing — which is what the previous file did.
@@ -517,7 +519,9 @@ services:
     container_name: grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Overridable for a host where another Grafana holds 3000. The app
+      # reaches Grafana through nginx at /grafana/, not through this port.
+      - "${GRAFANA_PORT:-3000}:3000"
     env_file:
       - ./env/.env.grafana
     volumes:
@@ -565,7 +569,7 @@ services:
     ports:
       # 9187, its actual default. The previous file put this on 9100 and
       # collided with node-exporter, so neither could start.
-      - "9187:9187"
+      - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
     networks:
       - backend
     depends_on:
