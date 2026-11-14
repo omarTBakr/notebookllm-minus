@@ -101,7 +101,7 @@ RETRIEVAL_MIN_SCORE=0.0
 # --- Agentic answering (plan, split complex questions, combine) ---------------
 AGENTIC_RAG_ENABLED=true
 AGENTIC_MAX_SUB_QUERIES=3
-AGENTIC_SUBANSWER_MAX_TOKENS=800
+AGENTIC_SUBANSWER_MAX_TOKENS=4096
 
 # --- Guardrails (input + output checks, workers celery-guardrail-input/-output)
 GUARDRAILS_ENABLED=false

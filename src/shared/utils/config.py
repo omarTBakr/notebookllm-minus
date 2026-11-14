@@ -395,6 +395,8 @@ class Settings(BaseSettings):
     # default alone and is right for chat; False turns a reasoning model's
     # scratchpad off. ProviderCache injects it for callers that need a plain
     # answer rather than a monologue -- see OpenAIChatProvider.thinking.
+    # OpenAI-compatible providers only: an Ollama model ignores it and follows
+    # GENERATION_THINKING (see there).
     CHAT_THINKING_OVERRIDE: bool | None = None
 
     # --- generation ----------------------------------------------------------
@@ -406,6 +408,14 @@ class Settings(BaseSettings):
     GENERATION_DEFAULT_TEMPERATURE: float = 0.1
     # Ask the model to expose its reasoning. Ollama-only; ignored elsewhere,
     # and dropped automatically if the model doesn't support it.
+    #
+    # On Ollama this is the only thinking switch, and it can only turn thinking
+    # *on*: true or a level sends `think`, while false sends nothing, which
+    # leaves the model's own default -- and a reasoning model such as
+    # gemma4:e4b thinks by default. The per-call thinking=False that ProviderCache
+    # accepts (CHAT_THINKING_OVERRIDE below) never reaches an Ollama model. So
+    # every token cap on a local reasoning model must leave room for thinking.
+    # Kept this way deliberately: thinking is on for answer quality.
     GENERATION_THINKING: ThinkingLevel = ThinkingLevel.TRUE
 
     # --- embedding -----------------------------------------------------------
@@ -434,8 +444,14 @@ class Settings(BaseSettings):
     # Parts a complex question may be split into: each one is a retrieval, a
     # rerank and a model call, all concurrent.
     AGENTIC_MAX_SUB_QUERIES: int = 3
-    # A sub-answer is a few cited sentences; this caps a model that rambles.
-    AGENTIC_SUBANSWER_MAX_TOKENS: int = 800
+    # A sub-answer is a few cited sentences, but the cap covers the model's
+    # thinking too, and a local model thinks whatever the code asks (see
+    # GENERATION_THINKING). At 800, gemma4:e4b spent the whole budget thinking
+    # over a part's Arabic passages and returned no text (done_reason='length');
+    # the part was reported as not covered and the answer said the documents
+    # did not cover a question they answered. Same as
+    # GENERATION_DEFAULT_MAX_TOKENS, for the same reason.
+    AGENTIC_SUBANSWER_MAX_TOKENS: int = 4096
 
     # --- guardrails ----------------------------------------------------------
     # Model-based checks before the answer model sees a question (input) and
