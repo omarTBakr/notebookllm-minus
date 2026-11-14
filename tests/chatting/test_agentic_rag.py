@@ -12,6 +12,7 @@ from application.services.rag.QueryPlanner import (
     is_small_talk,
     normalise,
     plan_query,
+    search_queries,
 )
 from tests.support.llm import FakeChatClient, FakeStreamingChatClient
 
@@ -132,6 +133,17 @@ async def test_planner_answers_small_talk_without_a_model_call():
     assert client.prompts == []
 
 
+def test_search_queries_add_the_question_only_when_the_planner_translated_it():
+    arabic = "ما هو المرصد الفلكي وما فائدته؟"
+    # Translated: the user's own words are searched too, after the plan's.
+    assert search_queries(["What is an observatory?"], arabic) == ["What is an observatory?", arabic]
+    # Same language: the plan's queries alone, as before.
+    assert search_queries(["مرصد فلكي"], arabic) == ["مرصد فلكي"]
+    assert search_queries(["tower height"], "How tall is the tower?") == ["tower height"]
+    # One query left in the user's language is enough.
+    assert search_queries(["observatory", "مرصد فلكي"], arabic) == ["observatory", "مرصد فلكي"]
+
+
 def test_complex_with_one_part_left_is_simple():
     raw = QueryPlanSchema(intent="complex", standalone_query="q", sub_queries=["a", "a"])
     assert normalise(raw, "q", 3).intent == "simple"
@@ -236,6 +248,24 @@ async def test_complex_answers_each_part_then_synthesises():
 
     answer = "".join(e["text"] for e in events if e["type"] == "delta")
     assert answer.strip() == "combined [1] [3]"
+
+
+async def test_a_translated_part_still_finds_passages_in_the_users_language():
+    # Seen live: an Arabic question planned into English parts, and an English
+    # embedder that ranks the Arabic article last for them. Only the question
+    # itself finds it.
+    question = "ما هو المرصد الفلكي وما فائدته؟"
+    nlp = FakeNLP({question: [hit("7", 0.78, text="المرصد الفلكي مكان لرصد الأجرام السماوية")]})
+    planner = PlannerClient(plan("complex", "observatory and use?", "What is an observatory?", "What is it for?"))
+    service, _ = make(nlp, planner)
+
+    events = await collect(service, question=question)
+
+    assert sorted(nlp.searched) == sorted(["What is an observatory?", question, "What is it for?", question])
+    meta = next(e for e in events if e["type"] == "meta")
+    assert [c["chunk_order"] for c in meta["citations"]] == [7]
+    sub_prompts = [p for p in planner.prompts if "Part:" in p]
+    assert len(sub_prompts) == 2 and all("المرصد الفلكي مكان" in p for p in sub_prompts)
 
 
 async def test_a_failed_or_empty_part_is_reported_not_fatal():

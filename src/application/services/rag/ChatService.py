@@ -27,7 +27,7 @@ from shared.utils.metrics import (
 from ..core.BaseService import BaseService
 from ..memory.MemoryService import MemoryService
 from .NLPService import NLPService
-from .QueryPlanner import QueryPlan, fallback_plan, plan_query
+from .QueryPlanner import QueryPlan, fallback_plan, plan_query, search_queries
 
 
 class ChatService(BaseService):
@@ -374,14 +374,20 @@ class ChatService(BaseService):
             span.update(output={"candidates": len(ranked)})
 
         if not self.reranker.ENABLED or not ranked:
-            # Vector scores from two collections are not comparable, so with
-            # no reranker to put them on one scale the passages keep their
-            # top_k and the pictures are added after them, capped.
-            texts = [hit for hit in ranked if not self.is_image(hit)]
-            pictures = [hit for hit in ranked if self.is_image(hit)]
-            return texts[:top_k] + pictures[: self.settings.IMAGE_TOP_K]
+            return self._vector_cut(ranked, top_k)
 
         return await self._rerank(rerank_query, ranked, top_k)
+
+    def _vector_cut(self, ranked: list[dict], top_k: int) -> list[dict]:
+        """The best of *ranked* by vector score alone, for when no reranker scored them.
+
+        Vector scores from two collections are not comparable, so with no
+        reranker to put them on one scale the passages keep their top_k and
+        the pictures are added after them, capped.
+        """
+        texts = [hit for hit in ranked if not self.is_image(hit)]
+        pictures = [hit for hit in ranked if self.is_image(hit)]
+        return texts[:top_k] + pictures[: self.settings.IMAGE_TOP_K]
 
     async def _image_search(self, chat_id: str, **query) -> list[dict]:
         """One image-collection search; a failure costs the pictures, not the answer."""
@@ -409,7 +415,11 @@ class ChatService(BaseService):
             RERANK_FAILURES.labels(provider).inc()
             self.logger.warning("Rerank failed, keeping vector order: %s", exc)
             tracing.event("rerank.fallback", level="WARNING", metadata={"error": str(exc)[:300]})
-            return hits[:top_k]
+            # The same cut as having no reranker, not hits[:top_k]: *hits* is
+            # sorted on raw scores from both collections, and the picture
+            # embedder scores everything higher (~0.55-0.6 against ~0.4 for
+            # passages), so a plain cut handed every slot to figure captions.
+            return self._vector_cut(hits, top_k)
 
         floor = self.settings.RERANK_MIN_SCORE
         kept = []
@@ -609,7 +619,7 @@ class ChatService(BaseService):
         planned = plan.intent != "chitchat"
         hits = await self._search_and_rerank(
             chat_id,
-            plan.sub_queries if planned else [searched],
+            search_queries(plan.sub_queries, searched) if planned else [searched],
             plan.standalone_query if planned else searched,
             top_k,
             asset_ids,
@@ -821,7 +831,14 @@ class ChatService(BaseService):
         parts = await asyncio.gather(
             *(
                 self._search_and_rerank(
-                    chat_id, [query], query, top_k, asset_ids, image_query=image[0] if image else None
+                    chat_id,
+                    # The part's query, and the user's own words when the
+                    # planner translated the part (see search_queries).
+                    search_queries([query], question),
+                    query,
+                    top_k,
+                    asset_ids,
+                    image_query=image[0] if image else None,
                 )
                 for query in queries
             )

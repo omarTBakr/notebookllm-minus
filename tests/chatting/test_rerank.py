@@ -123,6 +123,20 @@ async def test_failed_rerank_falls_back_to_vector_order():
     assert [h["id"] for h in hits] == ["1", "2"]
 
 
+async def test_failed_rerank_keeps_passages_ahead_of_pictures(monkeypatch):
+    # The picture embedder scores higher across the board, so a plain cut of
+    # the merged list was every slot to figure captions (seen live: four
+    # captions and one passage in a top 5). Same cut as having no reranker.
+    monkeypatch.setenv("IMAGE_TOP_K", "1")
+    picture = {**hit("fig", 0.6), "metadata": {"asset_id": "a", "kind": "image"}}
+    nlp = FakeNLP({"q": [picture, hit("1", 0.45), hit("2", 0.4), hit("3", 0.3)]})
+    reranker = ScriptedReranker(error=LLMProviderError("timed out"))
+
+    hits = await service(nlp, reranker)._search_and_rerank("c", ["q"], "q", top_k=2, asset_ids=None)
+
+    assert [h["id"] for h in hits] == ["1", "2", "fig"]
+
+
 async def test_slow_rerank_times_out_to_vector_order(monkeypatch):
     monkeypatch.setenv("RERANKER_TIMEOUT_S", "0.05")
     nlp = FakeNLP({"q": [hit("1", 0.9), hit("2", 0.8)]})
