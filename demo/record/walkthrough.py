@@ -89,14 +89,17 @@ class Recorder:
 
     @contextmanager
     def waiting(self, what: str):
-        """A stretch where nothing happens on screen but a spinner: sped up later."""
-        self.caption(f"{self._caption}  ·  {what} (fast-forwarded)")
+        """A stretch where nothing happens on screen but a spinner: cut later.
+
+        render.py keeps only the last half second of it, so the caption stays
+        the scene's own; *what* is for the console log.
+        """
+        print(f"           waiting: {what}")
         start = self.now()
         try:
             yield
         finally:
             self.timeline.append({"scene": self.scene, "kind": "wait", "start": start, "end": self.now()})
-            self.caption(self._caption)
 
     def pause(self, seconds: float = 1.5) -> None:
         """Hold the frame long enough to be read."""

@@ -4,9 +4,9 @@
 
 Reads out/walkthrough.webm and out/timeline.json (written by walkthrough.py).
 Every stretch the timeline marks as "wait" (a model answering, a worker
-indexing) is played fast, so the video shows the work without making a viewer
-sit through it. The caption on screen during those stretches already says
-"fast-forwarded": it was drawn in the page while recording.
+indexing) is cut out, keeping only its last WAIT_KEEP_S seconds: the moment the
+answer or the generated set appears. A viewer sees the question sent and the
+result arrive, with no spinner time. Title cards and actions play as recorded.
 
 Needs ffmpeg. Nothing else: the cut list is plain arithmetic.
 """
@@ -24,16 +24,20 @@ HERE = Path(__file__).parent
 OUT = HERE / "out"
 DEMO = HERE.parent
 
-#: A wait is compressed to about this many seconds, whatever its length, but
-#: never sped up more than MAX_SPEED (beyond that the page just flickers).
-WAIT_TARGET_S = 2.5
-MAX_SPEED = 40.0
-#: Waits shorter than this are left alone: speeding them up saves nothing.
-MIN_WAIT_S = 4.0
+#: What is kept of a wait: its last half second, so the cut lands on the
+#: answer appearing rather than jumping into the middle of it. Cut, not sped
+#: up: a minute of spinner squeezed into half a second just flickers.
+WAIT_KEEP_S = 0.5
+#: Waits shorter than this are left alone: cutting them saves nothing.
+MIN_WAIT_S = 1.0
 
 
 def cut_list(duration: float, segments: list[dict]) -> list[tuple[float, float, float]]:
-    """``(start, end, speed)`` covering ``[0, duration]`` with no gap or overlap."""
+    """The ``(start, end, speed)`` pieces of ``[0, duration]`` that are kept, in order.
+
+    Everything is kept at normal speed except each wait, of which only the
+    last WAIT_KEEP_S seconds survive. Pieces never overlap or repeat a second.
+    """
     waits = sorted(
         (max(0.0, s["start"]), min(duration, s["end"]))
         for s in segments
@@ -50,7 +54,7 @@ def cut_list(duration: float, segments: list[dict]) -> list[tuple[float, float, 
             continue
         if start > cursor:
             cuts.append((cursor, start, 1.0))
-        cuts.append((start, end, min(MAX_SPEED, max(1.0, (end - start) / WAIT_TARGET_S))))
+        cuts.append((max(start, end - WAIT_KEEP_S), end, 1.0))
         cursor = end
 
     if cursor < duration:
@@ -92,9 +96,10 @@ def main() -> int:
     cuts = cut_list(timeline["duration"], timeline["segments"])
     final = sum((end - start) / speed for start, end, speed in cuts)
     cards = sum(s["kind"] == "card" for s in timeline["segments"])
+    waits = sum(1 for s in timeline["segments"] if s["kind"] == "wait" and s["end"] - s["start"] >= MIN_WAIT_S)
     print(
-        f"{timeline['duration']:.0f}s recorded -> {final:.0f}s after fast-forwarding "
-        f"{sum(s > 1 for *_, s in cuts)} wait(s); {cards} title card(s) kept at normal speed"
+        f"{timeline['duration']:.0f}s recorded -> {final:.0f}s after cutting {waits} wait(s) "
+        f"to {WAIT_KEEP_S}s each; {cards} title card(s) kept at normal speed"
     )
 
     args.to.mkdir(parents=True, exist_ok=True)

@@ -43,8 +43,9 @@ both in a second, unrecorded page of the same browser, with `LANGFUSE_INIT_USER_
 - **A scene that cannot be shown is skipped, with the reason printed and saved in the timeline.**
   Pictures need `MULTIMODAL_ENABLED`, the refusal needs `GUARDRAILS_ENABLED`, Visualization needs
   `VISUALIZATION_ENABLED`, traces need the `langfuse` profile. Nothing is staged.
-- Captions are drawn in the page while recording, so they are part of the picture. During a wait
-  the caption says "fast-forwarded", and `render.py` compresses that stretch to a couple of seconds.
+- Captions are drawn in the page while recording, so they are part of the picture. Waits (a model
+  answering, a worker indexing) are cut by `render.py`, which keeps only the last half second of
+  each: the answer appearing.
 
 `out/` is gitignored. Review the result before replacing the files in `demo/`:
 
