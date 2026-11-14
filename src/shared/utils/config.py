@@ -690,6 +690,13 @@ class Settings(BaseSettings):
     # limit stays as the backstop for a task that ignores it. Must be lower
     # than CELERY_TASK_TIME_LIMIT or it can never fire.
     CELERY_TASK_SOFT_TIME_LIMIT: int = 1800
+    # The Studio task's own soft limit, apart from every other task's. With the
+    # model's thinking on (see STUDIO_NUM_CTX), a fresh notebook's set means
+    # summarising every chunk first: ~80 chunks on gemma4:e4b took 30-70 s per
+    # batch of summaries and ~22 s per batch of items, past the 540 s a
+    # deployment may set CELERY_TASK_SOFT_TIME_LIMIT to for ingest. Same rule
+    # as that one: below CELERY_TASK_TIME_LIMIT, or cleanup never runs.
+    STUDIO_TASK_SOFT_TIME_LIMIT: int = 1800
     # Report STARTED once a worker picks a task up. Off by default in Celery,
     # which is why a running task and a queued one were both PENDING — the
     # single most misleading thing the status endpoints did.
@@ -876,12 +883,13 @@ class Settings(BaseSettings):
         cleanup skipped, which is exactly the bug the soft limit was added to
         fix, and nothing in the logs would say so.
         """
-        if self.CELERY_TASK_SOFT_TIME_LIMIT >= self.CELERY_TASK_TIME_LIMIT:
-            raise ValueError(
-                f"CELERY_TASK_SOFT_TIME_LIMIT ({self.CELERY_TASK_SOFT_TIME_LIMIT}) must be "
-                f"below CELERY_TASK_TIME_LIMIT ({self.CELERY_TASK_TIME_LIMIT}); "
-                "otherwise the hard kill always wins and task cleanup never runs"
-            )
+        for name in ("CELERY_TASK_SOFT_TIME_LIMIT", "STUDIO_TASK_SOFT_TIME_LIMIT"):
+            if getattr(self, name) >= self.CELERY_TASK_TIME_LIMIT:
+                raise ValueError(
+                    f"{name} ({getattr(self, name)}) must be "
+                    f"below CELERY_TASK_TIME_LIMIT ({self.CELERY_TASK_TIME_LIMIT}); "
+                    "otherwise the hard kill always wins and task cleanup never runs"
+                )
         return self
 
     # `mode="before"` so they run ahead of the enum check: a .env saying

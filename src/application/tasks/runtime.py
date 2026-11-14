@@ -65,20 +65,22 @@ async def job_resources(*, providers: bool = False):
             await db.disconnect()
 
 
-def run_job(body: Callable[[], Awaitable[dict]], *, what: str) -> dict:
+def run_job(body: Callable[[], Awaitable[dict]], *, what: str, soft_limit: int | None = None) -> dict:
     """Run a job's async body, reporting a soft time limit as what it is.
 
     The soft limit is raised *inside* the coroutine, so `job_resources`' finally
     still runs and the connections close; the hard limit is a SIGKILL that skips
     them. `what` names this run -- "Assembling 'abc123'" -- because a timed-out
     job and a broker fault otherwise read identically in the logs, and telling
-    them apart is the whole point of catching this.
+    them apart is the whole point of catching this. `soft_limit` is the limit
+    the task was given, for a task with its own (Studio); None means the
+    global CELERY_TASK_SOFT_TIME_LIMIT.
     """
     try:
         return asyncio.run(body())
 
     except SoftTimeLimitExceeded as exc:
-        limit = get_settings().CELERY_TASK_SOFT_TIME_LIMIT
+        limit = soft_limit or get_settings().CELERY_TASK_SOFT_TIME_LIMIT
 
         logger.error("%s exceeded its soft time limit of %ss", what, limit)
 

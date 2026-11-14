@@ -188,6 +188,9 @@ POSTPROCESS_NUM_CTX=16384
 # (Ollama only), and an output cap for one call, thinking included.
 STUDIO_NUM_CTX=16384
 STUDIO_MAX_TOKENS=12288
+# Studio's own soft time limit (a fresh notebook's set can take 10-15 min);
+# below CELERY_TASK_TIME_LIMIT (1860).
+STUDIO_TASK_SOFT_TIME_LIMIT=1800
 # Output cap per call. Higher only feeds repetition loops.
 POSTPROCESS_MAX_TOKENS=12288
 # Reject a repair whose length differs from the original by more than this ratio.

@@ -262,6 +262,8 @@ async def _run_generation(chat_id: str, kind: str, task_id: str | None = None) -
     bind=True,
     name=f"{SETTINGS.CELERY_PROJECT_NAME}.generate_artifact_task",
     queue=SETTINGS.CELERY_QUEUE_STUDIO,
+    # Its own limit, longer than ingest's: see STUDIO_TASK_SOFT_TIME_LIMIT.
+    soft_time_limit=SETTINGS.STUDIO_TASK_SOFT_TIME_LIMIT,
 )
 def generate_artifact_task(self, chat_id: str, kind: str) -> dict:
     """Generate a flashcard deck, quiz or mind map for one notebook."""
@@ -269,6 +271,7 @@ def generate_artifact_task(self, chat_id: str, kind: str) -> dict:
         return run_job(
             lambda: _run_generation(chat_id, kind, task_id=self.request.id),
             what=f"Generating {kind} for {chat_id!r}",
+            soft_limit=SETTINGS.STUDIO_TASK_SOFT_TIME_LIMIT,
         )
 
     except StructuredOutputError as exc:
