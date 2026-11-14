@@ -12,9 +12,9 @@
 
 > **NotebookLLM-minus** — NotebookLM, minus the parts that aren't built yet.
 
-**▶ [Watch the walkthrough](demo/walkthrough.gif)** ([full-quality video](demo/walkthrough.mp4)) — links, files and a
-Google Sheet as sources, cited answers that open the exact page, row or moment, the model picker, and a mind map,
-flashcards and quiz that do the same. ([Jump to the demo](#demo))
+**▶ [Watch the walkthrough](demo/walkthrough.gif)** ([full-quality video](demo/walkthrough.mp4)) — pictures and video
+as sources, guardrails, the observability dashboards inside the app, cited answers that open the exact page, row or
+moment, an Arabic answer from an Arabic source, and a mind map, flashcards and quiz. ([Jump to the demo](#demo))
 
 Add documents or links (PDFs, articles, YouTube videos, public Google Sheets), ask questions, get
 answers grounded in *those* sources, with citations back to the page or moment they came from. A small, deliberately readable RAG backend on **FastAPI**,
@@ -31,22 +31,25 @@ are discovered from what is actually installed and reachable, never pinned in co
 
 ## Demo
 
-![End-to-end walkthrough in the light theme: rename the notebook, add a YouTube video, an Arabic article, an arXiv PDF and a Google Sheet by link plus a CSV and an XLSX by upload, ask about each and open the cited page, video moment or spreadsheet row, browse the OpenRouter models, then generate a mind map, flashcards and a quiz that each open their source, and switch the interface to Arabic](demo/walkthrough.gif)
+![End-to-end walkthrough in the light theme, in topics separated by white title cards: files, a picture and links added as sources; a chart retrieved and cited, a picture attached to a question, a video cited at the moment it is spoken; a prompt-injection request refused by the guardrail; the Visualization view with each Grafana dashboard, Langfuse traces, Flower tasks and RabbitMQ queues; cited answers from a PDF, a spreadsheet row and an Arabic article; a multi-part question researched part by part; /memory and the model picker; a mind map, flashcards and a quiz; the dark theme and the Arabic right-to-left interface](demo/walkthrough.gif)
 
-Recorded end to end against the running stack, in the light theme, with small sources only (a 15-page
-paper, a 19-second video, one Arabic article, two tiny spreadsheets). Stretches that are only waiting for
-the workers are fast-forwarded and labelled. In order:
+Recorded end to end against the running stack (chat model `gemma4:e4b` on local Ollama), in the light theme, with
+small sources only. All waiting is cut out — indexing, Studio generating, and everything between sending a question
+and its first words — while each answer is kept streaming in at normal speed. A white title card opens each topic:
 
-1. **Add sources** — three by link (a YouTube video, an Arabic Wikipedia article, an arXiv PDF), a public
-   Google Sheet, and a CSV and an XLSX from disk. The bar follows each link from the fetch through to the index.
-2. **Ask, and open the citation** — a PDF answer cites its page and highlights the passage; a video answer
-   opens the player at that moment; an Arabic question gets an Arabic answer with its own source.
-3. **Spreadsheets** — one chunk per row; a salary lookup cites `team.csv · row 8` and a revenue question cites
-   `sales.xlsx · Q1 Sales · row 6`, numbered as in Excel.
-4. **Model picker** — filter the catalogue by provider down to OpenRouter's models, each with what it can do.
-5. **Studio** — a mind map (expand a branch, open a topic's source), flashcards and a quiz, each opening the
-   passage it was written from.
-6. **Interface** — theme and English/Arabic switch.
+1. **Multimedia** — a picture is a source of its own; asked which quarter earned most, the answer cites the chart
+   (the uploaded picture and the figure on page 2 of the PDF); a picture attached to a question is read; a video
+   answer opens the player at the moment it is spoken.
+2. **Guardrails** — a prompt-injection request for a phishing email is stopped by the guard model before the answer
+   model sees it.
+3. **Observability** — the Visualization button opens Grafana (FastAPI, RabbitMQ, PostgreSQL and host dashboards),
+   Langfuse traces of this notebook's answers, Flower's task history and RabbitMQ's queues, inside the app.
+4. **Answers you can check** — a PDF citation opens the page with the passage highlighted; a spreadsheet answer cites
+   `team.csv · row N`; an Arabic question gets an Arabic answer citing the Arabic article.
+5. **Agentic research** — a two-part question is planned, researched part by part and combined.
+6. **Memory and models** — `/memory` stores a preference used in later answers; each notebook picks its own models.
+7. **Studio** — a mind map, flashcards and a quiz, each item traceable to its source.
+8. **Theme and Arabic interface** — the dark theme, and Arabic with a right-to-left layout.
 
 A reader's path through it — what [the architecture page](docs/architecture.md) breaks into requests,
 queues and prompts:
