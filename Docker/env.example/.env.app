@@ -184,6 +184,10 @@ POSTPROCESS_PAGES_PER_CALL=5
 POSTPROCESS_CONCURRENCY=4
 # Context window; Ollama only.
 POSTPROCESS_NUM_CTX=16384
+# Studio keeps the model's thinking on: a window for prompt + thinking + JSON
+# (Ollama only), and an output cap for one call, thinking included.
+STUDIO_NUM_CTX=16384
+STUDIO_MAX_TOKENS=12288
 # Output cap per call. Higher only feeds repetition loops.
 POSTPROCESS_MAX_TOKENS=12288
 # Reject a repair whose length differs from the original by more than this ratio.

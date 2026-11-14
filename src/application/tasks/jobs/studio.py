@@ -111,7 +111,9 @@ async def _run_generation(chat_id: str, kind: str, task_id: str | None = None) -
             await recorder.started()
 
             chat = await ChatModel(db).get_chat(chat_id)
-            client = providers.chatting(getattr(chat, "generation_model", None))
+            # A window that holds the thinking as well as the prompt and the
+            # answer: see STUDIO_NUM_CTX.
+            client = providers.chatting(getattr(chat, "generation_model", None), num_ctx=settings.STUDIO_NUM_CTX)
             parser = TemplateParser(
                 lang=getattr(chat, "lang", settings.DEFAULT_LANG),
                 default_lang=settings.DEFAULT_LANG,

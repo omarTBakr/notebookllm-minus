@@ -555,3 +555,31 @@ async def test_a_batch_never_adds_more_items_than_it_asked_for(notebook, fake_db
     # Ten chunks are two batches: the small first one (3), then the other 7.
     assert artifact.items
     assert len(artifact.items) <= ITEMS_PER_BATCH * 2
+
+
+async def test_studio_gives_a_thinking_model_room_to_think(notebook, monkeypatch):
+    """A reasoning model thinks before it answers. In Ollama's default window
+    (4096) gemma4:e4b ran out of room mid-thought and returned no text
+    (done_reason='length'), so every Studio set failed once it became the
+    default model. Studio keeps the thinking, for the quality of the items, and
+    asks for a window that holds it."""
+    from shared.utils import get_settings
+
+    client = await notebook(chunk_count=3)
+    asked: list[dict] = []
+
+    class RecordingProviders:
+        def chatting(self, *args, **kwargs):
+            asked.append(kwargs)
+            return client
+
+        async def aclose_all(self):
+            pass
+
+    monkeypatch.setattr(runtime, "ProviderCache", lambda _s: RecordingProviders())
+
+    await studio._run_generation("c1", ArtifactKind.FLASHCARDS.value)
+
+    assert asked, "the job never asked for a chat client"
+    assert all(call.get("num_ctx") == get_settings().STUDIO_NUM_CTX for call in asked)
+    assert all(call.get("thinking") is not False for call in asked), "thinking stays on"

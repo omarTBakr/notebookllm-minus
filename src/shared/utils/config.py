@@ -228,6 +228,18 @@ class Settings(BaseSettings):
     # Arabic runs 1-3k tokens and the answer repeats it, so the floor is
     # roughly 4x a page -- times POSTPROCESS_PAGES_PER_CALL.
     POSTPROCESS_NUM_CTX: int = 16384
+    # Studio (mind map, flashcards, quiz) runs the notebook's chat model with
+    # its thinking on, for the quality of the items. A reasoning model thinks
+    # before it answers, so the window has to hold the prompt, the thinking and
+    # the JSON. Measured on gemma4:e4b with ten real chunks: Ollama's default
+    # window (4096) stopped it mid-thought every time (done_reason='length',
+    # no answer, every set failed); 16384 returned all ten summaries in 45 s
+    # (~2.3k prompt tokens, ~2.4k out, 7k characters of it thinking).
+    STUDIO_NUM_CTX: int = 16384
+    # Output cap for one Studio call, thinking included. Five times what the
+    # measured call used: a cap for a runaway, not a budget an answer needs.
+    # BATCH_ATTEMPT_TIMEOUT in ArtifactService still bounds each attempt.
+    STUDIO_MAX_TOKENS: int = 12288
     # Output cap for one correction, which has to cover
     # POSTPROCESS_PAGES_PER_CALL whole pages: a correct answer reproduces every
     # page it was given, in full. Ten dense pages is ~6.5k tokens of output

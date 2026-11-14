@@ -7,6 +7,7 @@ result onto the chunk, so whichever runs first saves the other the call.
 """
 
 from data.models import SummarySet
+from shared.utils import get_settings
 
 from ..llm.structured_generation import generate_structured
 
@@ -44,7 +45,10 @@ async def summarise_chunks(client, parser, batch) -> dict[str, str]:
     prompt = parser.get("studio", "summarise_prompt", {"excerpts": excerpts})
     # Partial is safe here: a chunk left without a summary is retried by the
     # next run, which is exactly what happens when the model skips one.
-    result = await generate_structured(client, prompt, SummarySet, salvage=True)
+    # Room for the model's thinking as well as the JSON: see STUDIO_MAX_TOKENS.
+    result = await generate_structured(
+        client, prompt, SummarySet, salvage=True, max_tokens=get_settings().STUDIO_MAX_TOKENS
+    )
 
     by_number = dict(numbered)
     summaries: dict[str, str] = {}
