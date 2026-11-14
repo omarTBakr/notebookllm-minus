@@ -89,14 +89,17 @@ class Recorder:
 
     @contextmanager
     def waiting(self, what: str):
-        """A stretch where nothing happens on screen but a spinner: sped up later."""
-        self.caption(f"{self._caption}  ·  {what} (fast-forwarded)")
+        """A stretch where nothing happens on screen but a spinner: cut later.
+
+        render.py cuts it out completely, so the caption stays the scene's
+        own; *what* is for the console log.
+        """
+        print(f"           waiting: {what}")
         start = self.now()
         try:
             yield
         finally:
             self.timeline.append({"scene": self.scene, "kind": "wait", "start": start, "end": self.now()})
-            self.caption(self._caption)
 
     def pause(self, seconds: float = 1.5) -> None:
         """Hold the frame long enough to be read."""
@@ -192,6 +195,9 @@ class Recorder:
     def ask(self, question: str, what: str = "the model is answering", timeout_s: int = 300) -> None:
         """Type a question, send it, and wait for the answer to finish."""
         page = self.page
+        # Answers already on the page, so the new one is told apart from them.
+        answers_before = page.locator("#messages > .msg--assistant").count()
+
         box = page.locator("#question")
         box.click()
         box.press_sequentially(question, delay=18)
@@ -207,11 +213,25 @@ class Recorder:
         except PlaywrightTimeout:
             pass  # an instant reply (a refusal, an ack) may never show Stop
 
+        # Cut: planning, retrieval and the model's thinking, until the answer's
+        # first words appear (or it ends without streaming, like a refusal).
         with self.waiting(what):
             page.wait_for_function(
-                "() => !document.getElementById('btn-send').classList.contains('composer__send--stop')",
+                """(before) => {
+                    const answer = document.querySelectorAll("#messages > .msg--assistant")[before];
+                    const body = answer && answer.querySelector(".msg__body");
+                    const done = !document.getElementById("btn-send").classList.contains("composer__send--stop");
+                    return done || (body && body.textContent.trim().length > 0);
+                }""",
+                arg=answers_before,
                 timeout=timeout_s * 1000,
             )
+
+        # Kept: the answer streaming in, at normal speed, until it is complete.
+        page.wait_for_function(
+            "() => !document.getElementById('btn-send').classList.contains('composer__send--stop')",
+            timeout=timeout_s * 1000,
+        )
         send.scroll_into_view_if_needed()
         self.last_message().scroll_into_view_if_needed()
 
@@ -499,12 +519,32 @@ def scene_models(r: Recorder) -> None:
     r.pause(0.8)
 
 
-def _studio(r: Recorder, button: str, ready: str, caption: str, interact) -> None:
+def _studio(r: Recorder, button: str, kind: str, content: str, caption: str, interact) -> None:
+    """Generate one Studio set and wait until it is complete, not just started.
+
+    Each panel draws something at once (the mind map's root, an empty card
+    face, a "reading the documents..." placeholder), so a selector alone passes
+    too early. The panel's status line is the signal: it says "reading the
+    documents..." or "still adding..." while the set is generating and is
+    emptied once it is complete.
+    """
     page = r.page
     r.caption(caption)
     page.locator(button).click()
     with r.waiting("generated on a worker, from the notebook's own chunks"):
-        page.wait_for_selector(ready, timeout=420000)
+        page.wait_for_function(
+            """([kind, content]) => {
+                const panel = document.getElementById(kind);
+                const status = document.getElementById(kind + "-status");
+                return panel && !panel.hidden
+                    && status && !status.textContent.trim()
+                    && panel.querySelector(content);
+            }""",
+            arg=[kind, content],
+            # Up to STUDIO_TASK_SOFT_TIME_LIMIT: a fresh notebook summarises every
+            # chunk before the first item, which with thinking on is many minutes.
+            timeout=1_800_000,
+        )
     r.pause(2)
     interact()
     r.pause(1.5)
@@ -535,9 +575,9 @@ def scene_studio(r: Recorder) -> None:
             r.pause(2)
         page.locator("#quiz-close").click()
 
-    _studio(r, "#btn-mindmap", ".mm-node", "Studio: a mind map of the notebook", mindmap)
-    _studio(r, "#btn-flashcards", "#flashcards-face:not(:empty)", "Studio: flashcards", flashcards)
-    _studio(r, "#btn-quiz", "#quiz-body button", "Studio: a quiz, marked as you answer", quiz)
+    _studio(r, "#btn-mindmap", "mindmap", ".mm-node--branch", "Studio: a mind map of the notebook", mindmap)
+    _studio(r, "#btn-flashcards", "flashcards", "#flashcards-face:not(:empty)", "Studio: flashcards", flashcards)
+    _studio(r, "#btn-quiz", "quiz", "#quiz-body button", "Studio: a quiz, marked as you answer", quiz)
 
 
 def scene_interface(r: Recorder) -> None:
@@ -604,6 +644,10 @@ def scene_visualization(r: Recorder) -> None:
             except (PlaywrightTimeout, PlaywrightError) as error:
                 print(f"           queue filter not applied: {str(error).splitlines()[0]}")
             r.pause(4)
+        elif tab_id == "traces":
+            # Langfuse loads the session's traces after its shell: give the
+            # trace bodies time to replace their placeholders.
+            r.pause(10)
         else:
             r.pause(5)
 

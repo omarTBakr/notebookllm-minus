@@ -66,6 +66,9 @@ class ChatService(BaseService):
         # model asked for JSON leaves `content` empty and puts everything in
         # `reasoning_content`, which fails validation on every retry; and a
         # sub-answer gains nothing from a scratchpad nobody sees but latency.
+        # Only a hosted (OpenAI-compatible) model honours that; a local Ollama
+        # reasoning model thinks anyway (see GENERATION_THINKING), which is why
+        # AGENTIC_SUBANSWER_MAX_TOKENS leaves room for thinking.
         # None falls back to generation_client, which suits a test;
         # dependencies.chat_service always supplies a dedicated one.
         self.planner_client = planner_client or generation_client

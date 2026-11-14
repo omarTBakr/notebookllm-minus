@@ -129,16 +129,22 @@ def chat_service(request: Request, chat=None, vision: bool = False) -> ChatServi
     NotImplementedError means "this backend doesn't have memory", which is
     routine rather than a failure.
     """
+    from shared.utils import get_settings
+
     try:
         memory_controller = memory_service(request, chat)
     except NotImplementedError:
         memory_controller = None
 
+    # Both clients get a window that holds a grounded prompt: see CHAT_NUM_CTX.
+    model = getattr(chat, "generation_model", None)
+    num_ctx = get_settings().CHAT_NUM_CTX
+
     return ChatService(
-        generation_client=request.app.providers.chatting(getattr(chat, "generation_model", None)),
+        generation_client=request.app.providers.chatting(model, num_ctx=num_ctx),
         nlp_controller=nlp_service(request, chat),
         memory_controller=memory_controller,
-        planner_client=request.app.providers.chatting(getattr(chat, "generation_model", None), thinking=False),
+        planner_client=request.app.providers.chatting(model, num_ctx=num_ctx, thinking=False),
         reranker=request.app.providers.reranker(),
         image_index=image_index_service(request),
         vision=vision,

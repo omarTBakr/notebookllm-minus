@@ -228,6 +228,27 @@ class Settings(BaseSettings):
     # Arabic runs 1-3k tokens and the answer repeats it, so the floor is
     # roughly 4x a page -- times POSTPROCESS_PAGES_PER_CALL.
     POSTPROCESS_NUM_CTX: int = 16384
+    # Studio (mind map, flashcards, quiz) runs the notebook's chat model with
+    # its thinking on, for the quality of the items. A reasoning model thinks
+    # before it answers, so the window has to hold the prompt, the thinking and
+    # the JSON. Measured on gemma4:e4b with ten real chunks: Ollama's default
+    # window (4096) stopped it mid-thought every time (done_reason='length',
+    # no answer, every set failed); 16384 returned all ten summaries in 45 s
+    # (~2.3k prompt tokens, ~2.4k out, 7k characters of it thinking).
+    STUDIO_NUM_CTX: int = 16384
+    # The answering clients' window (the answer, the planner, each sub-answer).
+    # Ollama's default (4096) was enough for plain chat, not for a grounded
+    # prompt: a dozen passages, the instructions and the history. An Arabic
+    # question's sub-answers filled it with the prompt alone and came back
+    # empty (done_reason='length'), so the answer said the documents did not
+    # cover a question they answered. Same as STUDIO_NUM_CTX on purpose: Ollama
+    # reloads a model whenever the window it is asked for changes, so one size
+    # for chat and Studio stops it reloading between them. Ollama only.
+    CHAT_NUM_CTX: int = 16384
+    # Output cap for one Studio call, thinking included. Five times what the
+    # measured call used: a cap for a runaway, not a budget an answer needs.
+    # BATCH_ATTEMPT_TIMEOUT in ArtifactService still bounds each attempt.
+    STUDIO_MAX_TOKENS: int = 12288
     # Output cap for one correction, which has to cover
     # POSTPROCESS_PAGES_PER_CALL whole pages: a correct answer reproduces every
     # page it was given, in full. Ten dense pages is ~6.5k tokens of output
@@ -374,6 +395,8 @@ class Settings(BaseSettings):
     # default alone and is right for chat; False turns a reasoning model's
     # scratchpad off. ProviderCache injects it for callers that need a plain
     # answer rather than a monologue -- see OpenAIChatProvider.thinking.
+    # OpenAI-compatible providers only: an Ollama model ignores it and follows
+    # GENERATION_THINKING (see there).
     CHAT_THINKING_OVERRIDE: bool | None = None
 
     # --- generation ----------------------------------------------------------
@@ -385,6 +408,14 @@ class Settings(BaseSettings):
     GENERATION_DEFAULT_TEMPERATURE: float = 0.1
     # Ask the model to expose its reasoning. Ollama-only; ignored elsewhere,
     # and dropped automatically if the model doesn't support it.
+    #
+    # On Ollama this is the only thinking switch, and it can only turn thinking
+    # *on*: true or a level sends `think`, while false sends nothing, which
+    # leaves the model's own default -- and a reasoning model such as
+    # gemma4:e4b thinks by default. The per-call thinking=False that ProviderCache
+    # accepts (CHAT_THINKING_OVERRIDE below) never reaches an Ollama model. So
+    # every token cap on a local reasoning model must leave room for thinking.
+    # Kept this way deliberately: thinking is on for answer quality.
     GENERATION_THINKING: ThinkingLevel = ThinkingLevel.TRUE
 
     # --- embedding -----------------------------------------------------------
@@ -413,8 +444,14 @@ class Settings(BaseSettings):
     # Parts a complex question may be split into: each one is a retrieval, a
     # rerank and a model call, all concurrent.
     AGENTIC_MAX_SUB_QUERIES: int = 3
-    # A sub-answer is a few cited sentences; this caps a model that rambles.
-    AGENTIC_SUBANSWER_MAX_TOKENS: int = 800
+    # A sub-answer is a few cited sentences, but the cap covers the model's
+    # thinking too, and a local model thinks whatever the code asks (see
+    # GENERATION_THINKING). At 800, gemma4:e4b spent the whole budget thinking
+    # over a part's Arabic passages and returned no text (done_reason='length');
+    # the part was reported as not covered and the answer said the documents
+    # did not cover a question they answered. Same as
+    # GENERATION_DEFAULT_MAX_TOKENS, for the same reason.
+    AGENTIC_SUBANSWER_MAX_TOKENS: int = 4096
 
     # --- guardrails ----------------------------------------------------------
     # Model-based checks before the answer model sees a question (input) and
@@ -678,6 +715,13 @@ class Settings(BaseSettings):
     # limit stays as the backstop for a task that ignores it. Must be lower
     # than CELERY_TASK_TIME_LIMIT or it can never fire.
     CELERY_TASK_SOFT_TIME_LIMIT: int = 1800
+    # The Studio task's own soft limit, apart from every other task's. With the
+    # model's thinking on (see STUDIO_NUM_CTX), a fresh notebook's set means
+    # summarising every chunk first: ~80 chunks on gemma4:e4b took 30-70 s per
+    # batch of summaries and ~22 s per batch of items, past the 540 s a
+    # deployment may set CELERY_TASK_SOFT_TIME_LIMIT to for ingest. Same rule
+    # as that one: below CELERY_TASK_TIME_LIMIT, or cleanup never runs.
+    STUDIO_TASK_SOFT_TIME_LIMIT: int = 1800
     # Report STARTED once a worker picks a task up. Off by default in Celery,
     # which is why a running task and a queued one were both PENDING — the
     # single most misleading thing the status endpoints did.
@@ -864,12 +908,13 @@ class Settings(BaseSettings):
         cleanup skipped, which is exactly the bug the soft limit was added to
         fix, and nothing in the logs would say so.
         """
-        if self.CELERY_TASK_SOFT_TIME_LIMIT >= self.CELERY_TASK_TIME_LIMIT:
-            raise ValueError(
-                f"CELERY_TASK_SOFT_TIME_LIMIT ({self.CELERY_TASK_SOFT_TIME_LIMIT}) must be "
-                f"below CELERY_TASK_TIME_LIMIT ({self.CELERY_TASK_TIME_LIMIT}); "
-                "otherwise the hard kill always wins and task cleanup never runs"
-            )
+        for name in ("CELERY_TASK_SOFT_TIME_LIMIT", "STUDIO_TASK_SOFT_TIME_LIMIT"):
+            if getattr(self, name) >= self.CELERY_TASK_TIME_LIMIT:
+                raise ValueError(
+                    f"{name} ({getattr(self, name)}) must be "
+                    f"below CELERY_TASK_TIME_LIMIT ({self.CELERY_TASK_TIME_LIMIT}); "
+                    "otherwise the hard kill always wins and task cleanup never runs"
+                )
         return self
 
     # `mode="before"` so they run ahead of the enum check: a .env saying

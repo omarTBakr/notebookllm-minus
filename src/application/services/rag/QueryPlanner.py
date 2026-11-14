@@ -26,7 +26,10 @@ reason ``ExtractedFacts.facts`` and ``FlashcardSet.cards`` are required).
 
 *client* must be built with ``thinking=False`` (see ``dependencies.chat_service``):
 a reasoning model asked for JSON leaves ``content`` empty and puts everything
-in ``reasoning_content``, which fails validation on every retry.
+in ``reasoning_content``, which fails validation on every retry. That reaches
+hosted (OpenAI-compatible) models only: a local Ollama model thinks anyway and
+the JSON schema constraint is what keeps its answer parseable (see
+GENERATION_THINKING).
 """
 
 import re

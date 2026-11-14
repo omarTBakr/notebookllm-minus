@@ -160,3 +160,20 @@ async def test_a_citation_with_no_matching_chunk_replays_without_a_page(client, 
     body = (await client.get("/chat/chats/c1/messages")).json()
 
     assert body["messages"][0]["citations"][0].get("page_number") is None
+
+
+async def test_answering_clients_get_a_window_that_holds_a_grounded_prompt(client, seed, fake_providers):
+    """Ollama's default window (4096) was filled by an Arabic question's
+    sub-answer prompt -- a dozen passages plus the instructions -- and the
+    sub-answers came back empty, so the answer said the documents did not cover
+    a question they answered. Every answering client is opened with
+    CHAT_NUM_CTX instead of the default."""
+    from shared.utils import get_settings
+
+    fake_providers.asked_for.clear()
+
+    await client.post("/chat/chats/c1/message", json={"text": "What does the document say?"})
+
+    chat_requests = [r for r in fake_providers.asked_for if r[0] == "chatting"]
+    assert chat_requests, "the route never asked for a chat client"
+    assert all(num_ctx == get_settings().CHAT_NUM_CTX for _, _, num_ctx, _ in chat_requests)

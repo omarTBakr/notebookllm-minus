@@ -16,7 +16,7 @@ a batch of summarised chunks and returns items.
 """
 
 from shared.enums import ArtifactKind
-from shared.utils import get_logger
+from shared.utils import get_logger, get_settings
 
 from ..llm.structured_generation import generate_structured
 
@@ -27,11 +27,11 @@ logger = get_logger(__name__)
 #: starts padding.
 ITEMS_PER_BATCH = 3
 
-# What one batch may cost. Three flashcards or quiz questions are a few hundred
-# tokens; the old default of 4096 turned a model that would not stop into a
-# 2-3 minute attempt, three times over. A cap well above a real answer and well
-# below a runaway: a truncated answer is salvaged item by item anyway.
-BATCH_MAX_TOKENS = 1500
+# How long one batch may take. Three flashcards or quiz questions are a few
+# hundred tokens, plus the model's thinking (see STUDIO_MAX_TOKENS, the token
+# cap, which a thinking model needs well above the 1500 this used to be). The
+# timeout is what stops a model that will not stop: a truncated answer is
+# salvaged item by item anyway.
 BATCH_ATTEMPT_TIMEOUT = 150
 
 
@@ -89,7 +89,7 @@ class ArtifactService:
             self.schema,
             salvage=True,
             max_items=ITEMS_PER_BATCH,
-            max_tokens=BATCH_MAX_TOKENS,
+            max_tokens=get_settings().STUDIO_MAX_TOKENS,
             attempt_timeout=BATCH_ATTEMPT_TIMEOUT,
         )
         produced = getattr(result, self.field)

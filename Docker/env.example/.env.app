@@ -101,7 +101,7 @@ RETRIEVAL_MIN_SCORE=0.0
 # --- Agentic answering (plan, split complex questions, combine) ---------------
 AGENTIC_RAG_ENABLED=true
 AGENTIC_MAX_SUB_QUERIES=3
-AGENTIC_SUBANSWER_MAX_TOKENS=800
+AGENTIC_SUBANSWER_MAX_TOKENS=4096
 
 # --- Guardrails (input + output checks, workers celery-guardrail-input/-output)
 GUARDRAILS_ENABLED=false
@@ -184,6 +184,16 @@ POSTPROCESS_PAGES_PER_CALL=5
 POSTPROCESS_CONCURRENCY=4
 # Context window; Ollama only.
 POSTPROCESS_NUM_CTX=16384
+# Studio keeps the model's thinking on: a window for prompt + thinking + JSON
+# (Ollama only), and an output cap for one call, thinking included.
+STUDIO_NUM_CTX=16384
+STUDIO_MAX_TOKENS=12288
+# The answering clients' window (answer, planner, sub-answers); Ollama's default
+# 4096 is filled by a grounded prompt. Same as STUDIO_NUM_CTX to avoid reloads.
+CHAT_NUM_CTX=16384
+# Studio's own soft time limit (a fresh notebook's set can take 10-15 min);
+# below CELERY_TASK_TIME_LIMIT (1860).
+STUDIO_TASK_SOFT_TIME_LIMIT=1800
 # Output cap per call. Higher only feeds repetition loops.
 POSTPROCESS_MAX_TOKENS=12288
 # Reject a repair whose length differs from the original by more than this ratio.

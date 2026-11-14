@@ -8,7 +8,7 @@ every topic at once, asks for an outline, and stamps each item with its branch.
 
 from data.models import MindMapNodeSet, MindMapOutline
 from shared.enums import ArtifactKind
-from shared.utils import get_logger
+from shared.utils import get_logger, get_settings
 
 from ..llm.structured_generation import generate_structured
 from .ArtifactService import ArtifactService
@@ -38,7 +38,7 @@ class MindMapService(ArtifactService):
         )
         prompt = parser.get("studio", "mindmap_outline_prompt", {"topics": topics})
 
-        outline = await generate_structured(client, prompt, MindMapOutline)
+        outline = await generate_structured(client, prompt, MindMapOutline, max_tokens=get_settings().STUDIO_MAX_TOKENS)
 
         return group_into_branches(items, outline, other=parser.get("studio", "mindmap_other_branch"))
 

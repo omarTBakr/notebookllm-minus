@@ -17,27 +17,35 @@ def wait(start, end):
     return {"scene": "s", "kind": "wait", "start": start, "end": end}
 
 
-def covered(cuts):
-    """True when the cuts tile [first start, last end] exactly."""
-    return all(cuts[i][1] == cuts[i + 1][0] for i in range(len(cuts) - 1))
+def in_order(cuts):
+    """True when the kept pieces never overlap or go backwards."""
+    return all(cuts[i][1] <= cuts[i + 1][0] for i in range(len(cuts) - 1))
 
 
 def test_with_no_waits_the_whole_recording_plays_at_normal_speed():
     assert render.cut_list(60.0, []) == [(0.0, 60.0, 1.0)]
 
 
-def test_a_wait_is_sped_up_and_everything_around_it_is_not():
+def test_a_wait_is_cut_out_and_everything_around_it_is_kept():
+    """The viewer sees the question sent and then the answer, not the spinner."""
     cuts = render.cut_list(100.0, [wait(10.0, 60.0)])
 
-    assert [(start, end) for start, end, _ in cuts] == [(0.0, 10.0), (10.0, 60.0), (60.0, 100.0)]
-    assert [speed for *_, speed in cuts] == [1.0, 50.0 / render.WAIT_TARGET_S, 1.0]
-    assert covered(cuts)
+    assert cuts == [(0.0, 10.0, 1.0), (60.0, 100.0, 1.0)]
+    assert in_order(cuts)
 
 
-def test_a_very_long_wait_is_capped_so_the_page_does_not_just_flicker():
-    cuts = render.cut_list(2000.0, [wait(0.0, 2000.0)])
+def test_no_piece_is_empty():
+    """A zero-length trim would be a broken filter graph."""
+    cuts = render.cut_list(100.0, [wait(10.0, 60.0), wait(70.0, 100.0)])
 
-    assert cuts == [(0.0, 2000.0, render.MAX_SPEED)]
+    assert all(end > start for start, end, _ in cuts)
+
+
+def test_nothing_is_sped_up():
+    """Cut, not fast-forwarded: a long wait squeezed into half a second flickers."""
+    cuts = render.cut_list(2000.0, [wait(0.0, 1500.0), wait(1600.0, 1900.0)])
+
+    assert all(speed == 1.0 for *_, speed in cuts)
 
 
 def test_a_short_wait_is_left_alone():
@@ -49,15 +57,15 @@ def test_overlapping_and_out_of_order_waits_never_repeat_a_second():
 
     assert cuts[0] == (0.0, 10.0, 1.0)
     assert cuts[-1] == (70.0, 100.0, 1.0)
-    assert covered(cuts)
-    assert sum(end - start for start, end, _ in cuts) == 100.0
+    assert in_order(cuts)
+    kept = sum(end - start for start, end, _ in cuts)
+    assert kept == 10.0 + 30.0
 
 
 def test_a_wait_running_past_the_end_is_clipped_to_the_recording():
     cuts = render.cut_list(50.0, [wait(30.0, 80.0)])
 
-    assert cuts[-1][1] == 50.0
-    assert covered(cuts)
+    assert cuts == [(0.0, 30.0, 1.0)]
 
 
 def test_the_filter_names_every_cut_once_and_joins_them_in_order():
