@@ -236,6 +236,15 @@ class Settings(BaseSettings):
     # no answer, every set failed); 16384 returned all ten summaries in 45 s
     # (~2.3k prompt tokens, ~2.4k out, 7k characters of it thinking).
     STUDIO_NUM_CTX: int = 16384
+    # The answering clients' window (the answer, the planner, each sub-answer).
+    # Ollama's default (4096) was enough for plain chat, not for a grounded
+    # prompt: a dozen passages, the instructions and the history. An Arabic
+    # question's sub-answers filled it with the prompt alone and came back
+    # empty (done_reason='length'), so the answer said the documents did not
+    # cover a question they answered. Same as STUDIO_NUM_CTX on purpose: Ollama
+    # reloads a model whenever the window it is asked for changes, so one size
+    # for chat and Studio stops it reloading between them. Ollama only.
+    CHAT_NUM_CTX: int = 16384
     # Output cap for one Studio call, thinking included. Five times what the
     # measured call used: a cap for a runaway, not a budget an answer needs.
     # BATCH_ATTEMPT_TIMEOUT in ArtifactService still bounds each attempt.

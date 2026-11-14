@@ -188,6 +188,9 @@ POSTPROCESS_NUM_CTX=16384
 # (Ollama only), and an output cap for one call, thinking included.
 STUDIO_NUM_CTX=16384
 STUDIO_MAX_TOKENS=12288
+# The answering clients' window (answer, planner, sub-answers); Ollama's default
+# 4096 is filled by a grounded prompt. Same as STUDIO_NUM_CTX to avoid reloads.
+CHAT_NUM_CTX=16384
 # Studio's own soft time limit (a fresh notebook's set can take 10-15 min);
 # below CELERY_TASK_TIME_LIMIT (1860).
 STUDIO_TASK_SOFT_TIME_LIMIT=1800
