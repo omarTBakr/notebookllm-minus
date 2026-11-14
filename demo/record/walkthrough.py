@@ -499,12 +499,32 @@ def scene_models(r: Recorder) -> None:
     r.pause(0.8)
 
 
-def _studio(r: Recorder, button: str, ready: str, caption: str, interact) -> None:
+def _studio(r: Recorder, button: str, kind: str, content: str, caption: str, interact) -> None:
+    """Generate one Studio set and wait until it is complete, not just started.
+
+    Each panel draws something at once (the mind map's root, an empty card
+    face, a "reading the documents..." placeholder), so a selector alone passes
+    too early. The panel's status line is the signal: it says "reading the
+    documents..." or "still adding..." while the set is generating and is
+    emptied once it is complete.
+    """
     page = r.page
     r.caption(caption)
     page.locator(button).click()
     with r.waiting("generated on a worker, from the notebook's own chunks"):
-        page.wait_for_selector(ready, timeout=420000)
+        page.wait_for_function(
+            """([kind, content]) => {
+                const panel = document.getElementById(kind);
+                const status = document.getElementById(kind + "-status");
+                return panel && !panel.hidden
+                    && status && !status.textContent.trim()
+                    && panel.querySelector(content);
+            }""",
+            arg=[kind, content],
+            # Up to STUDIO_TASK_SOFT_TIME_LIMIT: a fresh notebook summarises every
+            # chunk before the first item, which with thinking on is many minutes.
+            timeout=1_800_000,
+        )
     r.pause(2)
     interact()
     r.pause(1.5)
@@ -535,9 +555,9 @@ def scene_studio(r: Recorder) -> None:
             r.pause(2)
         page.locator("#quiz-close").click()
 
-    _studio(r, "#btn-mindmap", ".mm-node", "Studio: a mind map of the notebook", mindmap)
-    _studio(r, "#btn-flashcards", "#flashcards-face:not(:empty)", "Studio: flashcards", flashcards)
-    _studio(r, "#btn-quiz", "#quiz-body button", "Studio: a quiz, marked as you answer", quiz)
+    _studio(r, "#btn-mindmap", "mindmap", ".mm-node--branch", "Studio: a mind map of the notebook", mindmap)
+    _studio(r, "#btn-flashcards", "flashcards", "#flashcards-face:not(:empty)", "Studio: flashcards", flashcards)
+    _studio(r, "#btn-quiz", "quiz", "#quiz-body button", "Studio: a quiz, marked as you answer", quiz)
 
 
 def scene_interface(r: Recorder) -> None:
@@ -604,6 +624,10 @@ def scene_visualization(r: Recorder) -> None:
             except (PlaywrightTimeout, PlaywrightError) as error:
                 print(f"           queue filter not applied: {str(error).splitlines()[0]}")
             r.pause(4)
+        elif tab_id == "traces":
+            # Langfuse loads the session's traces after its shell: give the
+            # trace bodies time to replace their placeholders.
+            r.pause(10)
         else:
             r.pause(5)
 
