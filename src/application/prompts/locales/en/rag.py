@@ -91,15 +91,14 @@ document_prompt = "\n".join(
 
 # Drives QueryPlanner.plan_query, the first step of every grounded answer.
 #
-# Version 3 (Langfuse: en/rag.plan_prompt v2 -- Langfuse's v1 is this file's
-# version 2, the first one seeded). v2 said "in the user's
+# Version 3 (Langfuse: en/rag.plan_prompt v3). v2 said "in the user's
 # language" once, and llama3.1:8b still wrote English queries for an Arabic
 # question after English turns -- the Arabic passages that answered it were
 # never searched for (QueryPlanner.search_queries is the code-side net). v3
 # states the rule for both rewritten fields, says the instructions and the
 # history do not change it, and shows it with an off-topic example.
 #
-# Version 2 (Langfuse: en/rag.plan_prompt v1, label "baseline"). v1 sent greetings and thanks to
+# Version 2 (Langfuse: en/rag.plan_prompt v2). v1 sent greetings and thanks to
 # retrieval and invented sub-queries the user never asked for (seen in the
 # live end-to-end run with llama3.1:8b). v2 defines chitchat by "asks for no
 # information", gives one example per decision (deliberately off-topic), and

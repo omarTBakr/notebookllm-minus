@@ -66,7 +66,7 @@ document_prompt = "\n".join(
     ]
 )
 
-# Version 3 (Langfuse: ar/rag.plan_prompt v2; v1 is the file's version 2). See en/rag.py.
+# Version 3 (Langfuse: ar/rag.plan_prompt v3). See en/rag.py for why.
 plan_prompt = "\n".join(
     [
         "مهمتك التخطيط للإجابة عن رسالة في محادثة تعتمد على مستندات المستخدم الخاصة.",
