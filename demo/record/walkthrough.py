@@ -91,8 +91,8 @@ class Recorder:
     def waiting(self, what: str):
         """A stretch where nothing happens on screen but a spinner: cut later.
 
-        render.py keeps only the last half second of it, so the caption stays
-        the scene's own; *what* is for the console log.
+        render.py cuts it out completely, so the caption stays the scene's
+        own; *what* is for the console log.
         """
         print(f"           waiting: {what}")
         start = self.now()
@@ -195,6 +195,9 @@ class Recorder:
     def ask(self, question: str, what: str = "the model is answering", timeout_s: int = 300) -> None:
         """Type a question, send it, and wait for the answer to finish."""
         page = self.page
+        # Answers already on the page, so the new one is told apart from them.
+        answers_before = page.locator("#messages > .msg--assistant").count()
+
         box = page.locator("#question")
         box.click()
         box.press_sequentially(question, delay=18)
@@ -210,11 +213,25 @@ class Recorder:
         except PlaywrightTimeout:
             pass  # an instant reply (a refusal, an ack) may never show Stop
 
+        # Cut: planning, retrieval and the model's thinking, until the answer's
+        # first words appear (or it ends without streaming, like a refusal).
         with self.waiting(what):
             page.wait_for_function(
-                "() => !document.getElementById('btn-send').classList.contains('composer__send--stop')",
+                """(before) => {
+                    const answer = document.querySelectorAll("#messages > .msg--assistant")[before];
+                    const body = answer && answer.querySelector(".msg__body");
+                    const done = !document.getElementById("btn-send").classList.contains("composer__send--stop");
+                    return done || (body && body.textContent.trim().length > 0);
+                }""",
+                arg=answers_before,
                 timeout=timeout_s * 1000,
             )
+
+        # Kept: the answer streaming in, at normal speed, until it is complete.
+        page.wait_for_function(
+            "() => !document.getElementById('btn-send').classList.contains('composer__send--stop')",
+            timeout=timeout_s * 1000,
+        )
         send.scroll_into_view_if_needed()
         self.last_message().scroll_into_view_if_needed()
 

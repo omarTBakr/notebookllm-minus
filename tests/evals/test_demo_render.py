@@ -26,12 +26,19 @@ def test_with_no_waits_the_whole_recording_plays_at_normal_speed():
     assert render.cut_list(60.0, []) == [(0.0, 60.0, 1.0)]
 
 
-def test_a_wait_is_cut_to_its_last_moment_and_everything_around_it_is_kept():
-    """The viewer sees the question sent and the answer arrive, not the spinner."""
+def test_a_wait_is_cut_out_and_everything_around_it_is_kept():
+    """The viewer sees the question sent and then the answer, not the spinner."""
     cuts = render.cut_list(100.0, [wait(10.0, 60.0)])
 
-    assert cuts == [(0.0, 10.0, 1.0), (60.0 - render.WAIT_KEEP_S, 60.0, 1.0), (60.0, 100.0, 1.0)]
+    assert cuts == [(0.0, 10.0, 1.0), (60.0, 100.0, 1.0)]
     assert in_order(cuts)
+
+
+def test_no_piece_is_empty():
+    """A zero-length trim would be a broken filter graph."""
+    cuts = render.cut_list(100.0, [wait(10.0, 60.0), wait(70.0, 100.0)])
+
+    assert all(end > start for start, end, _ in cuts)
 
 
 def test_nothing_is_sped_up():
@@ -52,14 +59,13 @@ def test_overlapping_and_out_of_order_waits_never_repeat_a_second():
     assert cuts[-1] == (70.0, 100.0, 1.0)
     assert in_order(cuts)
     kept = sum(end - start for start, end, _ in cuts)
-    assert kept == 10.0 + render.WAIT_KEEP_S + render.WAIT_KEEP_S + 30.0
+    assert kept == 10.0 + 30.0
 
 
 def test_a_wait_running_past_the_end_is_clipped_to_the_recording():
     cuts = render.cut_list(50.0, [wait(30.0, 80.0)])
 
-    assert cuts[-1] == (50.0 - render.WAIT_KEEP_S, 50.0, 1.0)
-    assert in_order(cuts)
+    assert cuts == [(0.0, 30.0, 1.0)]
 
 
 def test_the_filter_names_every_cut_once_and_joins_them_in_order():

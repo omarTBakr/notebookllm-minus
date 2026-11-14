@@ -26,6 +26,6 @@ A scene whose feature is off or whose step fails is skipped and listed with the 
 Extract stills and look at them (`ffmpeg -ss <t> -i out/preview/walkthrough.mp4 -frames:v 1 still.png`, then Read the png). Check captions, that each citation opened, that Visualization's frames are not blank. Only then render to `demo/` and update the README's demo section (alt text, numbered list).
 
 ## Notes
-- Captions are drawn in the page, so they are part of the recording. Waits are cut by `render.py` (only their last 0.5 s is kept), so no wait shows in the video.
+- Captions are drawn in the page, so they are part of the recording. Waiting is cut out completely by `render.py` (indexing, Studio, and the time before an answer's first words); the answer streaming in is kept at normal speed.
 - Selectors come from the templates' ids (`#question`, `#btn-send`, `#btn-visualization`, `.sources-block__link`). After a UI change, run the affected scene with `--headed` first.
 - Uploaded assets are built by `demo/record/make_assets.py` (run with the app's env, `cd src && uv run python ../demo/record/make_assets.py`).
