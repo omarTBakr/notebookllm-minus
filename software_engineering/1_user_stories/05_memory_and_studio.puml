@@ -21,6 +21,8 @@ rectangle "Studio" {
     * Generation runs on a worker; the tile shows progress and the result opens in place.
     * Quiz answer keys are checked against the options, not trusted as an index.
     * Asking again while one is generating returns the one in progress.
+    * Works on a local thinking model: a STUDIO_NUM_CTX window, STUDIO_MAX_TOKENS per call,
+      and the task's own STUDIO_TASK_SOFT_TIME_LIMIT (a run that hits it keeps its items).
   ]
 }
 US5_1 -[hidden]down- US5_2

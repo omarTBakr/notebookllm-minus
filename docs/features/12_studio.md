@@ -43,7 +43,14 @@ video moment.
 
 ## Settings
 
-`INGEST_SUMMARISE` and `CELERY_QUEUE_STUDIO`. Generation uses the notebook's chat model.
+`INGEST_SUMMARISE` and `CELERY_QUEUE_STUDIO`. Generation uses the notebook's chat model, with
+its thinking on.
+
+| Setting | Does what |
+| --- | --- |
+| `STUDIO_NUM_CTX` | Ollama context window of the Studio client: prompt, thinking and JSON (default 16384; the 4096 default stopped a reasoning model mid-thought) |
+| `STUDIO_MAX_TOKENS` | output cap of each Studio call (summaries, item batches, mind-map outline), thinking included (default 12288) |
+| `STUDIO_TASK_SOFT_TIME_LIMIT` | the Studio task's own soft time limit (default 1800 s); must be below `CELERY_TASK_TIME_LIMIT`. A run that hits it is marked failed and keeps its items |
 
 ## Tests
 

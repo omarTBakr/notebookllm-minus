@@ -10,6 +10,7 @@ rectangle "Grounded chat" {
     ----
     * The answer streams token by token; sources appear before the first token.
     * Each [n] opens the source at the cited page, row or video moment, highlighted.
+    * The answer is in the language of my latest message, whatever language the sources are in.
   ]
   card US3_2 [
     **US-3.2  Follow-up questions just work**
@@ -18,6 +19,7 @@ rectangle "Grounded chat" {
     ----
     * A planner rewrites the question to stand alone using the recent turns.
     * Greetings and thanks are answered without searching the documents.
+    * If the planner rewrites an Arabic question in English (or the reverse), my own words are searched too.
   ]
   card US3_3 [
     **US-3.3  Complex questions are researched part by part**
@@ -35,7 +37,8 @@ rectangle "Grounded chat" {
     so that answers are precise even when many passages share the topic.
     ----
     * A multilingual cross-encoder (bge-reranker-v2-m3) re-scores a wider vector pool.
-    * If the reranker is down or slow, retrieval falls back to vector order.
+    * If the reranker is down or slow, retrieval falls back to the no-reranker cut:
+      passages keep their top_k and pictures come after, capped at IMAGE_TOP_K.
   ]
 }
 US3_1 -[hidden]down- US3_2

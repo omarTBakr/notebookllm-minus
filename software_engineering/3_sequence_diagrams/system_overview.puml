@@ -62,10 +62,10 @@ alt question flagged
   api --> ui : guardrail (refusal), done
 else safe
   api -> llm : plan (intent, standalone, sub-queries)
-  api -> db : vector search per query (wide pool)
+  api -> db : vector search per query, + the question itself\nwhen the plan translated it (wide pool)
   api -> mm : embed query into the picture space
   api -> db : picture search (project_<id>__img)
-  api -> tei : rerank passages + captions together
+  api -> tei : rerank passages + captions together\n(on failure: passages top_k, then pictures)
   api --> ui : meta (citations)
   opt complex question
     api -> llm : sub-answer per part (parallel)

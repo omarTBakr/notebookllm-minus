@@ -8,10 +8,10 @@ participant "studio route" as route
 participant "StudioService" as studio
 database "DB" as db
 queue "studio queue" as q
-participant "generate_artifact_task" as task
+participant "generate_artifact_task\n(soft_time_limit =\nSTUDIO_TASK_SOFT_TIME_LIMIT)" as task
 participant "Quiz / Flashcard /\nMindMap Service" as gen
 participant "generate_structured" as sg
-participant "LLM provider" as llm
+participant "chat client\n(num_ctx = STUDIO_NUM_CTX)" as llm
 
 ui -> route : POST /chats/{id}/studio/{kind}
 route -> studio : start(chat, kind)
@@ -20,17 +20,34 @@ studio -> db : Artifact(status=GENERATING)
 studio -> q : generate_artifact_task
 route --> ui : 202 {artifact}
 
-q -> task : run
-task -> db : chunk summaries for the notebook
-task -> gen : build(kind, summaries, lang)
-gen -> sg : prompt + schema (QuizSet / FlashcardSet / MindMapOutline)
-loop until valid or retries spent
-  sg -> llm : generate_text(json_schema when supported)
-  llm --> sg : JSON
-  sg -> sg : validate; on error retry with the error attached
+q -> task : run_job(_run_generation, what, soft_limit=STUDIO_TASK_SOFT_TIME_LIMIT)
+task -> llm : providers.chatting(notebook model, num_ctx=STUDIO_NUM_CTX)
+note right of llm
+  The model's thinking stays on: the window holds
+  the prompt, the thinking and the JSON, and every
+  Studio call is capped at STUDIO_MAX_TOKENS.
+end note
+loop each batch of chunks
+  opt chunks with no summary yet
+    task -> sg : summarise_chunks (SummarySet, max_tokens=STUDIO_MAX_TOKENS)
+    task -> db : save the chunk summaries
+  end
+  task -> gen : generate(client, parser, summarised chunks)
+  gen -> sg : prompt + schema (QuizSet / FlashcardSet / MindMapNodeSet),\nmax_tokens=STUDIO_MAX_TOKENS, attempt_timeout=BATCH_ATTEMPT_TIMEOUT
+  loop until valid or retries spent
+    sg -> llm : generate_text(json_schema when supported)
+    llm --> sg : JSON
+    sg -> sg : validate; on error retry with the error attached
+  end
+  gen --> task : items
+  task -> db : append items
 end
-gen --> task : artifact content
-task -> db : status COMPLETE (or FAILED)
+task -> gen : finalize (mind map: outline, max_tokens=STUDIO_MAX_TOKENS)
+task -> db : status COMPLETE
+alt soft limit reached or the run failed
+  task -> db : status FAILED (items so far kept, reason set)
+  task --> q : on the soft limit, run_job logs and raises\n"... exceeded <soft_limit>s and was stopped"
+end
 
 ui -> route : GET /chats/{id}/studio/{kind} (poll)
 route --> ui : artifact

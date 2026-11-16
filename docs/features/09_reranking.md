@@ -17,7 +17,10 @@ Arabic and English alike.
 - The model is `BAAI/bge-reranker-v2-m3` as a quantised GGUF, served by llama.cpp's
   `llama-server` in the `reranker` container, about 1 GB of RAM. `RERANKER_PROVIDER=tei` targets
   a Hugging Face text-embeddings-inference server instead, which is what ran before.
-- **A failed or slow rerank falls back to vector order.** A rerank that passes
+- **A failed or slow rerank falls back to the no-reranker cut** (`ChatService._vector_cut`): the
+  passages keep their `top_k` by vector score and up to `IMAGE_TOP_K` pictures follow. Not a
+  plain cut of the merged list: the picture embedder scores everything higher than the text
+  embedder, so that handed every slot to figure captions. A rerank that passes
   `RERANKER_TIMEOUT_S` is abandoned: a slow reranker must not stall the answer.
 - Picture hits carry their caption as text, so passages and captions are scored on one scale.
 
@@ -27,7 +30,7 @@ Arabic and English alike.
 | --- | --- |
 | `RERANKER_ENABLED` | off = pass-through |
 | `RERANKER_PROVIDER` / `RERANKER_URL` / `RERANKER_MODEL_ID` | `llamacpp` or `tei`, where it listens, and the model name |
-| `RERANKER_TIMEOUT_S` | after this the hits keep their vector order |
+| `RERANKER_TIMEOUT_S` | after this the rerank is abandoned and the no-reranker cut is used |
 | `RERANK_CANDIDATES` | vector hits fetched per query; costs reranker time roughly linearly |
 | `RERANK_MIN_SCORE` | relevance floor, 0..1 |
 
