@@ -23,6 +23,13 @@ else Langfuse off, unreachable or missing
   tp -> tp : local locale file (fallback)
 end
 tp --> tr : (text, prompt_ref)
+note right of tp
+  New versions come from scripts/langfuse_seed_prompts.py,
+  which pushes changed locale prompts under the label
+  (chat and Studio prompts v2, plan_prompt v3). The private
+  _ANSWER_LANGUAGE / _OUTPUT_LANGUAGE / _SOURCE_IS_DATA blocks
+  are part of those prompts, never seeded on their own.
+end note
 
 tr -> llm : generate_text / stream_text\n(inside linked_prompt(prompt_ref))
 llm -> tr : start_generation(model, input, params, prompt)

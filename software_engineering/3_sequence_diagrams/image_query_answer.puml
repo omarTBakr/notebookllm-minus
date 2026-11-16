@@ -39,8 +39,8 @@ end
 chat -> chat : merge by id (a figure found twice stays an image)
 alt reranker on
   chat -> rerank : passages + captions, one scale
-else
-  chat -> chat : text top_k, then up to IMAGE_TOP_K pictures
+else no reranker, or the rerank failed
+  chat -> chat : _vector_cut: text top_k, then up to IMAGE_TOP_K pictures\n(raw scores of the two indexes are not comparable)
 end
 chat -> links : link_lookup(hits)
 links -> links : read linked_images / linked_chunks of each hit;\nfetch partners not already among the hits

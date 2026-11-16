@@ -20,7 +20,9 @@ class ChatService {
   +{static} to_citations(hits, names, pages)
   +{static} number_globally(parts)
   -_plan(question, lang, history): QueryPlan
-  -_search_and_rerank(chat_id, queries, rerank_query, top_k, asset_ids)
+  -_retrieve(chat_id, plan, searched, top_k, asset_ids, image, link_lookup)
+  -_search_and_rerank(chat_id, queries, rerank_query, top_k, asset_ids, image_query)
+  -_vector_cut(ranked, top_k)
   -_rerank(query, hits, top_k)
   -_answer_complex(...)
   -_subanswer(parser, query, hits, numbers, ...)
@@ -36,6 +38,7 @@ class QueryPlan <<dataclass>> {
 }
 class "QueryPlanner\n(plan_query)" as QueryPlanner <<module>> {
   +plan_query(client, question, lang, history): QueryPlan
+  +search_queries(queries, question): queries [+ question if translated]
   +normalise(raw, question, max_sub_queries)
   +format_history(history)
 }
@@ -83,11 +86,25 @@ class StudioService {
   +start(chat_id, kind): StartedGeneration
   +find(chat_id, kind)
 }
-class ArtifactService
+class ArtifactService {
+  +generate(client, parser, batch)
+  +finalize(client, parser, items)
+}
+note bottom of ArtifactService : every Studio call:\nmax_tokens = STUDIO_MAX_TOKENS
+class "SummaryService" as Summary <<module>> {
+  +summarise_chunks(client, parser, batch)
+}
 class QuizService
 class FlashcardService
 class MindMapService
 class "generate_structured" as SG <<module>>
+
+class Settings <<excerpt>> {
+  {field} CHAT_NUM_CTX = 16384 (both chat clients)
+  AGENTIC_SUBANSWER_MAX_TOKENS = 4096
+  {field} STUDIO_NUM_CTX = 16384 (Studio client)
+  STUDIO_MAX_TOKENS = 12288
+}
 
 BaseService <|-- ChatService
 BaseService <|-- NLPService
@@ -123,5 +140,7 @@ ChatService --> MemoryService
 QueryPlanner --> SG
 MemoryService --> SG
 ArtifactService --> SG
+Summary --> SG
+QueryPlan -[hidden]down- Settings
 TextCorrectionService --> SG
 @enduml

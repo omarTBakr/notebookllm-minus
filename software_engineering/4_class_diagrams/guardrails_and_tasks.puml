@@ -82,10 +82,31 @@ package "application.tasks.jobs" {
   class "run_batch(task, stage, requests)" as RunBatch <<function>>
   class "fetch_url / process_data / parse_batch /\npostprocess_batch / assemble_chunks /\nsummarise_chunks" as Ingest <<task>>
   class "index_project / build_vector_index" as Index <<task>>
-  class generate_artifact_task <<task>>
+  class generate_artifact_task <<task>> {
+    queue = CELERY_QUEUE_STUDIO
+    soft_time_limit = STUDIO_TASK_SOFT_TIME_LIMIT
+    client num_ctx = STUDIO_NUM_CTX
+  }
   class extract_memory_task <<task>>
   class maintenance_task <<task>>
 }
+package "application.tasks.runtime" {
+  class "run_job(body, what, soft_limit=None)" as RunJob <<function>> {
+    soft limit -> CeleryTaskError naming the limit:
+    soft_limit, else CELERY_TASK_SOFT_TIME_LIMIT
+  }
+  class "job_resources(providers)" as JobRes <<function>>
+}
+generate_artifact_task --> RunJob : soft_limit=STUDIO_TASK_SOFT_TIME_LIMIT
+generate_artifact_task --> JobRes
+Ingest --> RunJob
+Index --> RunJob
+extract_memory_task --> RunJob
+note right of RunJob
+  STUDIO_TASK_SOFT_TIME_LIMIT and CELERY_TASK_SOFT_TIME_LIMIT
+  must both be below CELERY_TASK_TIME_LIMIT (Settings validator),
+  or the hard kill wins and cleanup never runs.
+end note
 Batches <|-- guardrail_input_task
 Batches <|-- guardrail_output_task
 guardrail_input_task --> RunBatch
