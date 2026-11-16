@@ -111,7 +111,7 @@ behind `--profile langfuse`. More in [deployment](docs/features/15_deployment.md
 | Storage | Postgres + pgvector or MongoDB + Qdrant behind one set of repository interfaces | [06](docs/features/06_embeddings_and_vector_stores.md) |
 | Models and providers | Seven chat and six embedding backends; a per-notebook picker built from what actually answers | [07](docs/features/07_models_and_providers.md) |
 | Grounded chat | Every question is planned; a complex one is researched part by part, then combined | [08](docs/features/08_agentic_rag.md) |
-| Reranking | A multilingual cross-encoder keeps the best passages; falls back to vector order | [09](docs/features/09_reranking.md) |
+| Reranking | A multilingual cross-encoder keeps the best passages; without it (or if it fails), passages keep their vector order and pictures follow | [09](docs/features/09_reranking.md) |
 | Guardrails | A guard model checks the question and the streamed answer, micro-batched on Celery | [10](docs/features/10_guardrails.md) |
 | Memory | `/memory …` stores a fact about the user, folded into every later answer | [11](docs/features/11_memory.md) |
 | Studio | Mind map, flashcards and quiz from the notebook's own chunks, each item traceable | [12](docs/features/12_studio.md) |
