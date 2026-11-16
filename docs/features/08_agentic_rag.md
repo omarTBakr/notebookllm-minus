@@ -16,7 +16,10 @@ is planned first, and a complex one is researched part by part.
 3. **Plan.** One structured call classifies the question (`chitchat`, `simple`, `complex`),
    rewrites it to stand alone without the chat history, and lists the retrieval queries.
 4. **Retrieve and rerank.** Each query fetches a wider pool; the reranker keeps the best `top_k`
-   ([reranking](09_reranking.md)). Picture hits and linked partners join here
+   ([reranking](09_reranking.md)). When the planner wrote the queries in the other script (an
+   Arabic question planned as English queries, or the reverse), `QueryPlanner.search_queries`
+   adds the user's own question beside them, so passages in the question's language are found
+   too; a complex question does this per part. nomic-embed-text barely matches across languages. Picture hits and linked partners join here
    ([multimodal](14_multimodal_retrieval.md)).
 5. **Answer.**
    - `chitchat` skips retrieval and answers as plain chat.
@@ -82,7 +85,8 @@ across re-processing, so re-indexing overwrites in place instead of orphaning ve
 | --- | --- |
 | `AGENTIC_RAG_ENABLED` | plan every grounded question; off restores single-pass retrieval on the raw question |
 | `AGENTIC_MAX_SUB_QUERIES` | parts a complex question may be split into |
-| `AGENTIC_SUBANSWER_MAX_TOKENS` | cap on one part's answer |
+| `AGENTIC_SUBANSWER_MAX_TOKENS` | cap on one part's answer, thinking included (default 4096: at 800 a local reasoning model spent it all thinking and returned nothing) |
+| `CHAT_NUM_CTX` | Ollama context window of the answer and planner clients (default 16384; Ollama's own 4096 does not hold a grounded prompt) |
 | `RETRIEVAL_TOP_K` / `RETRIEVAL_MIN_SCORE` | passages that reach the prompt, and the floor they must clear |
 | `CHAT_HISTORY_LIMIT` | prior turns sent as context |
 

@@ -156,7 +156,8 @@ test; excluding it would mean judging a model by its name.
 | `EMBEDDING_BACKEND` | the same minus `anthropic`, which ships no embeddings API |
 | `GENERATION_MODEL_ID` / `EMBEDDING_MODEL_ID` | named the way the vendor names them |
 | `GENERATION_DEFAULT_MAX_TOKENS` | output cap. Sent as `max_tokens` to NVIDIA and `max_completion_tokens` to OpenAI |
-| `GENERATION_DEFAULT_TEMPERATURE` / `GENERATION_THINKING` | defaults a notebook can override |
+| `GENERATION_DEFAULT_TEMPERATURE` / `GENERATION_THINKING` | defaults a notebook can override. On Ollama `GENERATION_THINKING` is the only thinking switch and can only turn thinking on: false sends nothing, so a reasoning model thinks by default |
+| `CHAT_THINKING_OVERRIDE` | per-call thinking for OpenAI-compatible providers; a per-call `thinking=False` never reaches an Ollama model, so token caps on a local reasoning model leave room for thinking |
 | `OLLAMA_HOST` / `OLLAMA_PORT` | where `ollama serve` is listening |
 | `OLLAMA_CLOUD_BASE_URL` | a second Ollama over the network; its models appear alongside the local ones |
 | `<VENDOR>_API_KEY` | only the key for a selected backend must be set; it is checked at startup |
